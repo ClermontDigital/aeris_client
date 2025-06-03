@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aeris - Connection Error</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        
+        .error-container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .error-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.8;
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+        
+        p {
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+            opacity: 0.9;
+        }
+        
+        .retry-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-right: 10px;
+        }
+        
+        .retry-button:hover {
+            background: #45a049;
+        }
+        
+        .settings-button {
+            background: transparent;
+            color: white;
+            border: 2px solid white;
+            padding: 10px 22px;
+            font-size: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .settings-button:hover {
+            background: white;
+            color: #667eea;
+        }
+        
+        .connection-info {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-icon">⚠️</div>
+        <h1>Cannot Connect to Aeris ERP</h1>
+        <p>The Aeris ERP application is not available. Please ensure the server is running and try again.</p>
+        
+        <button class="retry-button" onclick="retryConnection()">Retry Connection</button>
+        <button class="settings-button" onclick="openSettings()">Settings</button>
+        
+        <div class="connection-info">
+            <strong>Current Server:</strong> <span id="server-url">Loading...</span><br>
+            <small>You can change this in Settings</small>
+        </div>
+    </div>
+
+    <script>
+        async function loadServerUrl() {
+            if (window.electronAPI) {
+                try {
+                    const settings = await window.electronAPI.getSettings();
+                    document.getElementById('server-url').textContent = settings.baseUrl;
+                } catch (error) {
+                    document.getElementById('server-url').textContent = 'Unknown';
+                }
+            }
+        }
+        
+        function retryConnection() {
+            window.location.reload();
+        }
+        
+        function openSettings() {
+            // This would normally trigger settings window
+            alert('Use Cmd/Ctrl + , to open settings');
+        }
+        
+        // Load server URL on page load
+        loadServerUrl();
+    </script>
+</body>
+</html> 
