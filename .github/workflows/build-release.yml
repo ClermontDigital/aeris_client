@@ -1,0 +1,172 @@
+name: Build and Release Aeris Client
+
+on:
+  push:
+    branches: [ release ]
+  pull_request:
+    branches: [ release ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+        
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build for macOS
+      if: matrix.os == 'macos-latest'
+      run: npm run build:mac
+      
+    - name: Build for Windows
+      if: matrix.os == 'windows-latest'
+      run: npm run build:win
+      
+    - name: Upload macOS artifacts
+      if: matrix.os == 'macos-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: aeris-macos
+        path: |
+          dist/*.dmg
+          dist/*.dmg.blockmap
+          dist/latest-mac.yml
+        retention-days: 30
+        
+    - name: Upload Windows artifacts
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: aeris-windows
+        path: |
+          dist/*.exe
+          dist/*.exe.blockmap
+          dist/latest.yml
+        retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/release' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Get version from package.json
+      id: package-version
+      run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+      
+    - name: Download macOS artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: aeris-macos
+        path: ./release-assets/
+        
+    - name: Download Windows artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: aeris-windows
+        path: ./release-assets/
+        
+    - name: Display downloaded artifacts
+      run: ls -la ./release-assets/
+      
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.package-version.outputs.version }}-${{ github.run_number }}
+        release_name: Aeris Client v${{ steps.package-version.outputs.version }} (Build ${{ github.run_number }})
+        body: |
+          ## Aeris ERP Desktop Client
+          
+          **Version:** ${{ steps.package-version.outputs.version }}
+          **Build:** ${{ github.run_number }}
+          **Commit:** ${{ github.sha }}
+          
+          ### Features
+          - 🖥️ Cross-platform desktop application (Windows/macOS)
+          - 🌐 Connects to Aeris ERP server at `10.0.0.140:8000`
+          - 🖨️ Full printing support including network printers
+          - 🔧 Automatic Bootstrap modal focus fix (no ERP changes required)
+          - ⚙️ Configurable settings and auto-start functionality
+          
+          ### Downloads
+          - **Windows**: `Aeris Setup ${{ steps.package-version.outputs.version }}.exe`
+          - **macOS Intel**: `Aeris-${{ steps.package-version.outputs.version }}.dmg`
+          - **macOS Apple Silicon**: `Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg`
+          
+          ### Installation
+          1. Download the appropriate file for your platform
+          2. Run the installer (Windows) or drag to Applications (macOS)
+          3. Launch Aeris - it will automatically connect to your ERP server
+          
+          ---
+          *Built automatically from release branch*
+        draft: false
+        prerelease: false
+        
+    - name: Upload Windows Installer
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release-assets/Aeris Setup ${{ steps.package-version.outputs.version }}.exe
+        asset_name: Aeris-Setup-${{ steps.package-version.outputs.version }}.exe
+        asset_content_type: application/octet-stream
+        
+    - name: Upload macOS DMG (Intel)
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release-assets/Aeris-${{ steps.package-version.outputs.version }}.dmg
+        asset_name: Aeris-${{ steps.package-version.outputs.version }}-intel.dmg
+        asset_content_type: application/octet-stream
+        
+    - name: Upload macOS DMG (Apple Silicon)
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./release-assets/Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg
+        asset_name: Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg
+        asset_content_type: application/octet-stream
+
+  notify:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    if: always() && github.ref == 'refs/heads/release' && github.event_name == 'push'
+    
+    steps:
+    - name: Notify Success
+      if: needs.build.result == 'success' && needs.release.result == 'success'
+      run: |
+        echo "✅ Release build completed successfully!"
+        echo "📦 Artifacts uploaded to GitHub Releases"
+        
+    - name: Notify Failure
+      if: needs.build.result == 'failure' || needs.release.result == 'failure'
+      run: |
+        echo "❌ Release build failed!"
+        echo "🔍 Check the workflow logs for details"
+        exit 1 
