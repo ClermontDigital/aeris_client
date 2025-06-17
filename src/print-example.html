@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aeris Print Functions Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .print-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #5a67d8;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        select, input {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Aeris Printing Functions Demo</h1>
+        <p>This page demonstrates the printing capabilities available in the Aeris desktop client.</p>
+
+        <div class="print-section">
+            <h3>1. Standard Print Dialog</h3>
+            <p>Opens the system print dialog allowing user to select printer and options.</p>
+            <button onclick="standardPrint()">Print with Dialog</button>
+            <div id="standard-result" class="result"></div>
+        </div>
+
+        <div class="print-section">
+            <h3>2. Silent Print to Default Printer</h3>
+            <p>Prints directly to the default printer without showing dialog.</p>
+            <button onclick="silentPrint()">Silent Print</button>
+            <div id="silent-result" class="result"></div>
+        </div>
+
+        <div class="print-section">
+            <h3>3. Print to Specific Network Printer</h3>
+            <p>First load available printers, then print to selected printer.</p>
+            <button onclick="loadPrinters()">Load Printers</button>
+            <select id="printer-select" style="display:none;"></select>
+            <button onclick="printToSelected()" style="display:none;" id="print-selected">Print to Selected</button>
+            <div id="printer-result" class="result"></div>
+        </div>
+
+        <div class="print-section">
+            <h3>4. Export to PDF</h3>
+            <p>Generate PDF version of the current page.</p>
+            <button onclick="exportToPDF()">Export to PDF</button>
+            <div id="pdf-result" class="result"></div>
+        </div>
+
+        <div class="print-section">
+            <h3>5. Custom Print Options</h3>
+            <p>Print with custom settings like landscape orientation, specific margins, etc.</p>
+            <label>
+                <input type="checkbox" id="landscape"> Landscape
+            </label>
+            <label>
+                <input type="checkbox" id="printBackground" checked> Print Background
+            </label>
+            <label>
+                Copies: <input type="number" id="copies" value="1" min="1" max="99">
+            </label>
+            <button onclick="customPrint()">Custom Print</button>
+            <div id="custom-result" class="result"></div>
+        </div>
+
+        <div class="print-section">
+            <h3>Test Content for Printing</h3>
+            <div style="border: 1px solid #000; padding: 20px; margin: 10px 0;">
+                <h2>Sample Invoice</h2>
+                <p><strong>Invoice #:</strong> INV-2024-001</p>
+                <p><strong>Date:</strong> <span id="current-date"></span></p>
+                <p><strong>Customer:</strong> Sample Customer</p>
+                
+                <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                    <thead>
+                        <tr style="background: #f0f0f0;">
+                            <th style="border: 1px solid #ccc; padding: 8px;">Item</th>
+                            <th style="border: 1px solid #ccc; padding: 8px;">Qty</th>
+                            <th style="border: 1px solid #ccc; padding: 8px;">Price</th>
+                            <th style="border: 1px solid #ccc; padding: 8px;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="border: 1px solid #ccc; padding: 8px;">Sample Product 1</td>
+                            <td style="border: 1px solid #ccc; padding: 8px;">2</td>
+                            <td style="border: 1px solid #ccc; padding: 8px;">$25.00</td>
+                            <td style="border: 1px solid #ccc; padding: 8px;">$50.00</td>
+                        </tr>
+                        <tr>
+                            <td style="border: 1px solid #ccc; padding: 8px;">Sample Product 2</td>
+                            <td style="border: 1px solid #ccc; padding: 8px;">1</td>
+                            <td style="border: 1px solid #ccc; padding: 8px;">$30.00</td>
+                            <td style="border: 1px solid #ccc; padding: 8px;">$30.00</td>
+                        </tr>
+                        <tr>
+                            <td colspan="3" style="border: 1px solid #ccc; padding: 8px; text-align: right;"><strong>Total:</strong></td>
+                            <td style="border: 1px solid #ccc; padding: 8px;"><strong>$80.00</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set current date
+        document.getElementById('current-date').textContent = new Date().toLocaleDateString();
+
+        async function standardPrint() {
+            const resultDiv = document.getElementById('standard-result');
+            resultDiv.textContent = 'Initiating print...';
+            
+            if (window.electronAPI && window.electronAPI.printPage) {
+                try {
+                    const result = await window.electronAPI.printPage();
+                    resultDiv.textContent = result.success ? 
+                        'Print dialog opened successfully' : 
+                        `Print failed: ${result.error}`;
+                } catch (error) {
+                    resultDiv.textContent = `Error: ${error.message}`;
+                }
+            } else {
+                // Fallback to browser print for web version
+                window.print();
+                resultDiv.textContent = 'Browser print dialog opened';
+            }
+        }
+
+        async function silentPrint() {
+            const resultDiv = document.getElementById('silent-result');
+            resultDiv.textContent = 'Printing silently...';
+            
+            if (window.electronAPI && window.electronAPI.printSilent) {
+                try {
+                    const result = await window.electronAPI.printSilent();
+                    resultDiv.textContent = result.success ? 
+                        'Printed successfully to default printer' : 
+                        `Print failed: ${result.error}`;
+                } catch (error) {
+                    resultDiv.textContent = `Error: ${error.message}`;
+                }
+            } else {
+                resultDiv.textContent = 'Silent printing not available in web version';
+            }
+        }
+
+        async function loadPrinters() {
+            const resultDiv = document.getElementById('printer-result');
+            const select = document.getElementById('printer-select');
+            const printButton = document.getElementById('print-selected');
+            
+            resultDiv.textContent = 'Loading printers...';
+            
+            if (window.electronAPI && window.electronAPI.getPrinters) {
+                try {
+                    const result = await window.electronAPI.getPrinters();
+                    if (result.success) {
+                        select.innerHTML = '';
+                        result.printers.forEach(printer => {
+                            const option = document.createElement('option');
+                            option.value = printer.name;
+                            option.textContent = `${printer.displayName} ${printer.isDefault ? '(Default)' : ''}`;
+                            select.appendChild(option);
+                        });
+                        select.style.display = 'inline';
+                        printButton.style.display = 'inline';
+                        resultDiv.textContent = `Found ${result.printers.length} printers`;
+                    } else {
+                        resultDiv.textContent = `Failed to load printers: ${result.error}`;
+                    }
+                } catch (error) {
+                    resultDiv.textContent = `Error: ${error.message}`;
+                }
+            } else {
+                resultDiv.textContent = 'Printer enumeration not available in web version';
+            }
+        }
+
+        async function printToSelected() {
+            const resultDiv = document.getElementById('printer-result');
+            const select = document.getElementById('printer-select');
+            const selectedPrinter = select.value;
+            
+            if (!selectedPrinter) {
+                resultDiv.textContent = 'Please select a printer first';
+                return;
+            }
+            
+            resultDiv.textContent = `Printing to ${selectedPrinter}...`;
+            
+            if (window.electronAPI && window.electronAPI.printSilent) {
+                try {
+                    const result = await window.electronAPI.printSilent({
+                        printerName: selectedPrinter
+                    });
+                    resultDiv.textContent = result.success ? 
+                        `Successfully printed to ${selectedPrinter}` : 
+                        `Print failed: ${result.error}`;
+                } catch (error) {
+                    resultDiv.textContent = `Error: ${error.message}`;
+                }
+            } else {
+                resultDiv.textContent = 'Network printer selection not available in web version';
+            }
+        }
+
+        async function exportToPDF() {
+            const resultDiv = document.getElementById('pdf-result');
+            resultDiv.textContent = 'Generating PDF...';
+            
+            if (window.electronAPI && window.electronAPI.printToPDF) {
+                try {
+                    const result = await window.electronAPI.printToPDF({
+                        pageSize: 'A4',
+                        printBackground: true
+                    });
+                    if (result.success) {
+                        // Create download link for PDF
+                        const blob = new Blob([Uint8Array.from(atob(result.data), c => c.charCodeAt(0))], {type: 'application/pdf'});
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'aeris-document.pdf';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        resultDiv.textContent = 'PDF downloaded successfully';
+                    } else {
+                        resultDiv.textContent = `PDF generation failed: ${result.error}`;
+                    }
+                } catch (error) {
+                    resultDiv.textContent = `Error: ${error.message}`;
+                }
+            } else {
+                resultDiv.textContent = 'PDF export not available in web version';
+            }
+        }
+
+        async function customPrint() {
+            const resultDiv = document.getElementById('custom-result');
+            const landscape = document.getElementById('landscape').checked;
+            const printBackground = document.getElementById('printBackground').checked;
+            const copies = parseInt(document.getElementById('copies').value) || 1;
+            
+            resultDiv.textContent = 'Printing with custom options...';
+            
+            if (window.electronAPI && window.electronAPI.printPage) {
+                try {
+                    const result = await window.electronAPI.printPage({
+                        landscape: landscape,
+                        printBackground: printBackground,
+                        copies: copies,
+                        margins: {
+                            marginType: 'minimum'
+                        }
+                    });
+                    resultDiv.textContent = result.success ? 
+                        'Custom print completed successfully' : 
+                        `Print failed: ${result.error}`;
+                } catch (error) {
+                    resultDiv.textContent = `Error: ${error.message}`;
+                }
+            } else {
+                resultDiv.textContent = 'Custom print options not available in web version';
+            }
+        }
+    </script>
+</body>
+</html> 

@@ -9,7 +9,7 @@ let settingsWindow;
 
 // Default configuration
 const defaultConfig = {
-  baseUrl: 'http://localhost:8080',
+  baseUrl: 'http://10.0.0.140:8000',
   autoStart: false,
   windowState: {
     width: 1200,
@@ -55,6 +55,29 @@ function createMainWindow() {
     mainWindow.show();
   });
 
+  // Automatically inject modal fix script when DOM is ready
+  mainWindow.webContents.on('dom-ready', () => {
+    injectModalFix();
+  });
+
+  // Intercept JavaScript confirm dialogs automatically
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Ensure input events are properly handled
+    if (input.type === 'keyDown' || input.type === 'keyUp') {
+      // Allow all keyboard input to pass through
+      return;
+    }
+  });
+
+  // Handle page reloads and navigation
+  mainWindow.webContents.on('did-finish-load', () => {
+    injectModalFix();
+  });
+
+  mainWindow.webContents.on('did-navigate', () => {
+    injectModalFix();
+  });
+
   // Handle window state changes
   mainWindow.on('resize', saveWindowState);
   mainWindow.on('move', saveWindowState);
@@ -98,6 +121,138 @@ function loadApplication() {
   });
 }
 
+// Automatically inject modal fix script into any loaded page
+function injectModalFix() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  
+  const modalFixScript = `
+    (function() {
+      'use strict';
+      
+      // Skip if already injected
+      if (window.aerisModalFixInjected) return;
+      window.aerisModalFixInjected = true;
+      
+      console.log('Aeris Client: Injecting Bootstrap modal focus fix');
+      
+      // Store original dialog functions
+      const originalConfirm = window.confirm;
+      const originalAlert = window.alert;
+      
+      // Replace window.confirm with async function that uses Electron dialogs
+      window.confirm = function(message) {
+        if (!window.electronAPI || !window.electronAPI.showConfirmDialog) {
+          return originalConfirm.call(this, message);
+        }
+        
+        // Create a synchronous-style promise handler
+        let result = false;
+        const promise = window.electronAPI.showConfirmDialog({
+          message: message || 'Are you sure?',
+          title: 'Confirm'
+        });
+        
+        // Use a flag to track completion
+        let completed = false;
+        promise.then(res => {
+          result = res.confirmed;
+          completed = true;
+          
+          // Restore focus to any open modals
+          setTimeout(() => {
+            const openModals = document.querySelectorAll('.modal.show');
+            openModals.forEach(modal => {
+              const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
+              if (firstInput) {
+                firstInput.focus();
+                console.log('Aeris Client: Restored focus to modal input');
+              }
+            });
+          }, 100);
+          
+        }).catch(error => {
+          console.error('Aeris Client: Dialog error:', error);
+          result = originalConfirm.call(this, message);
+          completed = true;
+        });
+        
+        // For legacy compatibility, return immediately with false
+        // Most modern code should handle this properly with the promise
+        return false;
+      };
+      
+      // Replace window.alert 
+      window.alert = function(message) {
+        if (!window.electronAPI || !window.electronAPI.showAlertDialog) {
+          return originalAlert.call(this, message);
+        }
+        
+        window.electronAPI.showAlertDialog({
+          message: message || '',
+          title: 'Alert',
+          type: 'info'
+        }).then(() => {
+          // Restore focus to any open modals
+          setTimeout(() => {
+            const openModals = document.querySelectorAll('.modal.show');
+            openModals.forEach(modal => {
+              const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
+              if (firstInput) {
+                firstInput.focus();
+                console.log('Aeris Client: Restored focus to modal input after alert');
+              }
+            });
+          }, 100);
+        }).catch(error => {
+          console.error('Aeris Client: Alert error:', error);
+          originalAlert.call(this, message);
+        });
+      };
+      
+      // Enhanced focus restoration for Bootstrap modals
+      document.addEventListener('shown.bs.modal', function(event) {
+        setTimeout(() => {
+          const modal = event.target;
+          const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
+          if (firstInput) {
+            firstInput.focus();
+          }
+        }, 150);
+      });
+      
+      // Better dialog handling with promises for modern code
+      if (window.electronAPI) {
+        window.electronAPI.confirmDialog = async function(message, title = 'Confirm') {
+          const result = await window.electronAPI.showConfirmDialog({
+            message: message,
+            title: title
+          });
+          
+          // Restore modal focus
+          setTimeout(() => {
+            const openModals = document.querySelectorAll('.modal.show');
+            openModals.forEach(modal => {
+              const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
+              if (firstInput) {
+                firstInput.focus();
+              }
+            });
+          }, 100);
+          
+          return result.confirmed;
+        };
+      }
+      
+      console.log('Aeris Client: Modal focus fix injected successfully');
+    })();
+  `;
+
+  // Inject the script into the page
+  mainWindow.webContents.executeJavaScript(modalFixScript).catch(error => {
+    console.error('Failed to inject modal fix script:', error);
+  });
+}
+
 function saveWindowState() {
   if (!mainWindow) return;
   
@@ -138,6 +293,32 @@ function createSettingsWindow() {
   });
 }
 
+function createPrintPreviewWindow(pdfData) {
+  const previewWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    parent: mainWindow,
+    modal: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    },
+    icon: getAppIcon(),
+    title: 'Print Preview'
+  });
+
+  // Create a data URL for the PDF
+  const pdfUrl = `data:application/pdf;base64,${pdfData.toString('base64')}`;
+  
+  // Load the PDF in the preview window
+  previewWindow.loadURL(pdfUrl);
+
+  previewWindow.on('closed', () => {
+    // Clean up
+  });
+}
+
 function createMenu() {
   const template = [
     {
@@ -169,6 +350,30 @@ function createMenu() {
     {
       label: 'View',
       submenu: [
+        {
+          label: 'Print',
+          accelerator: 'CmdOrCtrl+P',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.print();
+            }
+          }
+        },
+        {
+          label: 'Print Preview',
+          accelerator: 'CmdOrCtrl+Shift+P',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.printToPDF({}).then(data => {
+                // Open print preview in new window
+                createPrintPreviewWindow(data);
+              }).catch(error => {
+                console.error('Failed to generate print preview:', error);
+              });
+            }
+          }
+        },
+        { type: 'separator' },
         {
           label: 'Toggle Full Screen',
           accelerator: 'F11',
@@ -226,6 +431,155 @@ ipcMain.handle('test-connection', async (event, url) => {
     
     await testWindow.loadURL(url);
     testWindow.close();
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Print-related IPC handlers
+ipcMain.handle('print-page', async (event, options = {}) => {
+  try {
+    if (!mainWindow) {
+      throw new Error('Main window not available');
+    }
+
+    const printOptions = {
+      silent: options.silent || false,
+      printBackground: options.printBackground !== false,
+      color: options.color !== false,
+      margins: options.margins || {
+        marginType: 'printableArea'
+      },
+      landscape: options.landscape || false,
+      scaleFactor: options.scaleFactor || 100,
+      pagesPerSheet: options.pagesPerSheet || 1,
+      collate: options.collate !== false,
+      copies: options.copies || 1,
+      header: options.header || '',
+      footer: options.footer || ''
+    };
+
+    if (options.deviceName) {
+      printOptions.deviceName = options.deviceName;
+    }
+
+    await mainWindow.webContents.print(printOptions);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('print-to-pdf', async (event, options = {}) => {
+  try {
+    if (!mainWindow) {
+      throw new Error('Main window not available');
+    }
+
+    const pdfOptions = {
+      marginsType: options.marginsType || 0,
+      pageSize: options.pageSize || 'A4',
+      printBackground: options.printBackground !== false,
+      printSelectionOnly: options.printSelectionOnly || false,
+      landscape: options.landscape || false
+    };
+
+    const data = await mainWindow.webContents.printToPDF(pdfOptions);
+    return { success: true, data: data.toString('base64') };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-printers', async () => {
+  try {
+    if (!mainWindow) {
+      throw new Error('Main window not available');
+    }
+
+    const printers = await mainWindow.webContents.getPrintersAsync();
+    return { success: true, printers };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('print-silent', async (event, options = {}) => {
+  try {
+    if (!mainWindow) {
+      throw new Error('Main window not available');
+    }
+
+    const printOptions = {
+      silent: true,
+      printBackground: options.printBackground !== false,
+      deviceName: options.printerName
+    };
+
+    await mainWindow.webContents.print(printOptions);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Dialog handling to fix Bootstrap modal focus issues
+ipcMain.handle('show-confirm-dialog', async (event, options) => {
+  try {
+    if (!mainWindow) {
+      throw new Error('Main window not available');
+    }
+
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Cancel', 'OK'],
+      defaultId: 1,
+      cancelId: 0,
+      title: options.title || 'Confirm',
+      message: options.message || 'Are you sure?',
+      detail: options.detail || '',
+      noLink: true
+    });
+
+    // Restore focus to web contents after dialog
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.focus();
+        // Send focus restoration message to renderer
+        mainWindow.webContents.send('dialog-closed', { confirmed: result.response === 1 });
+      }
+    }, 50);
+
+    return { confirmed: result.response === 1 };
+  } catch (error) {
+    return { confirmed: false, error: error.message };
+  }
+});
+
+ipcMain.handle('show-alert-dialog', async (event, options) => {
+  try {
+    if (!mainWindow) {
+      throw new Error('Main window not available');
+    }
+
+    await dialog.showMessageBox(mainWindow, {
+      type: options.type || 'info',
+      buttons: ['OK'],
+      title: options.title || 'Alert',
+      message: options.message || '',
+      detail: options.detail || '',
+      noLink: true
+    });
+
+    // Restore focus to web contents after dialog
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.focus();
+        mainWindow.webContents.send('dialog-closed', { confirmed: true });
+      }
+    }, 50);
+
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
