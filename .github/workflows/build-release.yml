@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ release ]
 
+# Add permissions for GitHub token
+permissions:
+  contents: write
+  discussions: write
+
 jobs:
   build:
     strategy:
@@ -70,6 +75,29 @@ jobs:
       id: package-version
       run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
       
+    - name: Generate new version
+      id: new-version
+      run: |
+        # Get current version from package.json
+        CURRENT_VERSION="${{ steps.package-version.outputs.version }}"
+        
+        # Split version into parts (assumes format x.y.z)
+        IFS='.' read -r -a VERSION_PARTS <<< "$CURRENT_VERSION"
+        MAJOR=${VERSION_PARTS[0]}
+        MINOR=${VERSION_PARTS[1]}
+        PATCH=${VERSION_PARTS[2]}
+        
+        # Increment patch version
+        NEW_PATCH=$((PATCH + 1))
+        NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+        
+        echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "tag_name=v$NEW_VERSION" >> $GITHUB_OUTPUT
+        
+        echo "Current version: $CURRENT_VERSION"
+        echo "New version: $NEW_VERSION"
+      
     - name: Download macOS artifacts
       uses: actions/download-artifact@v4
       with:
@@ -86,71 +114,51 @@ jobs:
       run: ls -la ./release-assets/
       
     - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
-        tag_name: v${{ steps.package-version.outputs.version }}-${{ github.run_number }}
-        release_name: Aeris Client v${{ steps.package-version.outputs.version }} (Build ${{ github.run_number }})
+        tag_name: ${{ steps.new-version.outputs.tag_name }}
+        name: Aeris Client ${{ steps.new-version.outputs.new_version }}
         body: |
-          ## Aeris ERP Desktop Client
+          ## Aeris ERP Desktop Client ${{ steps.new-version.outputs.new_version }}
           
-          **Version:** ${{ steps.package-version.outputs.version }}
-          **Build:** ${{ github.run_number }}
+          **Version:** ${{ steps.new-version.outputs.new_version }}
+          **Previous Version:** ${{ steps.new-version.outputs.current_version }}
+          **Build Date:** ${{ github.event.head_commit.timestamp }}
           **Commit:** ${{ github.sha }}
           
-          ### Features
+          ### 🚀 Features
           - 🖥️ Cross-platform desktop application (Windows/macOS)
           - 🌐 Connects to Aeris ERP server at `10.0.0.140:8000`
           - 🖨️ Full printing support including network printers
           - 🔧 Automatic Bootstrap modal focus fix (no ERP changes required)
           - ⚙️ Configurable settings and auto-start functionality
           
-          ### Downloads
-          - **Windows**: `Aeris Setup ${{ steps.package-version.outputs.version }}.exe`
-          - **macOS Intel**: `Aeris-${{ steps.package-version.outputs.version }}.dmg`
-          - **macOS Apple Silicon**: `Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg`
+          ### 📦 Downloads
+          Choose the appropriate file for your platform:
           
-          ### Installation
+          **Windows:**
+          - `Aeris-Setup-${{ steps.new-version.outputs.new_version }}.exe` - Windows installer
+          
+          **macOS:**
+          - `Aeris-${{ steps.new-version.outputs.new_version }}-intel.dmg` - macOS Intel
+          - `Aeris-${{ steps.new-version.outputs.new_version }}-arm64.dmg` - macOS Apple Silicon
+          
+          ### 🔧 Installation
           1. Download the appropriate file for your platform
-          2. Run the installer (Windows) or drag to Applications (macOS)
-          3. Launch Aeris - it will automatically connect to your ERP server
+          2. **Windows**: Run the installer and follow the wizard
+          3. **macOS**: Open the DMG and drag Aeris to Applications folder
+          4. Launch Aeris - it will automatically connect to your ERP server
+          
+          ### ⚠️ Security Note
+          On macOS, you may need to right-click the app and select "Open" the first time, or go to System Preferences > Security & Privacy to allow the app to run.
           
           ---
           *Built automatically from release branch*
         draft: false
         prerelease: false
-        
-    - name: Upload Windows Installer
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./release-assets/Aeris Setup ${{ steps.package-version.outputs.version }}.exe
-        asset_name: Aeris-Setup-${{ steps.package-version.outputs.version }}.exe
-        asset_content_type: application/octet-stream
-        
-    - name: Upload macOS DMG (Intel)
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./release-assets/Aeris-${{ steps.package-version.outputs.version }}.dmg
-        asset_name: Aeris-${{ steps.package-version.outputs.version }}-intel.dmg
-        asset_content_type: application/octet-stream
-        
-    - name: Upload macOS DMG (Apple Silicon)
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./release-assets/Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg
-        asset_name: Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg
-        asset_content_type: application/octet-stream
+        files: |
+          ./release-assets/*
+        token: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
     needs: [build, release]
@@ -162,7 +170,7 @@ jobs:
       if: needs.build.result == 'success' && needs.release.result == 'success'
       run: |
         echo "✅ Release build completed successfully!"
-        echo "📦 Artifacts uploaded to GitHub Releases"
+        echo "📦 New version released with auto-incremented version number"
         
     - name: Notify Failure
       if: needs.build.result == 'failure' || needs.release.result == 'failure'
