@@ -9,7 +9,7 @@ let settingsWindow;
 
 // Default configuration
 const defaultConfig = {
-  baseUrl: 'http://10.0.0.140:8000',
+  baseUrl: 'http://localhost:8080',
   autoStart: false,
   windowState: {
     width: 1200,
@@ -35,6 +35,7 @@ function createMainWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
+      webviewTag: true,
       preload: path.join(__dirname, 'preload.js')
     },
     icon: getAppIcon(),
@@ -113,17 +114,22 @@ function createMainWindow() {
 }
 
 function loadApplication() {
-  const baseUrl = store.get('baseUrl', defaultConfig.baseUrl);
-  
-  mainWindow.loadURL(baseUrl).catch(() => {
-    // If can't load the main URL, show error page
+  // Load the application wrapper (includes toolbar + ERP content)
+  mainWindow.loadFile(path.join(__dirname, 'app-wrapper.html')).catch(() => {
+    // If can't load the wrapper, show error page
     mainWindow.loadFile(path.join(__dirname, 'error.html'));
   });
 }
 
-// Automatically inject modal fix script into any loaded page
+// Automatically inject modal fix script only on ERP pages (not toolbar/wrapper)
 function injectModalFix() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  
+  // Skip injection for local HTML files (toolbar, wrapper, etc)
+  const currentUrl = mainWindow.webContents.getURL();
+  if (currentUrl.startsWith('file://') || currentUrl.includes('toolbar.html') || currentUrl.includes('app-wrapper.html')) {
+    return;
+  }
   
   const modalFixScript = `
     (function() {
@@ -147,9 +153,9 @@ function injectModalFix() {
         
         // Create a synchronous-style promise handler
         let result = false;
-        const promise = window.electronAPI.showConfirmDialog({
+        const promise =         window.electronAPI.showConfirmDialog({
           message: message || 'Are you sure?',
-          title: 'Confirm'
+          title: 'Aeris - Confirm'
         });
         
         // Use a flag to track completion
@@ -189,7 +195,7 @@ function injectModalFix() {
         
         window.electronAPI.showAlertDialog({
           message: message || '',
-          title: 'Alert',
+          title: 'Aeris - Alert',
           type: 'info'
         }).then(() => {
           // Restore focus to any open modals
@@ -402,10 +408,12 @@ function createMenu() {
 
 // IPC handlers
 ipcMain.handle('get-settings', () => {
-  return {
+  const settings = {
     baseUrl: store.get('baseUrl', defaultConfig.baseUrl),
     autoStart: store.get('autoStart', defaultConfig.autoStart)
   };
+  console.log('Aeris Client: Returning settings:', settings);
+  return settings;
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
@@ -524,6 +532,57 @@ ipcMain.handle('print-silent', async (event, options = {}) => {
   }
 });
 
+// Toolbar navigation handlers
+ipcMain.handle('open-settings', async () => {
+  createSettingsWindow();
+  return { success: true };
+});
+
+ipcMain.handle('navigate', async (event, direction) => {
+  try {
+    if (!mainWindow) {
+      throw new Error('Main window not available');
+    }
+
+    switch (direction) {
+      case 'back':
+        if (mainWindow.webContents.canGoBack()) {
+          mainWindow.webContents.goBack();
+        }
+        break;
+      case 'forward':
+        if (mainWindow.webContents.canGoForward()) {
+          mainWindow.webContents.goForward();
+        }
+        break;
+      case 'refresh':
+        mainWindow.webContents.reload();
+        break;
+      case 'home':
+        loadApplication();
+        break;
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('navigate-to-url', async (event, url) => {
+  try {
+    if (!mainWindow) {
+      throw new Error('Main window not available');
+    }
+
+    // Send navigation request to app wrapper to handle iframe navigation
+    mainWindow.webContents.send('navigate-to-url', { url });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // Dialog handling to fix Bootstrap modal focus issues
 ipcMain.handle('show-confirm-dialog', async (event, options) => {
   try {
@@ -536,10 +595,11 @@ ipcMain.handle('show-confirm-dialog', async (event, options) => {
       buttons: ['Cancel', 'OK'],
       defaultId: 1,
       cancelId: 0,
-      title: options.title || 'Confirm',
+      title: options.title || 'Aeris - Confirm',
       message: options.message || 'Are you sure?',
       detail: options.detail || '',
-      noLink: true
+      noLink: true,
+      icon: path.join(__dirname, 'assets/icons/icon.png')
     });
 
     // Restore focus to web contents after dialog
@@ -566,10 +626,11 @@ ipcMain.handle('show-alert-dialog', async (event, options) => {
     await dialog.showMessageBox(mainWindow, {
       type: options.type || 'info',
       buttons: ['OK'],
-      title: options.title || 'Alert',
+      title: options.title || 'Aeris - Alert',
       message: options.message || '',
       detail: options.detail || '',
-      noLink: true
+      noLink: true,
+      icon: path.join(__dirname, 'assets/icons/icon.png')
     });
 
     // Restore focus to web contents after dialog
@@ -604,6 +665,13 @@ app.whenReady().then(() => {
       store.set(key, defaultConfig[key]);
     }
   });
+  
+  // Reset URL to correct localhost:8080 if it was changed to 10.0.0.140:8000
+  const currentBaseUrl = store.get('baseUrl');
+  if (currentBaseUrl === 'http://10.0.0.140:8000') {
+    console.log('Aeris Client: Resetting URL from 10.0.0.140:8000 back to localhost:8080');
+    store.set('baseUrl', defaultConfig.baseUrl);
+  }
 
   createMainWindow();
   createMenu();
@@ -616,9 +684,8 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Always quit the app when all windows are closed, even on macOS
+  app.quit();
 });
 
 app.on('web-contents-created', (event, contents) => {

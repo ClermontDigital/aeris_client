@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aeris Toolbar</title>
+    <link rel="stylesheet" href="assets/fonts/poppins.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #003049;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            padding: 5px 10px;
+            user-select: none;
+            -webkit-app-region: drag; /* Make the toolbar draggable */
+        }
+        
+        .toolbar-container {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            gap: 10px;
+        }
+        
+        .toolbar-logo {
+            height: 60px;
+            width: auto;
+            margin-right: 15px;
+            -webkit-app-region: no-drag;
+        }
+        
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .toolbar-center {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            gap: 5px;
+        }
+        
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .toolbar-button {
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(10px);
+            color: #e2e8f0;
+            font-size: 18px;
+            font-weight: 500;
+            -webkit-app-region: no-drag; /* Buttons should not drag */
+        }
+        
+        .toolbar-button:hover {
+            background: rgba(255, 255, 255, 0.25);
+            border-color: rgba(255, 255, 255, 0.4);
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        }
+        
+        .toolbar-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .toolbar-button.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
+        .toolbar-separator {
+            width: 1px;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.3);
+            margin: 0 5px;
+        }
+        
+        .toolbar-title {
+            text-align: center;
+            color: #e2e8f0;
+            font-size: 14px;
+            font-weight: 500;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            -webkit-app-region: no-drag;
+            margin-right: 10px;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #e2e8f0;
+            font-size: 13px;
+            font-weight: 500;
+            margin-right: 10px;
+            -webkit-app-region: no-drag;
+        }
+        
+        .user-name {
+            color: white;
+        }
+        
+        .logout-btn {
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            -webkit-app-region: no-drag;
+        }
+        
+        .logout-btn:hover {
+            background: #b91c1c;
+        }
+        
+        .connection-status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4ade80;
+            margin-right: 10px;
+            box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+            animation: pulse 2s infinite;
+        }
+        
+        .connection-status.disconnected {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .tooltip {
+            position: absolute;
+            bottom: -35px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 1000;
+        }
+        
+        .toolbar-button:hover .tooltip {
+            opacity: 1;
+        }
+        
+        /* Function key buttons - smaller text */
+        .function-btn {
+            font-size: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar-container">
+        <!-- Logo on the left -->
+        <div class="toolbar-left">
+            <img src="assets/images/logo.png" alt="Aeris" class="toolbar-logo">
+        </div>
+        
+        <!-- Centered navigation and function buttons -->
+        <div class="toolbar-center">
+            <!-- Navigation buttons -->
+            <button class="toolbar-button" id="back-btn" title="Go Back">
+                ←
+                <div class="tooltip">Go Back (Alt+←)</div>
+            </button>
+            
+            <button class="toolbar-button" id="forward-btn" title="Go Forward">
+                →
+                <div class="tooltip">Go Forward (Alt+→)</div>
+            </button>
+            
+            <button class="toolbar-button" id="refresh-btn" title="Refresh">
+                ↻
+                <div class="tooltip">Refresh (F5)</div>
+            </button>
+            
+            <button class="toolbar-button" id="home-btn" title="Home">
+                ⌂
+                <div class="tooltip">Home (Ctrl+H)</div>
+            </button>
+            
+            <!-- <div class="toolbar-separator"></div> -->
+            
+            <!-- Function buttons for ERP shortcuts - COMMENTED OUT FOR FUTURE REFINEMENT -->
+            <!-- <button class="toolbar-button function-btn" id="f1-btn" title="Dashboard">
+                F1
+                <div class="tooltip">Dashboard</div>
+            </button>
+            
+            <button class="toolbar-button function-btn" id="f2-btn" title="Sales">
+                F2
+                <div class="tooltip">Sales</div>
+            </button>
+            
+            <button class="toolbar-button function-btn" id="f3-btn" title="Inventory">
+                F3
+                <div class="tooltip">Inventory</div>
+            </button>
+            
+            <button class="toolbar-button function-btn" id="f4-btn" title="Reports">
+                F4
+                <div class="tooltip">Reports</div>
+            </button>
+            
+            <button class="toolbar-button function-btn" id="f5-btn" title="Settings">
+                F5
+                <div class="tooltip">Settings</div>
+            </button> -->
+            
+            <!-- <div class="toolbar-separator"></div> -->
+            
+            <!-- Print button -->
+            <button class="toolbar-button" id="print-btn" title="Print">
+                🖨
+                <div class="tooltip">Print (Ctrl+P)</div>
+            </button>
+        </div>
+        
+        <!-- Right side - Title, user info, status, and settings -->
+        <div class="toolbar-right">
+            <!-- Title and status -->
+            <div class="toolbar-title">
+                <span id="page-title">Aeris ERP</span>
+            </div>
+            
+            <!-- User info -->
+            <div class="user-info" id="user-info" style="display: none;">
+                <span id="user-name" class="user-name">Joe Thorton</span>
+                <button class="logout-btn" id="logout-btn">Logout</button>
+            </div>
+            
+            <!-- Connection status -->
+            <div class="connection-status" id="connection-status"></div>
+            
+            <!-- Settings button -->
+            <button class="toolbar-button" id="settings-btn" title="Application Settings">
+                ⚙
+                <div class="tooltip">App Settings (Ctrl+,)</div>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Function to send messages to parent wrapper
+        function sendAction(action, data = null) {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'toolbar-action',
+                    action: action,
+                    data: data
+                }, '*');
+            }
+        }
+        
+        // Button click handlers
+        document.getElementById('back-btn').addEventListener('click', () => {
+            sendAction('navigate-back');
+        });
+        
+        document.getElementById('forward-btn').addEventListener('click', () => {
+            sendAction('navigate-forward');
+        });
+        
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            sendAction('refresh');
+        });
+        
+        document.getElementById('home-btn').addEventListener('click', () => {
+            sendAction('home');
+        });
+        
+        document.getElementById('print-btn').addEventListener('click', () => {
+            sendAction('print');
+        });
+        
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            sendAction('open-settings');
+        });
+        
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            sendAction('logout');
+        });
+        
+        // Function key handlers - COMMENTED OUT FOR FUTURE REFINEMENT
+        /* document.getElementById('f1-btn').addEventListener('click', () => {
+            sendAction('navigate-to-url', { url: '/dashboard' });
+        });
+        
+        document.getElementById('f2-btn').addEventListener('click', () => {
+            sendAction('navigate-to-url', { url: '/sales' });
+        });
+        
+        document.getElementById('f3-btn').addEventListener('click', () => {
+            sendAction('navigate-to-url', { url: '/inventory' });
+        });
+        
+        document.getElementById('f4-btn').addEventListener('click', () => {
+            sendAction('navigate-to-url', { url: '/reports' });
+        });
+        
+        document.getElementById('f5-btn').addEventListener('click', () => {
+            sendAction('navigate-to-url', { url: '/settings' });
+        }); */
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.altKey && e.key === 'ArrowLeft') {
+                document.getElementById('back-btn').click();
+            } else if (e.altKey && e.key === 'ArrowRight') {
+                document.getElementById('forward-btn').click();
+            } else if (e.key === 'F5') {
+                e.preventDefault();
+                document.getElementById('refresh-btn').click();
+            } else if (e.ctrlKey && e.key === 'h') {
+                e.preventDefault();
+                document.getElementById('home-btn').click();
+            } else if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                document.getElementById('print-btn').click();
+            /* } else if (e.key === 'F1') {
+                e.preventDefault();
+                document.getElementById('f1-btn').click();
+            } else if (e.key === 'F2') {
+                e.preventDefault();
+                document.getElementById('f2-btn').click();
+            } else if (e.key === 'F3') {
+                e.preventDefault();
+                document.getElementById('f3-btn').click();
+            } else if (e.key === 'F4') {
+                e.preventDefault();
+                document.getElementById('f4-btn').click();
+            */ }
+        });
+        
+        // Listen for messages from parent wrapper
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'navigation-update') {
+                document.getElementById('back-btn').classList.toggle('disabled', !event.data.canGoBack);
+                document.getElementById('forward-btn').classList.toggle('disabled', !event.data.canGoForward);
+                
+                if (event.data.title) {
+                    document.getElementById('page-title').textContent = event.data.title;
+                }
+            } else if (event.data.type === 'connection-status') {
+                const status = document.getElementById('connection-status');
+                status.classList.toggle('disconnected', !event.data.connected);
+            } else if (event.data.type === 'user-info') {
+                // Update user information in toolbar
+                const userInfo = document.getElementById('user-info');
+                const userName = document.getElementById('user-name');
+                
+                if (event.data.userName && event.data.userName !== 'User') {
+                    userName.textContent = event.data.userName;
+                    userInfo.style.display = 'flex';
+                }
+            }
+        });
+        
+        console.log('Aeris toolbar loaded');
+    </script>
+</body>
+</html> 

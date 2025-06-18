@@ -17,5 +17,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Focus restoration listener
   onDialogClosed: (callback) => ipcRenderer.on('dialog-closed', callback),
-  removeDialogClosedListener: (callback) => ipcRenderer.removeListener('dialog-closed', callback)
+  removeDialogClosedListener: (callback) => ipcRenderer.removeListener('dialog-closed', callback),
+  
+  // Settings window
+  openSettings: () => ipcRenderer.invoke('open-settings'),
+  
+  // Navigation functions for toolbar
+  navigate: (direction) => ipcRenderer.invoke('navigate', direction),
+  navigateToUrl: (url) => ipcRenderer.invoke('navigate-to-url', url),
+  
+  // Update listeners for toolbar
+  onNavigationUpdate: (callback) => ipcRenderer.on('navigation-update', callback),
+  onConnectionStatus: (callback) => ipcRenderer.on('connection-status', callback),
+  onNavigateToUrl: (callback) => ipcRenderer.on('navigate-to-url', callback)
 }); 

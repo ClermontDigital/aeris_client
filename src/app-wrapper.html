@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aeris ERP Client</title>
+    <link rel="stylesheet" href="assets/fonts/poppins.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        .toolbar-frame {
+            height: 60px;
+            width: 100%;
+            border: none;
+            background: #003049;
+        }
+        
+        .content-frame {
+            flex: 1;
+            width: 100%;
+            border: none;
+            background: white;
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 1000;
+            transition: opacity 0.3s ease;
+        }
+        
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e3e3e3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .error-overlay {
+            position: absolute;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #f8f9fa;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 1001;
+        }
+        
+        .error-content {
+            text-align: center;
+            max-width: 400px;
+            padding: 20px;
+        }
+        
+        .error-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .error-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .error-message {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        
+        .retry-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        
+        .retry-button:hover {
+            background: #5a67d8;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Toolbar at the top -->
+        <iframe 
+            id="toolbar-frame" 
+            class="toolbar-frame" 
+            src="toolbar.html"
+            frameborder="0"
+            scrolling="no">
+        </iframe>
+        
+        <!-- Main content area -->
+        <webview 
+            id="content-frame" 
+            class="content-frame" 
+            allowpopups>
+        </webview>
+        
+        <!-- Loading overlay -->
+        <div id="loading-overlay" class="loading-overlay">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Connecting to Aeris ERP...</div>
+        </div>
+        
+        <!-- Error overlay -->
+        <div id="error-overlay" class="error-overlay">
+            <div class="error-content">
+                <div class="error-icon">⚠️</div>
+                <div class="error-title">Cannot Connect to Aeris ERP</div>
+                <div class="error-message">
+                    The Aeris ERP server is not available. Please check that the server is running and try again.
+                </div>
+                <button class="retry-button" onclick="retryConnection()">Retry Connection</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUrl = '';
+        let isConnected = false;
+        
+        // Initialize the app
+        async function initializeApp() {
+            try {
+                const settings = await window.electronAPI.getSettings();
+                currentUrl = settings.baseUrl;
+                console.log('Aeris Client: Loading ERP from URL:', currentUrl);
+                loadMainApp();
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+                showError();
+            }
+        }
+        
+        function loadMainApp() {
+            const contentFrame = document.getElementById('content-frame');
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const errorOverlay = document.getElementById('error-overlay');
+            
+            // Show loading
+            loadingOverlay.classList.remove('hidden');
+            errorOverlay.style.display = 'none';
+            
+            // Set up webview load event handlers
+            contentFrame.addEventListener('dom-ready', () => {
+                console.log('Aeris Client: ERP webview loaded successfully');
+                
+                // Inject CSS to hide the website header and extract user info
+                injectWebsiteCustomizations(contentFrame);
+                
+                setTimeout(() => {
+                    loadingOverlay.classList.add('hidden');
+                    isConnected = true;
+                    updateConnectionStatus(true);
+                }, 500);
+            });
+            
+            contentFrame.addEventListener('did-fail-load', (error) => {
+                console.error('Aeris Client: ERP webview load error:', error);
+                showError();
+            });
+            
+            // Add timeout for loading
+            const timeout = setTimeout(() => {
+                console.error('Aeris Client: ERP webview load timeout');
+                showError();
+            }, 15000); // 15 second timeout
+            
+            // Load the main application
+            console.log('Aeris Client: Setting webview src to:', currentUrl);
+            contentFrame.src = currentUrl;
+            
+            // Clear timeout on successful load
+            contentFrame.addEventListener('dom-ready', () => {
+                clearTimeout(timeout);
+            });
+            
+            // Set up periodic connection check
+            setInterval(checkConnection, 30000); // Check every 30 seconds
+        }
+        
+        function showError() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+            document.getElementById('error-overlay').style.display = 'flex';
+            isConnected = false;
+            updateConnectionStatus(false);
+        }
+        
+        function retryConnection() {
+            loadMainApp();
+        }
+        
+        function checkConnection() {
+            // Simple connection check for webview
+            try {
+                const frame = document.getElementById('content-frame');
+                if (frame && frame.src && !isConnected) {
+                    isConnected = true;
+                    updateConnectionStatus(true);
+                }
+            } catch (error) {
+                if (isConnected) {
+                    isConnected = false;
+                    updateConnectionStatus(false);
+                }
+            }
+        }
+        
+        function updateConnectionStatus(connected) {
+            // Send status to toolbar
+            const toolbarFrame = document.getElementById('toolbar-frame');
+            if (toolbarFrame.contentWindow) {
+                toolbarFrame.contentWindow.postMessage({
+                    type: 'connection-status',
+                    connected: connected
+                }, '*');
+            }
+        }
+        
+        function injectWebsiteCustomizations(webview) {
+            // Inject CSS and JavaScript to customize the website
+            webview.executeJavaScript(`
+                (function() {
+                    // Apply customizations to the website
+                    const style = document.createElement('style');
+                    style.textContent = \`
+                        /* Apply Poppins font to the entire website */
+                        * {
+                            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+                        }
+                        
+                        /* Keep navigation visible but hide only user dropdown area visually */
+                        .navbar .dropdown-toggle,
+                        .navbar .dropdown-menu,
+                        .navbar .ms-auto .dropdown,
+                        .navbar .ms-auto .d-flex,
+                        .navbar .ms-auto,
+                        .navbar .navbar-nav .dropdown {
+                            position: absolute !important;
+                            left: -9999px !important;
+                            opacity: 0 !important;
+                            pointer-events: none !important;
+                        }
+                        
+                        /* Hide the dark top header if it exists */
+                        .navbar.bg-secondary,
+                        .navbar-dark.bg-secondary {
+                            display: none !important;
+                        }
+                    \`;
+                    document.head.appendChild(style);
+                    
+                    // Extract user information
+                    setTimeout(() => {
+                        let userName = 'User';
+                        
+                        // Try different selectors to find the username in Aeris ERP
+                        const userSelectors = [
+                            '.dropdown-toggle',  // The user dropdown in top nav
+                            '.navbar .dropdown-toggle',
+                            '.user-dropdown .dropdown-toggle',
+                            '.ms-auto .dropdown-toggle',
+                            'a[data-bs-toggle="dropdown"]',
+                            '.navbar-nav .dropdown-toggle'
+                        ];
+                        
+                        for (const selector of userSelectors) {
+                            const element = document.querySelector(selector);
+                            if (element && element.textContent.trim()) {
+                                // Clean up the text (remove extra whitespace, icons, etc.)
+                                let text = element.textContent.trim();
+                                // Remove common icon classes or unicode characters
+                                text = text.replace(/[📤⚡👤🔽▼]/g, '').trim();
+                                if (text && text !== 'User' && text.length > 0) {
+                                    userName = text;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // If still not found, try looking in the main content area
+                        if (userName === 'User') {
+                            const welcomeElements = document.querySelectorAll('*');
+                            for (const el of welcomeElements) {
+                                const text = el.textContent;
+                                if (text && text.includes('Welcome back,')) {
+                                    const match = text.match(/Welcome back,\\s*([^,]+)/);
+                                    if (match && match[1]) {
+                                        userName = match[1].trim();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Additional check for direct text content
+                        if (userName === 'User') {
+                            // Try to find "Joe Thorton" specifically in the page
+                            const pageText = document.body.textContent;
+                            if (pageText.includes('Joe Thorton')) {
+                                userName = 'Joe Thorton';
+                            }
+                        }
+                        
+                        console.log('Aeris Client: Extracted username:', userName);
+                        
+                        // Send user info to parent
+                        window.parent.postMessage({
+                            type: 'user-info',
+                            userName: userName
+                        }, '*');
+                    }, 2000);
+                })();
+            `).catch(err => {
+                console.log('Could not inject website customizations:', err);
+            });
+        }
+        
+        function updateNavigationState() {
+            const contentFrame = document.getElementById('content-frame');
+            const toolbarFrame = document.getElementById('toolbar-frame');
+            
+            if (contentFrame && toolbarFrame.contentWindow) {
+                try {
+                    const canGoBack = contentFrame.canGoBack();
+                    const canGoForward = contentFrame.canGoForward();
+                    const title = contentFrame.getTitle() || 'Aeris ERP';
+                    
+                    toolbarFrame.contentWindow.postMessage({
+                        type: 'navigation-update',
+                        canGoBack: canGoBack,
+                        canGoForward: canGoForward,
+                        title: title
+                    }, '*');
+                } catch (error) {
+                    // Fallback to defaults
+                    toolbarFrame.contentWindow.postMessage({
+                        type: 'navigation-update',
+                        canGoBack: false,
+                        canGoForward: false,
+                        title: 'Aeris ERP'
+                    }, '*');
+                }
+            }
+        }
+        
+        // Listen for messages from toolbar and webview
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'toolbar-action') {
+                handleToolbarAction(event.data.action, event.data.data);
+            } else if (event.data.type === 'user-info') {
+                // Update toolbar with user information
+                const toolbarFrame = document.getElementById('toolbar-frame');
+                if (toolbarFrame.contentWindow) {
+                    toolbarFrame.contentWindow.postMessage({
+                        type: 'user-info',
+                        userName: event.data.userName
+                    }, '*');
+                }
+            }
+        });
+        
+        function handleToolbarAction(action, data) {
+            const contentFrame = document.getElementById('content-frame');
+            
+            switch (action) {
+                case 'navigate-back':
+                    try {
+                        if (contentFrame.canGoBack()) {
+                            contentFrame.goBack();
+                        }
+                    } catch (error) {
+                        console.log('Cannot navigate back');
+                    }
+                    break;
+                    
+                case 'navigate-forward':
+                    try {
+                        if (contentFrame.canGoForward()) {
+                            contentFrame.goForward();
+                        }
+                    } catch (error) {
+                        console.log('Cannot navigate forward');
+                    }
+                    break;
+                    
+                case 'refresh':
+                    contentFrame.reload();
+                    break;
+                    
+                case 'home':
+                    contentFrame.src = currentUrl;
+                    break;
+                    
+                case 'navigate-to-url':
+                    const fullUrl = currentUrl + data.url;
+                    contentFrame.src = fullUrl;
+                    break;
+                    
+                case 'print':
+                    try {
+                        contentFrame.print();
+                    } catch (error) {
+                        // Fallback to Electron print
+                        window.electronAPI.printPage();
+                    }
+                    break;
+                    
+                case 'open-settings':
+                    window.electronAPI.openSettings();
+                    break;
+                    
+                case 'logout':
+                    // Trigger logout in the webview
+                    try {
+                        contentFrame.executeJavaScript(`
+                            // Look for logout button in Aeris ERP
+                            const logoutSelectors = [
+                                '.dropdown-menu a[href*="logout"]',
+                                '.dropdown-menu .logout',
+                                'a[data-action="logout"]',
+                                '.user-dropdown a[href*="logout"]',
+                                '.navbar .dropdown-menu a:last-child',
+                                'form[action*="logout"] button',
+                                'button[type="submit"][name*="logout"]'
+                            ];
+                            
+                            let logoutFound = false;
+                            for (const selector of logoutSelectors) {
+                                const logoutBtn = document.querySelector(selector);
+                                if (logoutBtn) {
+                                    // First, open the dropdown if needed
+                                    const dropdown = document.querySelector('.dropdown-toggle');
+                                    if (dropdown && !dropdown.getAttribute('aria-expanded')) {
+                                        dropdown.click();
+                                        setTimeout(() => logoutBtn.click(), 100);
+                                    } else {
+                                        logoutBtn.click();
+                                    }
+                                    logoutFound = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!logoutFound) {
+                                // Fallback - try to navigate to logout URL
+                                window.location.href = '/logout';
+                            }
+                        `);
+                    } catch (error) {
+                        console.log('Could not trigger logout:', error);
+                    }
+                    break;
+            }
+            
+            // Update navigation state after action
+            setTimeout(updateNavigationState, 100);
+        }
+        
+        // Listen for navigation messages from main process
+        if (window.electronAPI && window.electronAPI.onNavigateToUrl) {
+            window.electronAPI.onNavigateToUrl((event, data) => {
+                handleToolbarAction('navigate-to-url', data);
+            });
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            if (window.electronAPI) {
+                initializeApp();
+            } else {
+                showError();
+            }
+        });
+        
+        // Update navigation state periodically
+        setInterval(updateNavigationState, 2000);
+    </script>
+</body>
+</html> 
