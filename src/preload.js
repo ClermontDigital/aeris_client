@@ -29,5 +29,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Update listeners for toolbar
   onNavigationUpdate: (callback) => ipcRenderer.on('navigation-update', callback),
   onConnectionStatus: (callback) => ipcRenderer.on('connection-status', callback),
-  onNavigateToUrl: (callback) => ipcRenderer.on('navigate-to-url', callback)
+  onNavigateToUrl: (callback) => ipcRenderer.on('navigate-to-url', callback),
+  
+  // Update checking functions
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  openReleasePage: (url) => ipcRenderer.invoke('open-release-page', url),
+  
+  // Session management functions
+  getSessions: () => ipcRenderer.invoke('get-sessions'),
+  createSession: (name, pin) => ipcRenderer.invoke('create-session', name, pin),
+  deleteSession: (sessionId) => ipcRenderer.invoke('delete-session', sessionId),
+  switchToSession: (sessionId, pin) => ipcRenderer.invoke('switch-to-session', sessionId, pin),
+  renameSession: (sessionId, newName) => ipcRenderer.invoke('rename-session', sessionId, newName),
+  getActiveSession: () => ipcRenderer.invoke('get-active-session'),
+  showSessionSwitcher: () => ipcRenderer.invoke('show-session-switcher'),
+  closeSessionSwitcher: () => ipcRenderer.invoke('close-session-switcher'),
+  createNewSession: () => ipcRenderer.invoke('create-new-session'),
+  updateSessionActivity: () => ipcRenderer.invoke('update-session-activity'),
+  
+  // Session event listeners
+  onSessionLocked: (callback) => ipcRenderer.on('session-locked', callback),
+  onSessionSwitched: (callback) => ipcRenderer.on('session-switched', callback),
+  removeSessionListeners: () => {
+    ipcRenderer.removeAllListeners('session-locked');
+    ipcRenderer.removeAllListeners('session-switched');
+  }
 }); 

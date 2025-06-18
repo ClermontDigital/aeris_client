@@ -507,6 +507,13 @@
                         console.log('Could not trigger logout:', error);
                     }
                     break;
+                    
+                case 'check-update':
+                    handleUpdateCheck();
+                    break;
+                case 'show-sessions':
+                    handleShowSessions();
+                    break;
             }
             
             // Update navigation state after action
@@ -528,6 +535,260 @@
                 showError();
             }
         });
+        
+        // Handle update checking and display
+        async function handleUpdateCheck() {
+            if (!window.electronAPI || !window.electronAPI.checkForUpdates) {
+                console.log('Update checking not available');
+                return;
+            }
+            
+            try {
+                const result = await window.electronAPI.checkForUpdates();
+                if (result.success) {
+                    if (result.updateAvailable) {
+                        showUpdateDialog(result);
+                    } else {
+                        showNoUpdateDialog(result);
+                    }
+                } else {
+                    console.error('Update check failed:', result.error);
+                    showUpdateErrorDialog();
+                }
+            } catch (error) {
+                console.error('Update check error:', error);
+                showUpdateErrorDialog();
+            }
+        }
+        
+        async function handleShowSessions() {
+            try {
+                await window.electronAPI.showSessionSwitcher();
+            } catch (error) {
+                console.error('Failed to show session switcher:', error);
+            }
+        }
+        
+        function showUpdateDialog(updateInfo) {
+            // Create update dialog overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                font-family: 'Poppins', sans-serif;
+            `;
+            
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 30px;
+                max-width: 500px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 20px;">🎉</div>
+                <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">Update Available!</h2>
+                <p style="color: #666; margin-bottom: 20px; line-height: 1.5;">
+                    A new version of Aeris is available.<br>
+                    <strong>Current:</strong> v${updateInfo.currentVersion}<br>
+                    <strong>Latest:</strong> v${updateInfo.latestVersion}
+                </p>
+                <div style="margin-bottom: 25px;">
+                    <button id="download-update" style="
+                        background: #667eea;
+                        color: white;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 6px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        margin-right: 10px;
+                        transition: background 0.2s ease;
+                    ">Download Update</button>
+                    <button id="view-release" style="
+                        background: #f3f4f6;
+                        color: #374151;
+                        border: 1px solid #d1d5db;
+                        padding: 12px 24px;
+                        border-radius: 6px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        margin-right: 10px;
+                        transition: all 0.2s ease;
+                    ">View Release Notes</button>
+                    <button id="close-dialog" style="
+                        background: transparent;
+                        color: #6b7280;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 6px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        transition: color 0.2s ease;
+                    ">Later</button>
+                </div>
+            `;
+            
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            
+            // Event handlers
+            document.getElementById('download-update').addEventListener('click', () => {
+                if (updateInfo.downloadUrl) {
+                    window.electronAPI.openReleasePage(updateInfo.downloadUrl);
+                } else {
+                    window.electronAPI.openReleasePage(updateInfo.releaseUrl);
+                }
+                document.body.removeChild(overlay);
+            });
+            
+            document.getElementById('view-release').addEventListener('click', () => {
+                window.electronAPI.openReleasePage(updateInfo.releaseUrl);
+                document.body.removeChild(overlay);
+            });
+            
+            document.getElementById('close-dialog').addEventListener('click', () => {
+                document.body.removeChild(overlay);
+            });
+            
+            // Close on overlay click
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    document.body.removeChild(overlay);
+                }
+            });
+        }
+        
+        function showNoUpdateDialog(updateInfo) {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                font-family: 'Poppins', sans-serif;
+            `;
+            
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 30px;
+                max-width: 400px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+                <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">You're Up to Date!</h2>
+                <p style="color: #666; margin-bottom: 25px; line-height: 1.5;">
+                    You have the latest version of Aeris.<br>
+                    <strong>Current:</strong> v${updateInfo.currentVersion}
+                </p>
+                <button id="close-dialog" style="
+                    background: #667eea;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: background 0.2s ease;
+                ">OK</button>
+            `;
+            
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            
+            document.getElementById('close-dialog').addEventListener('click', () => {
+                document.body.removeChild(overlay);
+            });
+            
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    document.body.removeChild(overlay);
+                }
+            });
+        }
+        
+        function showUpdateErrorDialog() {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                font-family: 'Poppins', sans-serif;
+            `;
+            
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 30px;
+                max-width: 400px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+                <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">Update Check Failed</h2>
+                <p style="color: #666; margin-bottom: 25px; line-height: 1.5;">
+                    Unable to check for updates. Please check your internet connection and try again.
+                </p>
+                <button id="close-dialog" style="
+                    background: #667eea;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: background 0.2s ease;
+                ">OK</button>
+            `;
+            
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            
+            document.getElementById('close-dialog').addEventListener('click', () => {
+                document.body.removeChild(overlay);
+            });
+            
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    document.body.removeChild(overlay);
+                }
+            });
+        }
         
         // Update navigation state periodically
         setInterval(updateNavigationState, 2000);

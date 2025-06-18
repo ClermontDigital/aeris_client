@@ -190,6 +190,41 @@
             font-size: 12px;
             font-weight: 600;
         }
+        
+        /* Update notification styles */
+        .update-notification {
+            background: #f59e0b;
+            color: white;
+            border: 1px solid #d97706;
+            animation: updatePulse 2s infinite;
+            position: relative;
+        }
+        
+        .update-notification:hover {
+            background: #d97706;
+            border-color: #b45309;
+        }
+        
+        .update-notification::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 8px;
+            height: 8px;
+            background: #ef4444;
+            border-radius: 50%;
+            border: 2px solid #003049;
+        }
+        
+        @keyframes updatePulse {
+            0%, 100% { 
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+            }
+            50% { 
+                box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+            }
+        }
     </style>
 </head>
 <body>
@@ -257,6 +292,12 @@
                 🖨
                 <div class="tooltip">Print (Ctrl+P)</div>
             </button>
+            
+            <!-- Session switcher button -->
+            <button class="toolbar-button" id="sessions-btn" title="Session Manager">
+                👥
+                <div class="tooltip">Manage Sessions (Ctrl+Shift+S)</div>
+            </button>
         </div>
         
         <!-- Right side - Title, user info, status, and settings -->
@@ -274,6 +315,12 @@
             
             <!-- Connection status -->
             <div class="connection-status" id="connection-status"></div>
+            
+            <!-- Update notification button (hidden by default) -->
+            <button class="toolbar-button" id="update-btn" title="Update Available" style="display: none;">
+                ↗
+                <div class="tooltip">Update Available - Click to Download</div>
+            </button>
             
             <!-- Settings button -->
             <button class="toolbar-button" id="settings-btn" title="Application Settings">
@@ -324,6 +371,14 @@
             sendAction('logout');
         });
         
+        document.getElementById('update-btn').addEventListener('click', () => {
+            sendAction('check-update');
+        });
+        
+        document.getElementById('sessions-btn').addEventListener('click', () => {
+            sendAction('show-sessions');
+        });
+        
         // Function key handlers - COMMENTED OUT FOR FUTURE REFINEMENT
         /* document.getElementById('f1-btn').addEventListener('click', () => {
             sendAction('navigate-to-url', { url: '/dashboard' });
@@ -360,6 +415,9 @@
             } else if (e.ctrlKey && e.key === 'p') {
                 e.preventDefault();
                 document.getElementById('print-btn').click();
+            } else if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+                e.preventDefault();
+                document.getElementById('sessions-btn').click();
             /* } else if (e.key === 'F1') {
                 e.preventDefault();
                 document.getElementById('f1-btn').click();
@@ -374,6 +432,37 @@
                 document.getElementById('f4-btn').click();
             */ }
         });
+        
+        // Check for updates on startup
+        async function checkForUpdates() {
+            if (window.electronAPI && window.electronAPI.checkForUpdates) {
+                try {
+                    const result = await window.electronAPI.checkForUpdates();
+                    if (result.success && result.updateAvailable) {
+                        showUpdateNotification(result);
+                    }
+                } catch (error) {
+                    console.log('Update check failed:', error);
+                }
+            }
+        }
+        
+        function showUpdateNotification(updateInfo) {
+            const updateBtn = document.getElementById('update-btn');
+            updateBtn.style.display = 'block';
+            updateBtn.classList.add('update-notification');
+            updateBtn.title = `Update available: v${updateInfo.latestVersion}`;
+            updateBtn.querySelector('.tooltip').textContent = `v${updateInfo.latestVersion} Available - Click to Download`;
+            
+            // Store update info for later use
+            updateBtn.updateInfo = updateInfo;
+        }
+        
+        // Check for updates every 6 hours
+        setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+        
+        // Check on startup (after a short delay)
+        setTimeout(checkForUpdates, 5000);
         
         // Listen for messages from parent wrapper
         window.addEventListener('message', (event) => {
