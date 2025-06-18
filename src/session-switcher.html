@@ -14,13 +14,14 @@
         
         body {
             font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #003049;
+            background: rgba(0, 48, 73, 0.95);
+            backdrop-filter: blur(10px);
             height: 100vh;
             overflow: hidden;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
+            color: #fdf0d5;
         }
         
         .switcher-container {
@@ -66,7 +67,7 @@
         
         .switcher-subtitle {
             font-size: 1.1rem;
-            color: rgba(255, 255, 255, 0.7);
+            color: rgba(253, 240, 213, 0.8);
             font-weight: 400;
         }
         
@@ -158,7 +159,7 @@
         .session-name {
             font-size: 1.25rem;
             font-weight: 600;
-            color: white;
+            color: #fdf0d5;
             margin-bottom: 4px;
         }
         
@@ -167,7 +168,7 @@
             align-items: center;
             gap: 8px;
             font-size: 0.875rem;
-            color: rgba(255, 255, 255, 0.6);
+            color: rgba(253, 240, 213, 0.7);
         }
         
         .status-indicator {
@@ -192,7 +193,7 @@
         }
         
         .session-info {
-            color: rgba(255, 255, 255, 0.5);
+            color: rgba(253, 240, 213, 0.6);
             font-size: 0.875rem;
             line-height: 1.4;
         }
@@ -227,8 +228,8 @@
             height: 28px;
             border-radius: 6px;
             border: none;
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
+            background: rgba(193, 18, 31, 0.8);
+            color: #fdf0d5;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -238,7 +239,7 @@
         }
         
         .action-btn:hover {
-            background: rgba(255, 255, 255, 0.25);
+            background: #900;
             transform: scale(1.1);
         }
         
@@ -308,24 +309,25 @@
         }
         
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background: #c1121f;
+            color: #fdf0d5;
         }
         
         .btn-primary:hover {
+            background: #900;
             transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 8px 16px rgba(193, 18, 31, 0.4);
         }
         
         .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: rgba(255, 255, 255, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(253, 240, 213, 0.1);
+            color: rgba(253, 240, 213, 0.8);
+            border: 1px solid rgba(253, 240, 213, 0.3);
         }
         
         .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
+            background: rgba(253, 240, 213, 0.2);
+            color: #fdf0d5;
         }
         
         .empty-state {
@@ -344,7 +346,7 @@
             font-size: 1.5rem;
             font-weight: 600;
             margin-bottom: 12px;
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(253, 240, 213, 0.9);
         }
         
         .empty-text {
@@ -352,24 +354,25 @@
             line-height: 1.5;
             max-width: 400px;
             margin: 0 auto;
+            color: rgba(253, 240, 213, 0.7);
         }
         
-        /* PIN Input Modal */
-        .pin-modal {
+        /* Modal Styles */
+        .pin-modal, .create-modal {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(15px);
             display: none;
             align-items: center;
             justify-content: center;
             z-index: 1000;
         }
         
-        .pin-modal.show {
+        .pin-modal.show, .create-modal.show {
             display: flex;
             animation: fadeIn 0.3s ease-out;
         }
@@ -379,14 +382,14 @@
             to { opacity: 1; }
         }
         
-        .pin-dialog {
+        .pin-dialog, .create-dialog {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(20px);
             border-radius: 16px;
             padding: 40px;
             text-align: center;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            max-width: 400px;
+            border: 1px solid rgba(253, 240, 213, 0.2);
+            max-width: 500px;
             width: 90%;
             animation: slideIn 0.3s ease-out;
         }
@@ -406,11 +409,11 @@
             font-size: 1.5rem;
             font-weight: 600;
             margin-bottom: 8px;
-            color: white;
+            color: #fdf0d5;
         }
         
         .pin-subtitle {
-            color: rgba(255, 255, 255, 0.7);
+            color: rgba(253, 240, 213, 0.8);
             margin-bottom: 30px;
         }
         
@@ -424,10 +427,10 @@
         .pin-digit {
             width: 50px;
             height: 50px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(253, 240, 213, 0.4);
             border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
+            background: rgba(253, 240, 213, 0.1);
+            color: #fdf0d5;
             text-align: center;
             font-size: 1.5rem;
             font-weight: bold;
@@ -436,9 +439,9 @@
         }
         
         .pin-digit:focus {
-            border-color: #667eea;
-            background: rgba(102, 126, 234, 0.2);
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+            border-color: #c1121f;
+            background: rgba(193, 18, 31, 0.2);
+            box-shadow: 0 0 0 3px rgba(193, 18, 31, 0.3);
         }
         
         .pin-buttons {
@@ -457,6 +460,65 @@
         
         .pin-error.show {
             opacity: 1;
+        }
+        
+        /* Create Session Form Styles */
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .form-label {
+            display: block;
+            color: #fdf0d5;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid rgba(253, 240, 213, 0.3);
+            border-radius: 8px;
+            background: rgba(253, 240, 213, 0.1);
+            color: #fdf0d5;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        
+        .form-input:focus {
+            border-color: #c1121f;
+            background: rgba(193, 18, 31, 0.1);
+            box-shadow: 0 0 0 3px rgba(193, 18, 31, 0.2);
+        }
+        
+        .form-input::placeholder {
+            color: rgba(253, 240, 213, 0.5);
+        }
+        
+        .pin-display {
+            background: rgba(193, 18, 31, 0.2);
+            border: 2px solid #c1121f;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .pin-display-label {
+            color: rgba(253, 240, 213, 0.8);
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+        
+        .pin-display-value {
+            color: #fdf0d5;
+            font-size: 2rem;
+            font-weight: bold;
+            letter-spacing: 8px;
+            font-family: 'Courier New', monospace;
         }
     </style>
 </head>
@@ -500,6 +562,50 @@
             </div>
             
             <div id="pin-error" class="pin-error">Invalid PIN. Please try again.</div>
+        </div>
+    </div>
+    
+    <!-- Create Session Modal -->
+    <div id="create-modal" class="create-modal">
+        <div class="create-dialog">
+            <h2 class="pin-title">Create New Session</h2>
+            <p class="pin-subtitle">Enter session details below</p>
+            
+            <form id="create-session-form">
+                <div class="form-group">
+                    <label class="form-label" for="session-name">Session Name</label>
+                    <input type="text" id="session-name" class="form-input" placeholder="Enter a name for this session" required maxlength="30">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="session-pin">4-Digit PIN</label>
+                    <input type="password" id="session-pin" class="form-input" placeholder="Enter 4-digit PIN" required maxlength="4" pattern="[0-9]{4}">
+                </div>
+                
+                <div class="pin-buttons">
+                    <button type="button" class="action-button btn-secondary" onclick="closeCreateModal()">Cancel</button>
+                    <button type="submit" class="action-button btn-primary">Create Session</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- PIN Success Modal -->
+    <div id="success-modal" class="create-modal">
+        <div class="create-dialog">
+            <h2 class="pin-title">Session Created!</h2>
+            <p class="pin-subtitle">Your session has been created successfully</p>
+            
+            <div class="pin-display">
+                <div class="pin-display-label">Remember your PIN:</div>
+                <div id="created-pin" class="pin-display-value">1234</div>
+            </div>
+            
+            <p class="pin-subtitle">Please save this PIN. You'll need it to access your session.</p>
+            
+            <div class="pin-buttons">
+                <button class="action-button btn-primary" onclick="closeSuccessModal()">Got it!</button>
+            </div>
         </div>
     </div>
 
@@ -666,12 +772,69 @@
             error.classList.remove('show');
         }
         
-        async function createNewSession() {
+        function createNewSession() {
+            showCreateModal();
+        }
+        
+        function showCreateModal() {
+            const modal = document.getElementById('create-modal');
+            modal.classList.add('show');
+            
+            // Clear form
+            document.getElementById('session-name').value = '';
+            document.getElementById('session-pin').value = '';
+            document.getElementById('session-name').focus();
+        }
+        
+        function closeCreateModal() {
+            const modal = document.getElementById('create-modal');
+            modal.classList.remove('show');
+        }
+        
+        function showSuccessModal(pin) {
+            const modal = document.getElementById('success-modal');
+            document.getElementById('created-pin').textContent = pin;
+            modal.classList.add('show');
+        }
+        
+        function closeSuccessModal() {
+            const modal = document.getElementById('success-modal');
+            modal.classList.remove('show');
+            closeSessionSwitcher();
+        }
+        
+        async function handleCreateSession(event) {
+            event.preventDefault();
+            
+            const name = document.getElementById('session-name').value.trim();
+            const pin = document.getElementById('session-pin').value.trim();
+            
+            if (!name || !pin) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+                alert('PIN must be exactly 4 digits');
+                return;
+            }
+            
             try {
-                await window.electronAPI.createNewSession();
-                closeSessionSwitcher();
+                const result = await window.electronAPI.createSession(name, pin);
+                
+                if (result.success) {
+                    closeCreateModal();
+                    showSuccessModal(pin);
+                    
+                    // Refresh sessions list
+                    sessions = await window.electronAPI.getSessions();
+                    renderSessions();
+                } else {
+                    alert('Failed to create session: ' + result.error);
+                }
             } catch (error) {
                 console.error('Failed to create session:', error);
+                alert('Failed to create session: ' + error.message);
             }
         }
         
@@ -706,8 +869,9 @@
             window.electronAPI.closeSessionSwitcher();
         }
         
-        // PIN input handling
+        // PIN input handling and form setup
         document.addEventListener('DOMContentLoaded', () => {
+            // PIN input handling
             const pinInputs = document.querySelectorAll('.pin-digit');
             
             pinInputs.forEach((input, index) => {
@@ -739,6 +903,38 @@
                         e.preventDefault();
                     }
                 });
+            });
+            
+            // Create session form handling
+            const createForm = document.getElementById('create-session-form');
+            createForm.addEventListener('submit', handleCreateSession);
+            
+            // Session PIN input - only allow digits
+            const sessionPinInput = document.getElementById('session-pin');
+            sessionPinInput.addEventListener('input', (e) => {
+                // Remove non-digits
+                e.target.value = e.target.value.replace(/\D/g, '');
+                // Limit to 4 digits
+                if (e.target.value.length > 4) {
+                    e.target.value = e.target.value.slice(0, 4);
+                }
+            });
+            
+            // Global ESC key handler
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    const pinModal = document.getElementById('pin-modal');
+                    const createModal = document.getElementById('create-modal');
+                    const successModal = document.getElementById('success-modal');
+                    
+                    if (pinModal.classList.contains('show')) {
+                        closePinModal();
+                    } else if (createModal.classList.contains('show')) {
+                        closeCreateModal();
+                    } else if (successModal.classList.contains('show')) {
+                        closeSuccessModal();
+                    }
+                }
             });
         });
         

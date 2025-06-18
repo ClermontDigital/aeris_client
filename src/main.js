@@ -802,47 +802,7 @@ function createSessionSwitcher() {
   });
 }
 
-function showNewSessionDialog() {
-  return dialog.showMessageBox(mainWindow, {
-    type: 'question',
-    buttons: ['Create Session', 'Cancel'],
-    defaultId: 0,
-    cancelId: 1,
-    title: 'Create New Session',
-    message: 'Create New Session',
-    detail: 'Enter session name and 4-digit PIN:'
-  }).then(result => {
-    if (result.response === 0) {
-      return showSessionDetailsDialog();
-    }
-    return null;
-  });
-}
-
-async function showSessionDetailsDialog() {
-  // Using a simple prompt-like approach for now
-  // In production, you might want to create a custom dialog window
-  return new Promise((resolve) => {
-    const sessionName = `Session ${sessionManager.getAllSessions().length + 1}`;
-    const pin = Math.floor(1000 + Math.random() * 9000).toString(); // Generate random 4-digit PIN
-    
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      buttons: ['Create', 'Cancel'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'New Session Details',
-      message: `Session Name: ${sessionName}`,
-      detail: `Generated PIN: ${pin}\n\nPlease remember this PIN to access your session later.`
-    }).then(result => {
-      if (result.response === 0) {
-        resolve({ name: sessionName, pin: pin });
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
+// Session creation is now handled by the HTML forms in session-switcher.html
 
 // Initialize session manager with settings
 function initializeSessionManager() {
@@ -923,27 +883,9 @@ ipcMain.handle('close-session-switcher', async () => {
 });
 
 ipcMain.handle('create-new-session', async () => {
-  try {
-    const details = await showSessionDetailsDialog();
-    if (details) {
-      const sessionId = sessionManager.createSession(details.name, details.pin);
-      
-      if (sessionSwitcherWindow) {
-        sessionSwitcherWindow.close();
-      }
-      
-      // Switch to the new session
-      const session = sessionManager.switchToSession(sessionId, details.pin);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('session-switched', session);
-      }
-      
-      return { success: true, sessionId, session };
-    }
-    return { success: false, error: 'Session creation cancelled' };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+  // This is now handled by the session-switcher.html form
+  // Just return success to maintain compatibility
+  return { success: true };
 });
 
 // Update session activity on user interaction

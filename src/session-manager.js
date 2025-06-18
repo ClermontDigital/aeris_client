@@ -19,7 +19,7 @@ class SessionManager extends EventEmitter {
 
     encryptPin(pin) {
         const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipher('aes-256-gcm', this.encryptionKey);
+        const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
         let encrypted = cipher.update(pin.toString(), 'utf8', 'hex');
         encrypted += cipher.final('hex');
         const authTag = cipher.getAuthTag();
@@ -32,7 +32,8 @@ class SessionManager extends EventEmitter {
 
     decryptPin(encryptedData) {
         try {
-            const decipher = crypto.createDecipher('aes-256-gcm', this.encryptionKey);
+            const iv = Buffer.from(encryptedData.iv, 'hex');
+            const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, iv);
             decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
             let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
             decrypted += decipher.final('utf8');
