@@ -23,6 +23,7 @@
   "build": {
     "appId": "com.aeris.pos",
     "productName": "Aeris",
+    "publish": "never",
     "directories": {
       "output": "dist"
     },
