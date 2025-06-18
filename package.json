@@ -33,6 +33,7 @@
     "mac": {
       "category": "public.app-category.business",
       "icon": "src/assets/icons/icon.icns",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {
           "target": "dmg",
@@ -45,6 +46,7 @@
     },
     "win": {
       "icon": "src/assets/icons/icon.ico",
+      "artifactName": "${productName} Setup ${version}.${ext}",
       "target": [
         {
           "target": "nsis",

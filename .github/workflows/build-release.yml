@@ -32,6 +32,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
       
+    - name: Increment version
+      run: npm version patch --no-git-tag-version
+      
     - name: Build for macOS
       if: matrix.os == 'macos-latest'
       env:
@@ -146,9 +149,8 @@ jobs:
           - `Aeris Setup ${{ steps.new-version.outputs.new_version }}.exe` - Windows installer
           
           **macOS:**
-          - `Aeris-${{ steps.new-version.outputs.new_version }}.dmg` - macOS Universal
-          - `Aeris-${{ steps.new-version.outputs.new_version }}-arm64.dmg` - macOS Apple Silicon (if separate)
-          - `Aeris-${{ steps.new-version.outputs.new_version }}-x64.dmg` - macOS Intel (if separate)
+          - `Aeris-${{ steps.new-version.outputs.new_version }}-x64.dmg` - macOS Intel
+          - `Aeris-${{ steps.new-version.outputs.new_version }}-arm64.dmg` - macOS Apple Silicon
           
           ### 🔧 Installation
           1. Download the appropriate file for your platform

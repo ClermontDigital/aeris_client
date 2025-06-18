@@ -599,7 +599,7 @@ ipcMain.handle('show-confirm-dialog', async (event, options) => {
       message: options.message || 'Are you sure?',
       detail: options.detail || '',
       noLink: true,
-      icon: path.join(__dirname, 'assets/icons/icon.png')
+      icon: getAppIcon()
     });
 
     // Restore focus to web contents after dialog
@@ -630,7 +630,7 @@ ipcMain.handle('show-alert-dialog', async (event, options) => {
       message: options.message || '',
       detail: options.detail || '',
       noLink: true,
-      icon: path.join(__dirname, 'assets/icons/icon.png')
+      icon: getAppIcon()
     });
 
     // Restore focus to web contents after dialog
