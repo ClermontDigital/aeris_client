@@ -101,6 +101,7 @@ jobs:
       with:
         tag_name: ${{ steps.package-version.outputs.tag_name }}
         name: Aeris Client ${{ steps.package-version.outputs.version }}
+        generate_release_notes: false
         body: |
           ## Aeris ERP Desktop Client ${{ steps.package-version.outputs.version }}
           
@@ -125,7 +126,7 @@ jobs:
           - `Aeris-${{ steps.package-version.outputs.version }}-x64.dmg` - macOS Intel
           - `Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg` - macOS Apple Silicon
           
-          > **Note:** Only the installer files (.exe/.dmg) are included in this release. Auto-update files and source code are available separately if needed.
+          > **Note:** Only the installer files (.exe/.dmg) are included in this release. Source code archives are excluded to keep downloads clean and focused.
           
           ### 🔧 Installation
           1. Download the appropriate file for your platform
@@ -142,6 +143,23 @@ jobs:
         prerelease: false
         files: |
           ./release-assets/*
+          
+    - name: Remove source code archives
+      run: |
+        # Get the release ID
+        RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.package-version.outputs.tag_name }}" | \
+          jq -r '.id')
+        
+        # Get assets and delete source code archives
+        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" | \
+          jq -r '.[] | select(.name | endswith(".zip") or endswith(".tar.gz")) | .id' | \
+          while read asset_id; do
+            echo "Deleting source archive asset ID: $asset_id"
+            curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/assets/$asset_id"
+          done
 
   notify:
     needs: [build, release]

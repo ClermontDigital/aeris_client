@@ -1,16 +1,21 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
+const https = require('https');
+const SessionManager = require('./session-manager');
 
 const store = new Store();
+const sessionManager = new SessionManager();
 
 let mainWindow;
 let settingsWindow;
+let sessionSwitcherWindow;
 
 // Default configuration
 const defaultConfig = {
   baseUrl: 'http://localhost:8080',
   autoStart: false,
+  sessionTimeout: 10, // minutes
   windowState: {
     width: 1200,
     height: 800,
@@ -647,6 +652,251 @@ ipcMain.handle('show-alert-dialog', async (event, options) => {
   }
 });
 
+// Add update checking functionality
+async function checkForUpdates() {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'api.github.com',
+      path: '/repos/YOUR_USERNAME/YOUR_REPO_NAME/releases/latest', // Replace with your repo
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Aeris-Client'
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      res.on('end', () => {
+        try {
+          if (res.statusCode === 200) {
+            const release = JSON.parse(data);
+            const currentVersion = app.getVersion();
+            const latestVersion = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix if present
+            
+            const updateAvailable = compareVersions(latestVersion, currentVersion) > 0;
+            
+            resolve({
+              updateAvailable,
+              currentVersion,
+              latestVersion,
+              releaseUrl: release.html_url,
+              releaseNotes: release.body,
+              downloadUrl: getDownloadUrl(release.assets),
+              publishedAt: release.published_at
+            });
+          } else {
+            reject(new Error(`GitHub API returned ${res.statusCode}`));
+          }
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+    
+    req.setTimeout(10000, () => {
+      req.abort();
+      reject(new Error('Request timeout'));
+    });
+
+    req.end();
+  });
+}
+
+function compareVersions(version1, version2) {
+  const v1parts = version1.split('.').map(n => parseInt(n, 10));
+  const v2parts = version2.split('.').map(n => parseInt(n, 10));
+  
+  for (let i = 0; i < Math.max(v1parts.length, v2parts.length); i++) {
+    const v1part = v1parts[i] || 0;
+    const v2part = v2parts[i] || 0;
+    
+    if (v1part > v2part) return 1;
+    if (v1part < v2part) return -1;
+  }
+  return 0;
+}
+
+function getDownloadUrl(assets) {
+  const platform = process.platform;
+  
+  if (platform === 'darwin') {
+    // Look for .dmg file for macOS
+    const dmgAsset = assets.find(asset => 
+      asset.name.toLowerCase().includes('.dmg') && 
+      !asset.name.toLowerCase().includes('blockmap')
+    );
+    return dmgAsset ? dmgAsset.browser_download_url : null;
+  } else if (platform === 'win32') {
+    // Look for .exe file for Windows
+    const exeAsset = assets.find(asset => 
+      asset.name.toLowerCase().includes('.exe') && 
+      !asset.name.toLowerCase().includes('blockmap')
+    );
+    return exeAsset ? exeAsset.browser_download_url : null;
+  }
+  
+  return null;
+}
+
+// IPC handler for update checking
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    const updateInfo = await checkForUpdates();
+    return { success: true, ...updateInfo };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('open-release-page', async (event, url) => {
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Session Management Functions
+function createSessionSwitcher() {
+  // Instead of creating a separate window, send event to main window to show overlay
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('show-session-overlay');
+  }
+}
+
+// Initialize session manager with settings
+function initializeSessionManager() {
+  const settings = store.get();
+  sessionManager.setSessionTimeout(settings.sessionTimeout || defaultConfig.sessionTimeout);
+  
+  // Clean up old sessions on startup
+  const cleanedCount = sessionManager.cleanupOldSessions();
+  if (cleanedCount > 0) {
+    console.log(`Cleaned up ${cleanedCount} old sessions on startup`);
+  }
+  
+  // Set up periodic cleanup every hour
+  setInterval(() => {
+    const cleanedCount = sessionManager.cleanupOldSessions();
+    if (cleanedCount > 0) {
+      console.log(`Cleaned up ${cleanedCount} old sessions during periodic cleanup`);
+    }
+  }, 60 * 60 * 1000); // 1 hour
+  
+  // Listen for session events
+  sessionManager.on('sessionLocked', (session) => {
+    console.log(`Session ${session.name} locked due to inactivity`);
+    if (mainWindow) {
+      mainWindow.webContents.send('session-locked', session.id);
+    }
+  });
+  
+  sessionManager.on('sessionCreated', (session) => {
+    console.log(`New session created: ${session.name}`);
+  });
+  
+  sessionManager.on('sessionUnlocked', (session) => {
+    console.log(`Session ${session.name} unlocked`);
+    if (mainWindow) {
+      mainWindow.webContents.send('session-unlocked', session);
+    }
+  });
+}
+
+// Session IPC Handlers
+ipcMain.handle('get-sessions', async () => {
+  return sessionManager.getAllSessions();
+});
+
+ipcMain.handle('create-session', async (event, name, pin) => {
+  try {
+    const sessionId = sessionManager.createSession(name, pin);
+    return { success: true, sessionId };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('delete-session', async (event, sessionId) => {
+  try {
+    sessionManager.deleteSession(sessionId);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('switch-to-session', async (event, sessionId, pin) => {
+  try {
+    const session = sessionManager.switchToSession(sessionId, pin);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('session-switched', session);
+    }
+    return { success: true, session };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-active-session', async () => {
+  return sessionManager.getActiveSession();
+});
+
+ipcMain.handle('update-session-url', async (event, sessionId, url) => {
+  try {
+    sessionManager.updateSessionUrl(sessionId, url);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('lock-session', async (event, sessionId) => {
+  try {
+    sessionManager.lockSession(sessionId);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('show-session-switcher', async () => {
+  createSessionSwitcher();
+  return { success: true };
+});
+
+ipcMain.handle('close-session-switcher', async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('hide-session-overlay');
+  }
+  return { success: true };
+});
+
+ipcMain.handle('create-new-session', async () => {
+  // This is now handled by the session-switcher.html form
+  // Just return success to maintain compatibility
+  return { success: true };
+});
+
+// Update session activity on user interaction
+ipcMain.handle('update-session-activity', async () => {
+  const activeSession = sessionManager.getActiveSession();
+  if (activeSession) {
+    sessionManager.updateSessionActivity(activeSession.id);
+  }
+  return { success: true };
+});
+
 // App event handlers
 app.whenReady().then(() => {
   // Set app icon explicitly for macOS dock
@@ -675,6 +925,7 @@ app.whenReady().then(() => {
 
   createMainWindow();
   createMenu();
+  initializeSessionManager();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -684,6 +935,9 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  // Clean up session manager
+  sessionManager.cleanup();
+  
   // Always quit the app when all windows are closed, even on macOS
   app.quit();
 });
