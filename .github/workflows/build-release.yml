@@ -32,9 +32,6 @@ jobs:
     - name: Install dependencies
       run: npm ci
       
-    - name: Increment version
-      run: npm version patch --no-git-tag-version
-      
     - name: Build for macOS
       if: matrix.os == 'macos-latest'
       env:
@@ -54,9 +51,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: aeris-macos
-        path: |
-          dist/*.dmg
-          dist/latest-mac.yml
+        path: dist/*.dmg
         retention-days: 30
         
     - name: Upload Windows artifacts
@@ -64,9 +59,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: aeris-windows
-        path: |
-          dist/*.exe
-          dist/latest.yml
+        path: dist/*.exe
         retention-days: 30
 
   release:
@@ -151,6 +144,8 @@ jobs:
           **macOS:**
           - `Aeris-${{ steps.new-version.outputs.new_version }}-x64.dmg` - macOS Intel
           - `Aeris-${{ steps.new-version.outputs.new_version }}-arm64.dmg` - macOS Apple Silicon
+          
+          > **Note:** Only the installer files (.exe/.dmg) are included in this release. Auto-update files and source code are available separately if needed.
           
           ### 🔧 Installation
           1. Download the appropriate file for your platform
