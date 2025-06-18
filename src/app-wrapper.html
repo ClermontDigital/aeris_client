@@ -132,6 +132,466 @@
         .retry-button:hover {
             background: #5a67d8;
         }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            background: #f5f5f5;
+        }
+        
+        .privacy-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 48, 73, 0.95);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: #fdf0d5;
+            text-align: center;
+            font-family: 'Poppins', sans-serif;
+        }
+        
+        .privacy-overlay.show {
+            display: flex;
+        }
+        
+        .privacy-content {
+            max-width: 400px;
+            padding: 40px;
+        }
+        
+        .privacy-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.8;
+        }
+        
+        .privacy-title {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #fdf0d5;
+        }
+        
+        .privacy-message {
+            font-size: 1rem;
+            opacity: 0.9;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+        
+        .unlock-button {
+            background: #c1121f;
+            color: #fdf0d5;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Poppins', sans-serif;
+        }
+        
+        .unlock-button:hover {
+            background: #900;
+            transform: translateY(-1px);
+        }
+        
+        .webview-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        #webview {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        }
+
+        .session-switcher-container {
+            background: rgba(0, 48, 73, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 30px;
+            width: 90%;
+            max-width: 900px;
+            height: auto;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            animation: fadeInUp 0.4s ease-out;
+        }
+        
+        .switcher-header {
+            text-align: center;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        
+        .close-button {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: rgba(193, 18, 31, 0.8);
+            color: #fdf0d5;
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+        
+        .close-button:hover {
+            background: #900;
+            transform: scale(1.1);
+        }
+        
+        .switcher-logo {
+            width: auto;
+            height: 80px;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .switcher-logo img {
+            height: 80px;
+            width: auto;
+            filter: brightness(1.2);
+        }
+        
+        .switcher-subtitle {
+            font-size: 1.1rem;
+            color: rgba(253, 240, 213, 0.8);
+            margin: 0;
+            font-weight: 400;
+        }
+        
+        .sessions-container {
+            flex: 1;
+            min-height: 200px;
+            margin: 20px 0;
+            overflow-y: auto;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #fdf0d5;
+            opacity: 0.8;
+        }
+        
+        .empty-state .icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.6;
+        }
+        
+        .empty-state h3 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            color: #fdf0d5;
+        }
+        
+        .switcher-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 20px;
+            padding: 20px 0 0 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
+        
+        .action-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'Poppins', sans-serif;
+            min-width: 140px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .action-btn.primary {
+            background: #c1121f;
+            color: #fdf0d5;
+        }
+        
+        .action-btn.primary:hover {
+            background: #900;
+            transform: translateY(-1px);
+        }
+        
+        .action-btn.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fdf0d5;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .action-btn.secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+        
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10002;
+        }
+        
+        .modal-overlay.show {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: rgba(0, 48, 73, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            color: #fdf0d5;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .pin-inputs {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        .pin-digit {
+            width: 50px;
+            height: 50px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.1);
+            color: #fdf0d5;
+            border-radius: 8px;
+            outline: none;
+        }
+        
+        .pin-digit:focus {
+            border-color: #c1121f;
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #fdf0d5;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.1);
+            color: #fdf0d5;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            box-sizing: border-box;
+        }
+        
+        .form-group input:focus {
+            border-color: #c1121f;
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .form-group input::placeholder {
+            color: rgba(253, 240, 213, 0.5);
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 25px;
+        }
+        
+        .error-message {
+            color: #ff6b6b;
+            font-size: 14px;
+            margin: 10px 0;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .success-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+        
+        .session-card {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            z-index: 1;
+            isolation: isolate; /* Create new stacking context */
+        }
+        
+        .session-card:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.4);
+            z-index: 2;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .session-card.active {
+            border-color: #c1121f;
+            background: rgba(193, 18, 31, 0.1);
+        }
+        
+        .session-card.locked {
+            opacity: 0.7;
+            border-color: #ffa500;
+        }
+        
+        .session-details h4 {
+            margin: 0 0 5px 0;
+            color: #fdf0d5;
+            font-size: 1.1rem;
+        }
+        
+        .session-details p {
+            margin: 0;
+            color: rgba(253, 240, 213, 0.7);
+            font-size: 0.9rem;
+        }
+        
+        .session-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .session-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fdf0d5;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        
+        .session-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .app-header {
+            background: linear-gradient(135deg, #2c5aa0 0%, #1e3a5f 100%);
+            padding: 8px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: none; /* Hide the header completely */
+        }
+        
+        .pin-error.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        /* Shake animation for incorrect PIN */
+        .modal-content.shake {
+            animation: shake 0.5s ease-in-out;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
     </style>
 </head>
 <body>
@@ -145,6 +605,95 @@
             scrolling="no">
         </iframe>
         
+        <!-- Privacy Overlay -->
+        <div id="privacy-overlay" class="privacy-overlay">
+            <div class="privacy-content">
+                <div class="privacy-icon">🔒</div>
+                <div class="privacy-title">Session Locked</div>
+                <div class="privacy-message">This session has been locked for privacy. Click below to unlock and continue working.</div>
+                <button class="unlock-button" onclick="showUnlockDialog()">🔓 Unlock Session</button>
+            </div>
+        </div>
+
+        <!-- Session Management Overlay -->
+        <div id="session-overlay" class="privacy-overlay">
+            <div class="privacy-content">
+                <div class="privacy-icon">🔒</div>
+                <div class="privacy-title">Session Locked</div>
+                <div class="privacy-message">Current session is locked. Choose a user session to continue.</div>
+            </div>
+        </div>
+
+        <!-- Session Switcher Overlay -->
+        <div id="session-switcher-overlay" class="privacy-overlay" style="z-index: 10001;">
+            <div class="session-switcher-container">
+                <div class="switcher-header">
+                    <div class="switcher-logo">
+                        <img src="assets/images/logo.png" alt="Aeris">
+                    </div>
+                    <h2>Users</h2>
+                </div>
+
+                <div class="sessions-container" id="sessions-list">
+                    <div class="empty-state">
+                        <div class="icon">👥</div>
+                        <h3>No Users Yet</h3>
+                    </div>
+                </div>
+
+                <div class="switcher-actions">
+                    <button class="action-btn secondary" onclick="hideSessionSwitcher()" id="back-to-session-btn">
+                        ← Back to Session
+                    </button>
+                    <button class="action-btn primary" onclick="showCreateSessionForm()">
+                        + New User
+                    </button>
+                </div>
+            </div>
+
+            <!-- PIN Modal -->
+            <div id="pin-modal" class="modal-overlay">
+                <div class="modal-content">
+                    <h3>Enter PIN</h3>
+                    <p class="pin-subtitle">Enter the 4-digit PIN</p>
+                    <div class="pin-inputs">
+                        <input type="text" class="pin-digit" maxlength="1" pattern="[0-9]">
+                        <input type="text" class="pin-digit" maxlength="1" pattern="[0-9]">
+                        <input type="text" class="pin-digit" maxlength="1" pattern="[0-9]">
+                        <input type="text" class="pin-digit" maxlength="1" pattern="[0-9]">
+                    </div>
+                    <div id="pin-error" class="error-message"></div>
+                    <div class="modal-actions">
+                        <button class="action-btn secondary" onclick="closePinModal()">Cancel</button>
+                        <button class="action-btn primary" onclick="submitPin()">Unlock</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create Session Modal -->
+            <div id="create-session-modal" class="modal-overlay">
+                <div class="modal-content">
+                    <h3>Create New User</h3>
+                    <form id="create-session-form" onsubmit="handleCreateSession(event)">
+                        <div class="form-group">
+                            <label for="session-name">User Name</label>
+                            <input type="text" id="session-name" required maxlength="50" placeholder="Enter user name">
+                        </div>
+                        <div class="form-group">
+                            <label for="session-pin">4-Digit PIN</label>
+                            <input type="password" id="session-pin" required maxlength="4" pattern="[0-9]{4}" placeholder="Enter 4-digit PIN">
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="action-btn secondary" onclick="closeCreateModal()">Cancel</button>
+                            <button type="submit" class="action-btn primary">Create User</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+
+        </div>
+
         <!-- Main content area -->
         <webview 
             id="content-frame" 
@@ -180,8 +729,10 @@
             try {
                 const settings = await window.electronAPI.getSettings();
                 currentUrl = settings.baseUrl;
-                console.log('Aeris Client: Loading ERP from URL:', currentUrl);
-                loadMainApp();
+                console.log('Aeris Client: Starting with session management');
+                
+                // Show session management on startup instead of loading main app
+                showSessionSwitcher();
             } catch (error) {
                 console.error('Failed to load settings:', error);
                 showError();
@@ -507,6 +1058,19 @@
                         console.log('Could not trigger logout:', error);
                     }
                     break;
+                    
+                case 'check-update':
+                    handleUpdateCheck();
+                    break;
+                case 'show-sessions':
+                    handleShowSessions();
+                    break;
+                case 'lock-session':
+                    handleLockSession();
+                    break;
+                case 'logout-aeris':
+                    logoutFromAeris();
+                    break;
             }
             
             // Update navigation state after action
@@ -529,8 +1093,857 @@
             }
         });
         
+        // Handle update checking and display
+        async function handleUpdateCheck() {
+            if (!window.electronAPI || !window.electronAPI.checkForUpdates) {
+                console.log('Update checking not available');
+                return;
+            }
+            
+            try {
+                const result = await window.electronAPI.checkForUpdates();
+                if (result.success) {
+                    if (result.updateAvailable) {
+                        showUpdateDialog(result);
+                    } else {
+                        showNoUpdateDialog(result);
+                    }
+                } else {
+                    console.error('Update check failed:', result.error);
+                    showUpdateErrorDialog();
+                }
+            } catch (error) {
+                console.error('Update check error:', error);
+                showUpdateErrorDialog();
+            }
+        }
+        
+        async function handleShowSessions() {
+            try {
+                await window.electronAPI.showSessionSwitcher();
+            } catch (error) {
+                console.error('Failed to show session switcher:', error);
+            }
+        }
+        
+        // Privacy overlay management
+        function showPrivacyOverlay(type = 'locked') {
+            const privacyOverlay = document.getElementById('privacy-overlay');
+            const sessionOverlay = document.getElementById('session-overlay');
+            
+            if (type === 'locked') {
+                privacyOverlay.classList.add('show');
+                sessionOverlay.classList.remove('show');
+            } else if (type === 'session-management') {
+                sessionOverlay.classList.add('show');
+                privacyOverlay.classList.remove('show');
+            }
+        }
+        
+        function hidePrivacyOverlay() {
+            const privacyOverlay = document.getElementById('privacy-overlay');
+            const sessionOverlay = document.getElementById('session-overlay');
+            
+            privacyOverlay.classList.remove('show');
+            sessionOverlay.classList.remove('show');
+        }
+        
+        async function showUnlockDialog() {
+            try {
+                const activeSession = await window.electronAPI.getActiveSession();
+                if (activeSession) {
+                    // Show PIN modal to unlock the current session
+                    selectedSessionId = activeSession.id;
+                    showPinModal(activeSession.name);
+                } else {
+                    // If no active session, show session switcher to select one
+                    showSessionSwitcher();
+                }
+            } catch (error) {
+                console.error('Failed to show unlock dialog:', error);
+                showNotification('Failed to unlock session', 'error');
+            }
+        }
+
+        // Session state management
+        let currentSessionState = 'unlocked'; // 'locked', 'unlocked', 'session-management'
+        
+        function updateSessionState(state) {
+            currentSessionState = state;
+            
+            switch (state) {
+                case 'locked':
+                    showPrivacyOverlay('locked');
+                    break;
+                case 'session-management':
+                    showPrivacyOverlay('session-management');
+                    break;
+                case 'unlocked':
+                default:
+                    hidePrivacyOverlay();
+                    break;
+            }
+        }
+
+        // Update existing functions
+        
+        async function handleLockSession() {
+            try {
+                const activeSession = await window.electronAPI.getActiveSession();
+                if (activeSession) {
+                    await window.electronAPI.lockSession(activeSession.id);
+                    // Refresh the sessions list to show updated status
+                    await loadSessions();
+                } else {
+                    showNotification('No active session to lock', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to lock session:', error);
+                showNotification('Failed to lock session', 'error');
+            }
+        }
+        
+        function showNotification(message, type = 'success') {
+            // Simple notification implementation
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                background: ${type === 'error' ? '#ef4444' : '#10b981'};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 500;
+                z-index: 10000;
+                animation: slideInRight 0.3s ease-out;
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.style.animation = 'fadeOut 0.3s ease-out';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        document.body.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+        
+        function showUpdateDialog(updateInfo) {
+            // Create update dialog overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                font-family: 'Poppins', sans-serif;
+            `;
+            
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 30px;
+                max-width: 500px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 20px;">🎉</div>
+                <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">Update Available!</h2>
+                <p style="color: #666; margin-bottom: 20px; line-height: 1.5;">
+                    A new version of Aeris is available.<br>
+                    <strong>Current:</strong> v${updateInfo.currentVersion}<br>
+                    <strong>Latest:</strong> v${updateInfo.latestVersion}
+                </p>
+                <div style="margin-bottom: 25px;">
+                    <button id="download-update" style="
+                        background: #667eea;
+                        color: white;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 6px;
+                        font-size: 16px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        margin-right: 10px;
+                        transition: background 0.2s ease;
+                    ">Download Update</button>
+                    <button id="view-release" style="
+                        background: #f3f4f6;
+                        color: #374151;
+                        border: 1px solid #d1d5db;
+                        padding: 12px 24px;
+                        border-radius: 6px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        margin-right: 10px;
+                        transition: all 0.2s ease;
+                    ">View Release Notes</button>
+                    <button id="close-dialog" style="
+                        background: transparent;
+                        color: #6b7280;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 6px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        transition: color 0.2s ease;
+                    ">Later</button>
+                </div>
+            `;
+            
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            
+            // Event handlers
+            document.getElementById('download-update').addEventListener('click', () => {
+                if (updateInfo.downloadUrl) {
+                    window.electronAPI.openReleasePage(updateInfo.downloadUrl);
+                } else {
+                    window.electronAPI.openReleasePage(updateInfo.releaseUrl);
+                }
+                document.body.removeChild(overlay);
+            });
+            
+            document.getElementById('view-release').addEventListener('click', () => {
+                window.electronAPI.openReleasePage(updateInfo.releaseUrl);
+                document.body.removeChild(overlay);
+            });
+            
+            document.getElementById('close-dialog').addEventListener('click', () => {
+                document.body.removeChild(overlay);
+            });
+            
+            // Close on overlay click
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    document.body.removeChild(overlay);
+                }
+            });
+        }
+        
+        function showNoUpdateDialog(updateInfo) {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                font-family: 'Poppins', sans-serif;
+            `;
+            
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 30px;
+                max-width: 400px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+                <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">You're Up to Date!</h2>
+                <p style="color: #666; margin-bottom: 25px; line-height: 1.5;">
+                    You have the latest version of Aeris.<br>
+                    <strong>Current:</strong> v${updateInfo.currentVersion}
+                </p>
+                <button id="close-dialog" style="
+                    background: #667eea;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: background 0.2s ease;
+                ">OK</button>
+            `;
+            
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            
+            document.getElementById('close-dialog').addEventListener('click', () => {
+                document.body.removeChild(overlay);
+            });
+            
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    document.body.removeChild(overlay);
+                }
+            });
+        }
+        
+        function showUpdateErrorDialog() {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                font-family: 'Poppins', sans-serif;
+            `;
+            
+            const dialog = document.createElement('div');
+            dialog.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 30px;
+                max-width: 400px;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            `;
+            
+            dialog.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+                <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">Update Check Failed</h2>
+                <p style="color: #666; margin-bottom: 25px; line-height: 1.5;">
+                    Unable to check for updates. Please check your internet connection and try again.
+                </p>
+                <button id="close-dialog" style="
+                    background: #667eea;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: background 0.2s ease;
+                ">OK</button>
+            `;
+            
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            
+            document.getElementById('close-dialog').addEventListener('click', () => {
+                document.body.removeChild(overlay);
+            });
+            
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    document.body.removeChild(overlay);
+                }
+            });
+        }
+        
         // Update navigation state periodically
         setInterval(updateNavigationState, 2000);
+
+        // Initialize privacy overlay system
+        window.addEventListener('DOMContentLoaded', async () => {
+            // Check initial session state
+            try {
+                const activeSession = await window.electronAPI.getActiveSession();
+                if (activeSession && activeSession.isLocked) {
+                    updateSessionState('locked');
+                }
+            } catch (error) {
+                console.error('Failed to check initial session state:', error);
+            }
+
+            // Listen for session events from main process
+            window.electronAPI.on('session-locked', (sessionId) => {
+                updateSessionState('locked');
+                showNotification('Session locked due to inactivity');
+            });
+
+            window.electronAPI.on('session-unlocked', (session) => {
+                updateSessionState('unlocked');
+            });
+
+            window.electronAPI.on('session-switched', (session) => {
+                updateSessionState('unlocked');
+            });
+
+            // Listen for session overlay events
+            window.electronAPI.on('show-session-overlay', () => {
+                showSessionSwitcher();
+            });
+
+            window.electronAPI.on('hide-session-overlay', () => {
+                hideSessionSwitcher();
+            });
+            
+            // PIN input handling
+            const pinInputs = document.querySelectorAll('.pin-digit');
+            
+            pinInputs.forEach((input, index) => {
+                input.addEventListener('input', (e) => {
+                    const value = e.target.value;
+                    if (value && /^\d$/.test(value)) {
+                        if (index < pinInputs.length - 1) {
+                            pinInputs[index + 1].focus();
+                        }
+                    }
+                    hideError();
+                });
+                
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                        pinInputs[index - 1].focus();
+                    }
+                });
+                
+                // Only allow digits
+                input.addEventListener('keypress', (e) => {
+                    if (!/^\d$/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Enter'].includes(e.key)) {
+                        e.preventDefault();
+                    }
+                });
+            });
+            
+            // Session PIN input - only allow digits
+            const sessionPinInput = document.getElementById('session-pin');
+            if (sessionPinInput) {
+                sessionPinInput.addEventListener('input', (e) => {
+                    // Remove non-digits
+                    e.target.value = e.target.value.replace(/\D/g, '');
+                    // Limit to 4 digits
+                    if (e.target.value.length > 4) {
+                        e.target.value = e.target.value.slice(0, 4);
+                    }
+                });
+            }
+            
+            // Global keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    if (document.getElementById('pin-modal').classList.contains('show')) {
+                        closePinModal();
+                    } else if (document.getElementById('create-session-modal').classList.contains('show')) {
+                        closeCreateModal();
+                    }
+                } else if (e.key === 'Enter') {
+                    if (document.getElementById('pin-modal').classList.contains('show')) {
+                        submitPin();
+                    }
+                }
+            });
+        });
+
+        // Session switcher overlay management
+        let selectedSessionId = null;
+        let sessions = [];
+        
+        // Track the originally active session when session management opens
+        let originalActiveSessionId = null;
+        
+        async function showSessionSwitcher() {
+            try {
+                // Store the originally active session
+                const activeSession = await window.electronAPI.getActiveSession();
+                originalActiveSessionId = activeSession ? activeSession.id : null;
+                
+                // Save current URL before switching
+                if (activeSession) {
+                    const contentFrame = document.getElementById('content-frame');
+                    const currentPageUrl = contentFrame.src;
+                    if (currentPageUrl && currentPageUrl !== 'about:blank') {
+                        await window.electronAPI.updateSessionUrl(activeSession.id, currentPageUrl);
+                    }
+                }
+                
+                // Automatically lock the current session when opening session management
+                if (activeSession && !activeSession.isLocked) {
+                    await window.electronAPI.lockSession(activeSession.id);
+                }
+                
+                document.getElementById('session-switcher-overlay').classList.add('show');
+                updateSessionState('session-management');
+                loadSessions();
+            } catch (error) {
+                console.error('Failed to show session switcher:', error);
+                updateSessionState('unlocked');
+            }
+        }
+        
+        function hideSessionSwitcher() {
+            document.getElementById('session-switcher-overlay').classList.remove('show');
+            updateSessionState('unlocked');
+            originalActiveSessionId = null;
+        }
+        
+        async function loadSessions() {
+            try {
+                sessions = await window.electronAPI.getSessions();
+                const activeSession = await window.electronAPI.getActiveSession();
+                const currentSessionId = activeSession ? activeSession.id : null;
+                
+                const container = document.getElementById('sessions-list');
+                const emptyState = document.getElementById('empty-sessions-state');
+                
+                // Check if the original session is locked to hide back button
+                const originalSession = sessions.find(s => s.id === originalActiveSessionId);
+                const backButton = document.getElementById('back-to-session-btn');
+                if (backButton) {
+                    if (originalSession && (originalSession.isLocked || originalSession.status === 'locked')) {
+                        backButton.style.display = 'none';
+                    } else {
+                        backButton.style.display = 'flex';
+                    }
+                }
+                
+                if (sessions.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">👥</div>
+                            <h3>No Users Yet</h3>
+                        </div>
+                    `;
+                    // Hide back button when no sessions exist
+                    if (backButton) {
+                        backButton.style.display = 'none';
+                    }
+                } else {
+                    emptyState?.remove();
+                    
+                    const sessionCards = sessions.map(session => {
+                        const isActive = session.id === currentSessionId;
+                        const isLocked = session.status === 'locked' || session.isLocked;
+                        const statusText = isActive ? 'Active' : (isLocked ? 'Locked' : 'Available');
+                        const cardClass = isActive ? 'active' : (isLocked ? 'locked' : '');
+                        
+                        return `
+                            <div class="session-card ${cardClass}" onclick="selectSession('${session.id}')">
+                                <div class="session-details">
+                                    <h4>${session.name}</h4>
+                                    <p>Status: ${statusText}</p>
+                                    ${session.lastAccessedAt ? `<p>Last used: ${new Date(session.lastAccessedAt).toLocaleString()}</p>` : ''}
+                                </div>
+                                <div class="session-actions">
+                                    <button class="session-btn" onclick="event.stopPropagation(); deleteSession('${session.id}')">🗑️ Delete</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    container.innerHTML = sessionCards;
+                }
+            } catch (error) {
+                console.error('Failed to load sessions:', error);
+            }
+        }
+        
+        async function selectSession(sessionId) {
+            const session = sessions.find(s => s.id === sessionId);
+            if (!session) return;
+            
+            // Always require PIN since sessions are automatically locked in session management
+            selectedSessionId = sessionId;
+            showPinModal(session.name);
+        }
+        
+        function showPinModal(sessionName) {
+            const modal = document.getElementById('pin-modal');
+            const subtitle = modal.querySelector('.pin-subtitle');
+            subtitle.textContent = `Enter the 4-digit PIN`;
+            
+            modal.classList.add('show');
+            
+            // Clear inputs and focus first
+            const inputs = modal.querySelectorAll('.pin-digit');
+            inputs.forEach(input => input.value = '');
+            inputs[0].focus();
+        }
+        
+        function closePinModal() {
+            document.getElementById('pin-modal').classList.remove('show');
+            selectedSessionId = null;
+            hideError();
+        }
+        
+        async function submitPin() {
+            const inputs = document.querySelectorAll('.pin-digit');
+            const pin = Array.from(inputs).map(input => input.value).join('');
+            
+            if (pin.length !== 4) {
+                showError('Please enter all 4 digits');
+                return;
+            }
+            
+            try {
+                const result = await window.electronAPI.switchToSession(selectedSessionId, pin);
+                if (result.success) {
+                    closePinModal();
+                    
+                    // Reset browser for the new user session
+                    await resetBrowserForSession(result.session);
+                    
+                    // Check if we're in the session switcher or just unlocking
+                    if (document.getElementById('session-switcher-overlay').classList.contains('show')) {
+                        hideSessionSwitcherWithFade();
+                    } else {
+                        // We were just unlocking, update session state with fade
+                        fadeOutPrivacyOverlay();
+                    }
+                }
+            } catch (error) {
+                showError('Incorrect PIN');
+                
+                // Add visual feedback for incorrect PIN
+                const modal = document.getElementById('pin-modal');
+                modal.classList.add('shake');
+                setTimeout(() => {
+                    modal.classList.remove('shake');
+                }, 500);
+                
+                // Clear inputs and focus first
+                inputs.forEach(input => input.value = '');
+                inputs[0].focus();
+            }
+        }
+        
+        async function resetBrowserForSession(session) {
+            const contentFrame = document.getElementById('content-frame');
+            
+            // If session has a saved URL, load it; otherwise load the base URL (login screen)
+            const targetUrl = session.currentUrl || currentUrl;
+            
+            console.log(`Resetting browser for user ${session.name}`);
+            console.log(`Target URL: ${targetUrl}`);
+            
+            // Create a completely new webview element with unique partition
+            const newWebview = document.createElement('webview');
+            const partitionName = `persist:user-${session.id}`;
+            
+            // Copy all attributes from original webview
+            newWebview.id = 'content-frame';
+            newWebview.className = 'content-frame';
+            newWebview.setAttribute('allowpopups', '');
+            newWebview.partition = partitionName;
+            
+            // Replace the old webview with the new one
+            const parent = contentFrame.parentNode;
+            parent.removeChild(contentFrame);
+            parent.appendChild(newWebview);
+            
+            // Set up event handlers for the new webview
+            setupWebviewHandlers(newWebview);
+            
+            console.log(`Loading isolated browser session for ${session.name} with partition ${partitionName}: ${targetUrl}`);
+            
+            // Load the target URL
+            setTimeout(() => {
+                newWebview.src = targetUrl;
+            }, 100);
+        }
+        
+        function setupWebviewHandlers(webview) {
+            webview.addEventListener('dom-ready', () => {
+                console.log('Webview loaded successfully');
+                
+                // Inject CSS to hide the website header and extract user info
+                injectWebsiteCustomizations(webview);
+                
+                setTimeout(() => {
+                    const loadingOverlay = document.getElementById('loading-overlay');
+                    if (loadingOverlay) {
+                        loadingOverlay.classList.add('hidden');
+                    }
+                    isConnected = true;
+                    updateConnectionStatus(true);
+                }, 500);
+            });
+            
+            webview.addEventListener('did-fail-load', (error) => {
+                console.error('Webview load error:', error);
+                showError();
+            });
+        }
+        
+        function hideSessionSwitcherWithFade() {
+            const overlay = document.getElementById('session-switcher-overlay');
+            overlay.style.transition = 'opacity 0.8s ease-out';
+            overlay.style.opacity = '0';
+            
+            setTimeout(() => {
+                overlay.classList.remove('show');
+                overlay.style.opacity = '';
+                overlay.style.transition = '';
+                updateSessionState('unlocked');
+            }, 800);
+        }
+        
+        function fadeOutPrivacyOverlay() {
+            const privacyOverlay = document.getElementById('privacy-overlay');
+            const sessionOverlay = document.getElementById('session-overlay');
+            
+            // Fade out whichever overlay is visible
+            const activeOverlay = privacyOverlay.classList.contains('show') ? privacyOverlay : sessionOverlay;
+            
+            if (activeOverlay.classList.contains('show')) {
+                activeOverlay.style.transition = 'opacity 0.8s ease-out';
+                activeOverlay.style.opacity = '0';
+                
+                setTimeout(() => {
+                    activeOverlay.classList.remove('show');
+                    activeOverlay.style.opacity = '';
+                    activeOverlay.style.transition = '';
+                    updateSessionState('unlocked');
+                }, 800);
+            } else {
+                updateSessionState('unlocked');
+            }
+        }
+        
+        function showCreateSessionForm() {
+            document.getElementById('create-session-modal').classList.add('show');
+            
+            // Clear form
+            document.getElementById('session-name').value = '';
+            document.getElementById('session-pin').value = '';
+            document.getElementById('session-name').focus();
+        }
+        
+        function closeCreateModal() {
+            document.getElementById('create-session-modal').classList.remove('show');
+        }
+        
+        async function handleCreateSession(event) {
+            event.preventDefault();
+            
+            const name = document.getElementById('session-name').value.trim();
+            const pin = document.getElementById('session-pin').value.trim();
+            
+            if (!name || !pin) {
+                alert('Please fill in all fields');
+                return;
+            }
+            
+            if (pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+                alert('PIN must be exactly 4 digits');
+                return;
+            }
+            
+            try {
+                const result = await window.electronAPI.createSession(name, pin);
+                
+                if (result.success) {
+                    closeCreateModal();
+                    
+                    // Get the newly created session and reset browser for it
+                    const sessions = await window.electronAPI.getSessions();
+                    const newSession = sessions.find(s => s.name === name);
+                    if (newSession) {
+                        await resetBrowserForSession(newSession);
+                    }
+                    
+                    loadSessions();
+                    hideSessionSwitcher();
+                } else {
+                    alert('Failed to create session: ' + result.error);
+                }
+            } catch (error) {
+                console.error('Failed to create session:', error);
+                alert('Failed to create session: ' + error.message);
+            }
+        }
+        
+
+        
+        async function deleteSession(sessionId) {
+            try {
+                // Prevent deleting the originally active session
+                if (originalActiveSessionId && originalActiveSessionId === sessionId) {
+                    alert('Cannot delete the active session. Please switch to another session first.');
+                    return;
+                }
+                
+                if (confirm('Are you sure you want to delete this session?')) {
+                    const result = await window.electronAPI.deleteSession(sessionId);
+                    if (result.success) {
+                        await loadSessions();
+                    } else {
+                        alert('Failed to delete session: ' + result.error);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to delete session:', error);
+                alert('Failed to delete session: ' + error.message);
+            }
+        }
+        
+
+        
+        async function unlockSession(sessionId) {
+            selectedSessionId = sessionId;
+            const session = sessions.find(s => s.id === sessionId);
+            showPinModal(session.name);
+        }
+        
+        function showError(message) {
+            const error = document.getElementById('pin-error');
+            error.textContent = message;
+            error.classList.add('show');
+        }
+        
+        function hideError() {
+            const error = document.getElementById('pin-error');
+            error.classList.remove('show');
+        }
+
+        // Listen for toolbar actions
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'toolbar-action') {
+                switch (event.data.action) {
+                    case 'navigate-back':
+                        navigateBack();
+                        break;
+                    case 'navigate-forward':
+                        navigateForward();
+                        break;
+                    case 'refresh':
+                        refreshPage();
+                        break;
+                    case 'home':
+                        goHome();
+                        break;
+                    case 'print':
+                        printPage();
+                        break;
+                    case 'open-settings':
+                        openSettings();
+                        break;
+                    case 'show-sessions':
+                        showSessionSwitcher();
+                        break;
+
+                    case 'check-update':
+                        checkForUpdates();
+                        break;
+                }
+            }
+        });
+
+        
     </script>
 </body>
 </html> 
