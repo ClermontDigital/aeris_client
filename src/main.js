@@ -768,46 +768,30 @@ ipcMain.handle('open-release-page', async (event, url) => {
 
 // Session Management Functions
 function createSessionSwitcher() {
-  if (sessionSwitcherWindow) {
-    sessionSwitcherWindow.focus();
-    return;
+  // Instead of creating a separate window, send event to main window to show overlay
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('show-session-overlay');
   }
-
-  sessionSwitcherWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
-    minWidth: 800,
-    minHeight: 600,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      enableRemoteModule: false,
-      preload: path.join(__dirname, 'preload.js')
-    },
-    icon: getAppIcon(),
-    titleBarStyle: 'default',
-    show: false,
-    parent: mainWindow,
-    modal: true
-  });
-
-  sessionSwitcherWindow.loadFile(path.join(__dirname, 'session-switcher.html'));
-
-  sessionSwitcherWindow.once('ready-to-show', () => {
-    sessionSwitcherWindow.show();
-  });
-
-  sessionSwitcherWindow.on('closed', () => {
-    sessionSwitcherWindow = null;
-  });
 }
-
-// Session creation is now handled by the HTML forms in session-switcher.html
 
 // Initialize session manager with settings
 function initializeSessionManager() {
   const settings = store.get();
   sessionManager.setSessionTimeout(settings.sessionTimeout || defaultConfig.sessionTimeout);
+  
+  // Clean up old sessions on startup
+  const cleanedCount = sessionManager.cleanupOldSessions();
+  if (cleanedCount > 0) {
+    console.log(`Cleaned up ${cleanedCount} old sessions on startup`);
+  }
+  
+  // Set up periodic cleanup every hour
+  setInterval(() => {
+    const cleanedCount = sessionManager.cleanupOldSessions();
+    if (cleanedCount > 0) {
+      console.log(`Cleaned up ${cleanedCount} old sessions during periodic cleanup`);
+    }
+  }, 60 * 60 * 1000); // 1 hour
   
   // Listen for session events
   sessionManager.on('sessionLocked', (session) => {
@@ -819,6 +803,13 @@ function initializeSessionManager() {
   
   sessionManager.on('sessionCreated', (session) => {
     console.log(`New session created: ${session.name}`);
+  });
+  
+  sessionManager.on('sessionUnlocked', (session) => {
+    console.log(`Session ${session.name} unlocked`);
+    if (mainWindow) {
+      mainWindow.webContents.send('session-unlocked', session);
+    }
   });
 }
 
@@ -857,17 +848,17 @@ ipcMain.handle('switch-to-session', async (event, sessionId, pin) => {
   }
 });
 
-ipcMain.handle('rename-session', async (event, sessionId, newName) => {
+ipcMain.handle('get-active-session', async () => {
+  return sessionManager.getActiveSession();
+});
+
+ipcMain.handle('update-session-url', async (event, sessionId, url) => {
   try {
-    const session = sessionManager.renameSession(sessionId, newName);
-    return { success: true, session };
+    sessionManager.updateSessionUrl(sessionId, url);
+    return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
   }
-});
-
-ipcMain.handle('get-active-session', async () => {
-  return sessionManager.getActiveSession();
 });
 
 ipcMain.handle('lock-session', async (event, sessionId) => {
@@ -885,8 +876,8 @@ ipcMain.handle('show-session-switcher', async () => {
 });
 
 ipcMain.handle('close-session-switcher', async () => {
-  if (sessionSwitcherWindow) {
-    sessionSwitcherWindow.close();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('hide-session-overlay');
   }
   return { success: true };
 });

@@ -1,67 +1,107 @@
-# Aeris Client - File Inventory
+# Aeris Client - Source File Inventory
 
 ## Project Structure
+- **Type**: Electron Desktop Application  
+- **Version**: 1.0.5
+- **Main Process**: `src/main.js`
+- **Renderer Process**: `src/app-wrapper.html`
+- **Preload Script**: `src/preload.js`
 
-```
-aeris_client/
-├── package.json                 # Node.js dependencies and build configuration
-├── README.md                   # Project documentation and setup instructions
-├── RELEASE.md                  # Release process and GitHub Actions documentation
-├── inventory.md                # This file - tracks all project files
-├── .github/
-│   └── workflows/
-│       └── build-release.yml   # GitHub Actions automated build pipeline
-└── src/
-    ├── main.js                 # Main Electron process - window management and app lifecycle
-    ├── preload.js              # Secure IPC communication bridge with session and printing APIs
-    ├── session-manager.js      # Session management with encrypted PIN protection and timeouts
-    ├── app-wrapper.html        # Main application wrapper containing toolbar and ERP content
-    ├── toolbar.html            # Custom navigation toolbar with session switcher button
-    ├── session-switcher.html   # Creative session management UI with modern design
-    ├── error.html              # Error page displayed when server is unavailable
-    ├── settings.html           # Settings configuration page with session timeout option
-    ├── print-example.html      # Demo page showing print functionality usage
-    └── assets/
-        ├── fonts/              # Typography assets
-        │   ├── poppins.css     # Poppins font definitions
-        │   ├── Poppins-Regular.woff2    # Regular weight font
-        │   ├── Poppins-Medium.woff2     # Medium weight font
-        │   └── Poppins-SemiBold.woff2   # SemiBold weight font
-        ├── icons/              # Application icons (to be provided)
-        │   ├── icon.png        # 512x512px main icon (required)
-        │   ├── icon.ico        # Windows format icon (required)
-        │   └── icon.icns       # macOS format icon (required)
-        └── images/             # Additional branding images
-            └── logo.png        # Aeris logo used in toolbar
-```
+## Core Application Files
 
-## File Descriptions
+### Main Application
+- `src/main.js` - Main Electron process, window management, IPC handlers, session management integration
+- `src/app-wrapper.html` - Primary application wrapper with ERP interface integration, session management UI integration
+- `src/preload.js` - Secure IPC bridge between main and renderer processes, session management APIs
+- `src/toolbar.html` - Application toolbar with navigation and session management controls (updated button text)
 
-### Core Application Files
-- **package.json**: Defines project metadata, dependencies (Electron, electron-store, electron-builder), and build scripts for cross-platform distribution
-- **src/main.js**: Main Electron process handling window creation, menu setup, settings management, IPC communication, comprehensive printing functionality, GitHub release checking, and multi-user session management
-- **src/preload.js**: Security layer providing safe IPC communication between main and renderer processes, includes printing API exposure, update checking functions, and session management APIs
-- **src/session-manager.js**: Comprehensive session management system with encrypted PIN storage, automatic timeouts, and event-driven architecture
+### Session Management System
+- `src/session-manager.js` - Multi-user session management with PIN-based authentication, AES-256-GCM encryption, automatic session timeout, and auto-activation of new sessions
+- `src/session-switcher.html` - Session management interface with modern glassmorphism design, enhanced Aeris branding, improved layout without scrollbars, and session lock functionality
 
-### User Interface Files
-- **src/app-wrapper.html**: Main application container that displays the custom toolbar above the ERP web application in an iframe layout, includes update dialog functionality and session switching handlers
-- **src/toolbar.html**: Custom navigation toolbar (60px height) with 50x50px buttons for back, forward, refresh, home, print, session management, settings, and update notifications
-- **src/session-switcher.html**: Modern, creative session management interface with glassmorphism design, PIN input modal, and intuitive session cards
-- **src/error.html**: Elegant error page with retry functionality, displayed when Aeris ERP server is unavailable
-- **src/settings.html**: Configuration interface for server URL (default: 10.0.0.140:8000), auto-start preferences, and session timeout settings with connection testing
-- **src/print-example.html**: Demonstration page showing how to use all printing functions from within the web application
+### Settings & Configuration  
+- `src/settings.html` - Application configuration interface with session timeout settings (5-120 minutes)
 
-### Assets (To Be Added)
-- **src/assets/icons/**: Directory for application icons in multiple formats (PNG, ICO, ICNS)
-- **src/assets/images/**: Directory for additional branding assets
+### Utility Files
+- `src/error.html` - Error page template
+- `src/print-example.html` - Print functionality example
 
-### Documentation
-- **README.md**: Comprehensive documentation including setup, development, and build instructions
-- **RELEASE.md**: Release process documentation and GitHub Actions workflow guide
-- **inventory.md**: This file - maintains complete project file inventory
+## Assets
 
-### Build & Release
-- **.github/workflows/build-release.yml**: Automated GitHub Actions pipeline for cross-platform builds and releases (excludes source code archives)
+### Images & Icons
+- `src/assets/images/logo.png` - Aeris company logo (used in session management interface)
+- `src/assets/icons/` - Application icons for different platforms
+  - `icon.png` - Standard PNG icon
+  - `icon.ico` - Windows icon  
+  - `icon.icns` - macOS icon
+
+### Fonts
+- `src/assets/fonts/` - Poppins font family
+  - `Poppins-Regular.woff2`
+  - `Poppins-Medium.woff2` 
+  - `Poppins-SemiBold.woff2`
+  - `poppins.css` - Font face definitions
+
+## Configuration Files
+- `package.json` - Node.js project configuration and dependencies (version 1.0.5)
+- `package-lock.json` - Dependency lock file
+- `.github/workflows/build-release.yml` - GitHub Actions CI/CD pipeline
+
+## Key Features
+
+### Session Management (v1.0.5)
+- **Multi-User Support**: Up to 5 concurrent user sessions
+- **PIN Authentication**: 4-digit PIN protection with AES-256-GCM encryption
+- **Session Persistence**: Sessions persist during app runtime only
+- **Automatic Timeout**: Configurable session timeout (5-120 minutes, default 30)
+- **Session Operations**: Create, switch, lock, unlock, rename, delete
+- **UI Integration**: Modern glassmorphism design with Aeris branding
+- **Keyboard Shortcuts**: 
+  - Ctrl+Shift+S: Open session manager
+  - Ctrl+L: Lock current session
+- **Auto-Activation**: New sessions automatically become active upon creation
+
+### Application Features
+- **ERP Integration**: Embedded web-based ERP system
+- **Window Management**: Resizable application window with state persistence
+- **Settings Management**: Persistent configuration storage
+- **Update Checking**: Automatic update notification system
+- **Print Support**: Integrated printing functionality
+- **Modern UI**: Clean, professional interface design
+
+### Security Features  
+- **Encryption**: AES-256-GCM for PIN storage
+- **Context Isolation**: Secure renderer process isolation
+- **IPC Security**: Controlled inter-process communication
+- **Session Security**: Automatic session locking on timeout
+
+## Recent Updates (v1.0.5)
+
+### UI Improvements
+- **Enhanced Aeris Logo**: Larger, more prominent logo in session manager (120x120px container)
+- **Improved Layout**: Fixed "No Sessions Yet" text positioning and container sizing
+- **Clean Session Cards**: Removed "No URL" text from session display
+- **Button Updates**: Changed "Session Switch" to "Sessions" in toolbar
+- **Better Visibility**: Adjusted colors and opacity for better readability
+- **Scrollbar Removal**: Fixed container dimensions to eliminate scrollbars (80vh height)
+
+### Session Management Fixes
+- **Auto-Activation**: New sessions automatically become active upon creation
+- **Lock Functionality**: Fixed session locking from toolbar when active session exists
+- **Status Consistency**: Improved session status tracking and display
+- **Session State**: Enhanced session lifecycle management
+
+### Color Scheme Refinements
+- **Text Color**: All fonts updated to #fdf0d5 (cream/beige)
+- **Button Colors**: Red buttons (#c1121f) with cream text and darker hover states
+- **Background Opacity**: Increased modal opacity for better content masking (98%)
+- **Gradient Updates**: New session cards use dark red gradient instead of purple
+
+## Architecture Notes
+- **Event-Driven**: Session manager uses EventEmitter pattern for state management
+- **Secure Storage**: Settings stored using electron-store with encryption for sensitive data
+- **Cross-Platform**: Supports Windows, macOS, and Linux
+- **Modern Standards**: ES6+ JavaScript, CSS Grid/Flexbox, HTML5 semantic elements
 
 ## Dependencies
 

@@ -48,28 +48,28 @@ class SessionManager extends EventEmitter {
     }
 
     createSession(name, pin) {
-        if (this.sessions.size >= this.maxSessions) {
-            throw new Error(`Maximum number of sessions (${this.maxSessions}) reached`);
-        }
-
         if (!name || name.trim().length === 0) {
             throw new Error('Session name is required');
         }
 
-        if (!pin || pin.toString().length !== 4 || !/^\d{4}$/.test(pin.toString())) {
+        if (!pin || pin.toString().length !== 4) {
             throw new Error('PIN must be exactly 4 digits');
         }
 
-        // Check for duplicate names
+        // Check for duplicate session names
         for (const session of this.sessions.values()) {
             if (session.name === name.trim()) {
                 throw new Error('Session name already exists');
             }
         }
 
+        if (this.sessions.size >= 5) {
+            throw new Error('Maximum of 5 sessions allowed');
+        }
+
         const sessionId = this.generateSessionId();
         const encryptedPin = this.encryptPin(pin);
-
+        
         const session = {
             id: sessionId,
             name: name.trim(),
@@ -77,13 +77,17 @@ class SessionManager extends EventEmitter {
             createdAt: new Date(),
             lastAccessedAt: new Date(),
             isLocked: false,
-            webContentsId: null,
-            currentUrl: null,
-            state: {}
+            state: {},
+            currentUrl: null
         };
 
         this.sessions.set(sessionId, session);
-        this.emit('sessionCreated', session);
+        
+        // Automatically set as active session and start timer
+        this.activeSessionId = sessionId;
+        this.resetSessionTimer(sessionId);
+        
+        this.emit('sessionCreated', this.getSession(sessionId));
 
         return sessionId;
     }
@@ -130,8 +134,8 @@ class SessionManager extends EventEmitter {
         this.activeSessionId = sessionId;
         this.resetSessionTimer(sessionId);
         
-        this.emit('sessionUnlocked', session);
-        return session;
+        this.emit('sessionUnlocked', this.getSession(sessionId));
+        return this.getSession(sessionId);
     }
 
     lockSession(sessionId) {
@@ -143,12 +147,13 @@ class SessionManager extends EventEmitter {
         session.isLocked = true;
         this.clearSessionTimer(sessionId);
         
-        if (this.activeSessionId === sessionId) {
-            this.activeSessionId = null;
-        }
+        // Don't clear activeSessionId when locking - keep it active so user can unlock
+        // if (this.activeSessionId === sessionId) {
+        //     this.activeSessionId = null;
+        // }
 
-        this.emit('sessionLocked', session);
-        return session;
+        this.emit('sessionLocked', this.getSession(sessionId));
+        return this.getSession(sessionId);
     }
 
     setSessionTimeout(minutes) {
@@ -252,26 +257,26 @@ class SessionManager extends EventEmitter {
         return this.getSession(sessionId);
     }
 
-    renameSession(sessionId, newName) {
-        if (!newName || newName.trim().length === 0) {
-            throw new Error('Session name is required');
-        }
 
-        // Check for duplicate names
-        for (const [id, session] of this.sessions.entries()) {
-            if (id !== sessionId && session.name === newName.trim()) {
-                throw new Error('Session name already exists');
+
+    cleanupOldSessions() {
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        
+        const sessionsToDelete = [];
+        
+        for (const [sessionId, session] of this.sessions.entries()) {
+            if (session.lastAccessedAt < threeDaysAgo) {
+                sessionsToDelete.push(sessionId);
             }
         }
-
-        const session = this.sessions.get(sessionId);
-        if (!session) {
-            throw new Error('Session not found');
+        
+        for (const sessionId of sessionsToDelete) {
+            console.log(`Cleaning up old session: ${this.sessions.get(sessionId).name}`);
+            this.deleteSession(sessionId);
         }
-
-        session.name = newName.trim();
-        this.emit('sessionRenamed', session);
-        return this.getSession(sessionId);
+        
+        return sessionsToDelete.length;
     }
 
     cleanup() {

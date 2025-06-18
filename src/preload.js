@@ -40,9 +40,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createSession: (name, pin) => ipcRenderer.invoke('create-session', name, pin),
   deleteSession: (sessionId) => ipcRenderer.invoke('delete-session', sessionId),
   switchToSession: (sessionId, pin) => ipcRenderer.invoke('switch-to-session', sessionId, pin),
-  renameSession: (sessionId, newName) => ipcRenderer.invoke('rename-session', sessionId, newName),
+
   lockSession: (sessionId) => ipcRenderer.invoke('lock-session', sessionId),
   getActiveSession: () => ipcRenderer.invoke('get-active-session'),
+  updateSessionUrl: (sessionId, url) => ipcRenderer.invoke('update-session-url', sessionId, url),
   showSessionSwitcher: () => ipcRenderer.invoke('show-session-switcher'),
   closeSessionSwitcher: () => ipcRenderer.invoke('close-session-switcher'),
   createNewSession: () => ipcRenderer.invoke('create-new-session'),
@@ -51,8 +52,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Session event listeners
   onSessionLocked: (callback) => ipcRenderer.on('session-locked', callback),
   onSessionSwitched: (callback) => ipcRenderer.on('session-switched', callback),
+  onSessionUnlocked: (callback) => ipcRenderer.on('session-unlocked', callback),
+  onSessionSwitcherOpened: (callback) => ipcRenderer.on('session-switcher-opened', callback),
+  onSessionSwitcherClosed: (callback) => ipcRenderer.on('session-switcher-closed', callback),
+  
+  // Generic event listener for all session events
+  on: (eventName, callback) => ipcRenderer.on(eventName, callback),
+  
   removeSessionListeners: () => {
     ipcRenderer.removeAllListeners('session-locked');
     ipcRenderer.removeAllListeners('session-switched');
+    ipcRenderer.removeAllListeners('session-unlocked');
+    ipcRenderer.removeAllListeners('session-switcher-opened');
+    ipcRenderer.removeAllListeners('session-switcher-closed');
   }
 }); 
