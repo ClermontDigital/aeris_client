@@ -73,30 +73,11 @@ jobs:
       
     - name: Get version from package.json
       id: package-version
-      run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-      
-    - name: Generate new version
-      id: new-version
       run: |
-        # Get current version from package.json
-        CURRENT_VERSION="${{ steps.package-version.outputs.version }}"
-        
-        # Split version into parts (assumes format x.y.z)
-        IFS='.' read -r -a VERSION_PARTS <<< "$CURRENT_VERSION"
-        MAJOR=${VERSION_PARTS[0]}
-        MINOR=${VERSION_PARTS[1]}
-        PATCH=${VERSION_PARTS[2]}
-        
-        # Increment patch version
-        NEW_PATCH=$((PATCH + 1))
-        NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
-        
-        echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-        echo "tag_name=v$NEW_VERSION" >> $GITHUB_OUTPUT
-        
-        echo "Current version: $CURRENT_VERSION"
-        echo "New version: $NEW_VERSION"
+        VERSION=$(node -p "require('./package.json').version")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
+        echo "Package.json version: $VERSION"
       
     - name: Download macOS artifacts
       uses: actions/download-artifact@v4
@@ -118,13 +99,12 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.new-version.outputs.tag_name }}
-        name: Aeris Client ${{ steps.new-version.outputs.new_version }}
+        tag_name: ${{ steps.package-version.outputs.tag_name }}
+        name: Aeris Client ${{ steps.package-version.outputs.version }}
         body: |
-          ## Aeris ERP Desktop Client ${{ steps.new-version.outputs.new_version }}
+          ## Aeris ERP Desktop Client ${{ steps.package-version.outputs.version }}
           
-          **Version:** ${{ steps.new-version.outputs.new_version }}
-          **Previous Version:** ${{ steps.new-version.outputs.current_version }}
+          **Version:** ${{ steps.package-version.outputs.version }}
           **Build Date:** ${{ github.event.head_commit.timestamp }}
           **Commit:** ${{ github.sha }}
           
@@ -139,11 +119,11 @@ jobs:
           Choose the appropriate file for your platform:
           
           **Windows:**
-          - `Aeris Setup ${{ steps.new-version.outputs.new_version }}.exe` - Windows installer
+          - `Aeris Setup ${{ steps.package-version.outputs.version }}.exe` - Windows installer
           
           **macOS:**
-          - `Aeris-${{ steps.new-version.outputs.new_version }}-x64.dmg` - macOS Intel
-          - `Aeris-${{ steps.new-version.outputs.new_version }}-arm64.dmg` - macOS Apple Silicon
+          - `Aeris-${{ steps.package-version.outputs.version }}-x64.dmg` - macOS Intel
+          - `Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg` - macOS Apple Silicon
           
           > **Note:** Only the installer files (.exe/.dmg) are included in this release. Auto-update files and source code are available separately if needed.
           
