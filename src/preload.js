@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteSession: (sessionId) => ipcRenderer.invoke('delete-session', sessionId),
   switchToSession: (sessionId, pin) => ipcRenderer.invoke('switch-to-session', sessionId, pin),
   renameSession: (sessionId, newName) => ipcRenderer.invoke('rename-session', sessionId, newName),
+  lockSession: (sessionId) => ipcRenderer.invoke('lock-session', sessionId),
   getActiveSession: () => ipcRenderer.invoke('get-active-session'),
   showSessionSwitcher: () => ipcRenderer.invoke('show-session-switcher'),
   closeSessionSwitcher: () => ipcRenderer.invoke('close-session-switcher'),

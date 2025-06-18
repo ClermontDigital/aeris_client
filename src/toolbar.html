@@ -191,6 +191,15 @@
             font-weight: 600;
         }
         
+        /* Session switch button - wider */
+        .session-switch-btn {
+            width: auto;
+            min-width: 140px;
+            padding: 0 16px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
         /* Update notification styles */
         .update-notification {
             background: #f59e0b;
@@ -294,9 +303,15 @@
             </button>
             
             <!-- Session switcher button -->
-            <button class="toolbar-button" id="sessions-btn" title="Session Manager">
-                👥
+            <button class="toolbar-button session-switch-btn" id="sessions-btn" title="Session Manager">
+                👥 Session Switch
                 <div class="tooltip">Manage Sessions (Ctrl+Shift+S)</div>
+            </button>
+            
+            <!-- Lock session button -->
+            <button class="toolbar-button" id="lock-session-btn" title="Lock Current Session">
+                🔒
+                <div class="tooltip">Lock Current Session (Ctrl+L)</div>
             </button>
         </div>
         
@@ -379,6 +394,10 @@
             sendAction('show-sessions');
         });
         
+        document.getElementById('lock-session-btn').addEventListener('click', () => {
+            sendAction('lock-session');
+        });
+        
         // Function key handlers - COMMENTED OUT FOR FUTURE REFINEMENT
         /* document.getElementById('f1-btn').addEventListener('click', () => {
             sendAction('navigate-to-url', { url: '/dashboard' });
@@ -418,6 +437,9 @@
             } else if (e.ctrlKey && e.shiftKey && e.key === 'S') {
                 e.preventDefault();
                 document.getElementById('sessions-btn').click();
+            } else if (e.ctrlKey && e.key === 'l') {
+                e.preventDefault();
+                document.getElementById('lock-session-btn').click();
             /* } else if (e.key === 'F1') {
                 e.preventDefault();
                 document.getElementById('f1-btn').click();

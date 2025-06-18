@@ -514,6 +514,9 @@
                 case 'show-sessions':
                     handleShowSessions();
                     break;
+                case 'lock-session':
+                    handleLockSession();
+                    break;
             }
             
             // Update navigation state after action
@@ -567,6 +570,53 @@
             } catch (error) {
                 console.error('Failed to show session switcher:', error);
             }
+        }
+        
+        async function handleLockSession() {
+            try {
+                const activeSession = await window.electronAPI.getActiveSession();
+                if (activeSession) {
+                    await window.electronAPI.lockSession(activeSession.id);
+                    
+                    // Show confirmation
+                    showNotification('Session locked successfully');
+                } else {
+                    showNotification('No active session to lock', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to lock session:', error);
+                showNotification('Failed to lock session', 'error');
+            }
+        }
+        
+        function showNotification(message, type = 'success') {
+            // Simple notification implementation
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                background: ${type === 'error' ? '#ef4444' : '#10b981'};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 500;
+                z-index: 10000;
+                animation: slideInRight 0.3s ease-out;
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.style.animation = 'fadeOut 0.3s ease-out';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        document.body.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
         }
         
         function showUpdateDialog(updateInfo) {

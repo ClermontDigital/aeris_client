@@ -870,6 +870,15 @@ ipcMain.handle('get-active-session', async () => {
   return sessionManager.getActiveSession();
 });
 
+ipcMain.handle('lock-session', async (event, sessionId) => {
+  try {
+    sessionManager.lockSession(sessionId);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('show-session-switcher', async () => {
   createSessionSwitcher();
   return { success: true };
