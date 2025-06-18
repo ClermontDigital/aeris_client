@@ -61,6 +61,7 @@
       "allowToChangeInstallationDirectory": true,
       "createStartMenuShortcut": true,
       "createDesktopShortcut": true
-    }
+    },
+    "afterSign": "build/notarize.js"
   }
-} 
+}

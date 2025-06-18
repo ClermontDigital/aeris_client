@@ -5,12 +5,14 @@ A cross-platform desktop application for accessing the Aeris ERP Point of Sale s
 ## Features
 
 - **Seamless Integration**: Loads your Aeris ERP web application in a native desktop environment
-- **Configurable Server**: Connect to any Aeris ERP server (default: localhost:8080)
+- **Configurable Server**: Connect to any Aeris ERP server (default: 10.0.0.140:8000)
 - **Offline Handling**: Graceful error handling when the server is unavailable
 - **Auto-Start Option**: Configure the app to start automatically with your computer
 - **Cross-Platform**: Works on Windows and macOS
 - **Full-Screen Ready**: Optimized for point-of-sale operations
 - **Native Menus**: Keyboard shortcuts and native menu integration
+- **Print Support**: Full printing functionality with network printer support
+- **Clean Interface**: Simple, focused design for ERP operations
 
 ## Installation
 
@@ -64,7 +66,7 @@ Built applications will be available in the `dist/` directory.
 ### First Run
 
 1. Launch the application
-2. If your Aeris ERP server is not running on localhost:8080, open Settings (Cmd/Ctrl + ,)
+2. If your Aeris ERP server is not running on 10.0.0.140:8000, open Settings (Cmd/Ctrl + ,)
 3. Configure your server URL
 4. Test the connection
 5. Optionally enable auto-start
@@ -83,6 +85,7 @@ Available settings:
 
 - **Cmd/Ctrl + ,**: Open Settings
 - **Cmd/Ctrl + R**: Reload Application
+- **Cmd/Ctrl + P**: Print Current Page
 - **F11**: Toggle Full Screen
 - **F12**: Open Developer Tools (development mode)
 - **Cmd/Ctrl + Q**: Quit Application
