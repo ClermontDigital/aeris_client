@@ -53,7 +53,6 @@ jobs:
         name: aeris-macos
         path: |
           dist/*.dmg
-          dist/*.dmg.blockmap
           dist/latest-mac.yml
         retention-days: 30
         
@@ -64,7 +63,6 @@ jobs:
         name: aeris-windows
         path: |
           dist/*.exe
-          dist/*.exe.blockmap
           dist/latest.yml
         retention-days: 30
 
@@ -145,11 +143,12 @@ jobs:
           Choose the appropriate file for your platform:
           
           **Windows:**
-          - `Aeris-Setup-${{ steps.new-version.outputs.new_version }}.exe` - Windows installer
+          - `Aeris Setup ${{ steps.new-version.outputs.new_version }}.exe` - Windows installer
           
           **macOS:**
-          - `Aeris-${{ steps.new-version.outputs.new_version }}-intel.dmg` - macOS Intel
-          - `Aeris-${{ steps.new-version.outputs.new_version }}-arm64.dmg` - macOS Apple Silicon
+          - `Aeris-${{ steps.new-version.outputs.new_version }}.dmg` - macOS Universal
+          - `Aeris-${{ steps.new-version.outputs.new_version }}-arm64.dmg` - macOS Apple Silicon (if separate)
+          - `Aeris-${{ steps.new-version.outputs.new_version }}-x64.dmg` - macOS Intel (if separate)
           
           ### 🔧 Installation
           1. Download the appropriate file for your platform
