@@ -35,13 +35,15 @@ jobs:
     - name: Build for macOS
       if: matrix.os == 'macos-latest'
       env:
-        EP_NEVER: true
+        CI: false
+        GITHUB_ACTIONS: false
       run: npm run build:mac
       
     - name: Build for Windows
       if: matrix.os == 'windows-latest'
       env:
-        EP_NEVER: true
+        CI: false
+        GITHUB_ACTIONS: false
       run: npm run build:win
       
     - name: Upload macOS artifacts
