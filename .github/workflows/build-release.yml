@@ -115,6 +115,8 @@ jobs:
       
     - name: Create Release
       uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.new-version.outputs.tag_name }}
         name: Aeris Client ${{ steps.new-version.outputs.new_version }}
@@ -158,7 +160,6 @@ jobs:
         prerelease: false
         files: |
           ./release-assets/*
-        token: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
     needs: [build, release]
