@@ -62,6 +62,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings event listener
   onSettingsUpdated: (callback) => ipcRenderer.on('settings-updated', callback),
   
+  // App restart function
+  restartApp: () => ipcRenderer.invoke('restart-app'),
+  
   removeSessionListeners: () => {
     ipcRenderer.removeAllListeners('session-locked');
     ipcRenderer.removeAllListeners('session-switched');

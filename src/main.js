@@ -425,6 +425,11 @@ ipcMain.handle('get-settings', () => {
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
+  const oldSettings = {
+    baseUrl: store.get('baseUrl', defaultConfig.baseUrl),
+    enableSessionManagement: store.get('enableSessionManagement', defaultConfig.enableSessionManagement)
+  };
+  
   store.set('baseUrl', settings.baseUrl);
   store.set('autoStart', settings.autoStart);
   store.set('enableSessionManagement', settings.enableSessionManagement);
@@ -440,12 +445,40 @@ ipcMain.handle('save-settings', (event, settings) => {
     sessionManager.setSessionTimeout(settings.sessionTimeout);
   }
   
-  // Notify main window of settings change
+  // Check if critical settings changed that require restart
+  const needsRestart = (
+    oldSettings.baseUrl !== settings.baseUrl ||
+    oldSettings.enableSessionManagement !== settings.enableSessionManagement
+  );
+  
+  // Notify main window of settings change immediately
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('settings-updated', settings);
+    mainWindow.webContents.send('settings-updated', {
+      ...settings,
+      needsRestart
+    });
+    
+    // For non-restart changes, apply them immediately
+    if (!needsRestart) {
+      // Send immediate update for session button visibility
+      mainWindow.webContents.executeJavaScript(`
+        const toolbarFrame = document.getElementById('toolbar-frame');
+        if (toolbarFrame && toolbarFrame.contentWindow) {
+          toolbarFrame.contentWindow.postMessage({
+            type: 'settings-updated',
+            settings: ${JSON.stringify(settings)}
+          }, '*');
+        }
+      `).catch(err => console.log('Failed to execute immediate update:', err));
+    }
   }
   
-  return true;
+  return { success: true, needsRestart };
+});
+
+ipcMain.handle('restart-app', () => {
+  app.relaunch();
+  app.exit();
 });
 
 ipcMain.handle('test-connection', async (event, url) => {
