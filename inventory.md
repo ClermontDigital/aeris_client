@@ -26,6 +26,10 @@
 - `src/error.html` - Error page template
 - `src/print-example.html` - Print functionality example
 
+### Testing & Documentation
+- `TESTING.md` - Comprehensive test suite with 15 test categories
+- `RELEASE.md` - Release process documentation
+
 ## Assets
 
 ### Images & Icons
@@ -81,6 +85,13 @@
 - **Enhanced PIN Input**: Improved PIN entry with auto-advance and validation
 - **Settings Synchronization**: Real-time settings updates across all windows
 - **Better Error Handling**: Improved unlock functionality and error feedback
+- **Clean Debug Output**: Removed excessive console logging while maintaining essential debugging
+
+### Quality Assurance
+- **Comprehensive Test Suite**: 15 test categories covering all functionality
+- **Regression Testing**: Specific tests for session button visibility and settings updates
+- **Automated Testing Ready**: Documentation for future CI/CD integration
+- **Edge Case Coverage**: Error handling and data validation tests
 
 ### Previous Updates (v1.0.5)
 - UI Simplification and session management system implementation
