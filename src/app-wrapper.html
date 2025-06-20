@@ -727,15 +727,12 @@
         // Initialize the app
         async function initializeApp() {
             try {
-                const settings = await window.electronAPI.getSettings();
-                currentUrl = settings.baseUrl;
-                currentSettings = settings; // Store settings globally
-                
-                // Load settings for toolbar button visibility
-                await loadSettings();
+                // Load settings once and store globally
+                currentSettings = await window.electronAPI.getSettings();
+                currentUrl = currentSettings.baseUrl;
                 
                 // Check if session management is enabled
-                if (settings.enableSessionManagement !== false) {
+                if (currentSettings.enableSessionManagement !== false) {
                     console.log('Aeris Client: Starting with session management');
                     // Show session management on startup instead of loading main app
                     showSessionSwitcher();
@@ -745,9 +742,33 @@
                     loadMainApp();
                     updateSessionState('unlocked');
                 }
+                
+                // Update toolbar with settings after initialization
+                await updateToolbarSettings();
             } catch (error) {
                 console.error('Failed to load settings:', error);
                 showError();
+            }
+        }
+        
+        // Separate function to update toolbar settings
+        async function updateToolbarSettings() {
+            const toolbarFrame = document.getElementById('toolbar-frame');
+            if (toolbarFrame) {
+                const sendSettingsToToolbar = () => {
+                    if (toolbarFrame.contentWindow) {
+                        toolbarFrame.contentWindow.postMessage({
+                            type: 'settings-updated',
+                            settings: currentSettings
+                        }, '*');
+                    }
+                };
+                
+                // Try to send settings after toolbar loads
+                toolbarFrame.addEventListener('load', sendSettingsToToolbar);
+                
+                // Also try after a delay in case toolbar is already loaded
+                setTimeout(sendSettingsToToolbar, 500);
             }
         }
         
@@ -1969,35 +1990,6 @@
         // Settings management
         let currentSettings = {};
         
-        // Load settings on startup
-        async function loadSettings() {
-            try {
-                currentSettings = await window.electronAPI.getSettings();
-                
-                // Wait for toolbar to load before sending settings
-                const toolbarFrame = document.getElementById('toolbar-frame');
-                if (toolbarFrame) {
-                    const sendSettingsToToolbar = () => {
-                        if (toolbarFrame.contentWindow) {
-                            toolbarFrame.contentWindow.postMessage({
-                                type: 'settings-updated',
-                                settings: currentSettings
-                            }, '*');
-                        }
-                    };
-                    
-                    // Try to send settings after toolbar loads
-                    toolbarFrame.addEventListener('load', sendSettingsToToolbar);
-                    
-                    // Also try after a delay in case toolbar is already loaded
-                    setTimeout(sendSettingsToToolbar, 500);
-                    setTimeout(sendSettingsToToolbar, 1000);
-                }
-            } catch (error) {
-                console.error('Failed to load settings:', error);
-            }
-        }
-        
         // Listen for settings updates
         window.electronAPI.onSettingsUpdated((settings) => {
             currentSettings = settings;
@@ -2008,20 +2000,7 @@
             }
             
             // Update toolbar to show/hide session management buttons immediately
-            const toolbarFrame = document.getElementById('toolbar-frame');
-            if (toolbarFrame && toolbarFrame.contentWindow) {
-                // Ensure the toolbar is loaded before sending message
-                const sendUpdate = () => {
-                    toolbarFrame.contentWindow.postMessage({
-                        type: 'settings-updated',
-                        settings: settings
-                    }, '*');
-                };
-                
-                // Try immediately and also after a short delay to ensure toolbar is ready
-                sendUpdate();
-                setTimeout(sendUpdate, 100);
-            }
+            updateToolbarSettings();
             
             // Update current URL if baseUrl changed
             if (settings.baseUrl && settings.baseUrl !== currentUrl) {
