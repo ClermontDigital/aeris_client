@@ -420,7 +420,7 @@ ipcMain.handle('get-settings', () => {
     enableSessionManagement: store.get('enableSessionManagement', defaultConfig.enableSessionManagement),
     sessionTimeout: store.get('sessionTimeout', defaultConfig.sessionTimeout)
   };
-  console.log('Aeris Client: Returning settings:', settings);
+
   return settings;
 });
 
@@ -461,15 +461,15 @@ ipcMain.handle('save-settings', (event, settings) => {
     // For non-restart changes, apply them immediately
     if (!needsRestart) {
       // Send immediate update for session button visibility
-      mainWindow.webContents.executeJavaScript(`
-        const toolbarFrame = document.getElementById('toolbar-frame');
-        if (toolbarFrame && toolbarFrame.contentWindow) {
-          toolbarFrame.contentWindow.postMessage({
-            type: 'settings-updated',
-            settings: ${JSON.stringify(settings)}
-          }, '*');
-        }
-      `).catch(err => console.log('Failed to execute immediate update:', err));
+             mainWindow.webContents.executeJavaScript(`
+         const toolbarFrame = document.getElementById('toolbar-frame');
+         if (toolbarFrame && toolbarFrame.contentWindow) {
+           toolbarFrame.contentWindow.postMessage({
+             type: 'settings-updated',
+             settings: ${JSON.stringify(settings)}
+           }, '*');
+         }
+       `).catch(() => {});
     }
   }
   

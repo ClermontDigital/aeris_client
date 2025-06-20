@@ -491,9 +491,6 @@
             
             if (sessionsBtn) {
                 sessionsBtn.style.display = enabled ? 'flex' : 'none';
-                console.log('Toolbar: Session button visibility set to:', enabled ? 'visible' : 'hidden');
-            } else {
-                console.warn('Toolbar: Session button not found');
             }
         }
         
@@ -531,10 +528,6 @@
                 // Handle settings updates
                 const settings = event.data.settings;
                 const sessionManagementEnabled = settings.enableSessionManagement !== false;
-                
-                console.log('Toolbar: Received settings update:', settings);
-                console.log('Toolbar: Session management enabled:', sessionManagementEnabled);
-                
                 updateSessionButtonsVisibility(sessionManagementEnabled);
             }
         });

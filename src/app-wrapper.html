@@ -1973,14 +1973,12 @@
         async function loadSettings() {
             try {
                 currentSettings = await window.electronAPI.getSettings();
-                console.log('Settings loaded:', currentSettings);
                 
                 // Wait for toolbar to load before sending settings
                 const toolbarFrame = document.getElementById('toolbar-frame');
                 if (toolbarFrame) {
                     const sendSettingsToToolbar = () => {
                         if (toolbarFrame.contentWindow) {
-                            console.log('Sending initial settings to toolbar:', currentSettings);
                             toolbarFrame.contentWindow.postMessage({
                                 type: 'settings-updated',
                                 settings: currentSettings
@@ -2003,11 +2001,9 @@
         // Listen for settings updates
         window.electronAPI.onSettingsUpdated((settings) => {
             currentSettings = settings;
-            console.log('Settings updated:', settings);
             
             // Check if restart is needed
             if (settings.needsRestart) {
-                console.log('Settings require restart - changes will take effect after restart');
                 return;
             }
             
@@ -2030,7 +2026,6 @@
             // Update current URL if baseUrl changed
             if (settings.baseUrl && settings.baseUrl !== currentUrl) {
                 currentUrl = settings.baseUrl;
-                console.log('Base URL updated to:', currentUrl);
             }
         });
 
