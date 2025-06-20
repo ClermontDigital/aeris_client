@@ -285,13 +285,27 @@
             };
             
             try {
-                await window.electronAPI.saveSettings(settings);
-                showStatus('Settings saved successfully!', 'success');
+                const result = await window.electronAPI.saveSettings(settings);
                 
-                // Close window after short delay
-                setTimeout(() => {
-                    window.close();
-                }, 1500);
+                if (result.needsRestart) {
+                    showStatus('Settings saved! Application will restart to apply changes.', 'success');
+                    
+                    // Show restart message and close after delay
+                    setTimeout(() => {
+                        if (confirm('Settings require an application restart to take effect. Restart now?')) {
+                            window.electronAPI.restartApp();
+                        } else {
+                            window.close();
+                        }
+                    }, 1000);
+                } else {
+                    showStatus('Settings saved successfully!', 'success');
+                    
+                    // Close window after short delay
+                    setTimeout(() => {
+                        window.close();
+                    }, 1500);
+                }
             } catch (error) {
                 showStatus(`Failed to save settings: ${error.message}`, 'error');
             }

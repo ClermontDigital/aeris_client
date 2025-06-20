@@ -491,6 +491,18 @@
             
             if (sessionsBtn) {
                 sessionsBtn.style.display = enabled ? 'flex' : 'none';
+                console.log('Toolbar: Session button visibility set to:', enabled ? 'visible' : 'hidden');
+            } else {
+                console.warn('Toolbar: Session button not found');
+            }
+        }
+        
+        // Initialize session button state on load
+        function initializeSessionButtonState() {
+            // Initially hide session button until we get settings
+            const sessionsBtn = document.getElementById('sessions-btn');
+            if (sessionsBtn) {
+                sessionsBtn.style.display = 'none';
             }
         }
         
@@ -518,10 +530,17 @@
             } else if (event.data.type === 'settings-updated') {
                 // Handle settings updates
                 const settings = event.data.settings;
-                updateSessionButtonsVisibility(settings.enableSessionManagement !== false);
-                console.log('Toolbar: Session management buttons visibility updated:', settings.enableSessionManagement !== false);
+                const sessionManagementEnabled = settings.enableSessionManagement !== false;
+                
+                console.log('Toolbar: Received settings update:', settings);
+                console.log('Toolbar: Session management enabled:', sessionManagementEnabled);
+                
+                updateSessionButtonsVisibility(sessionManagementEnabled);
             }
         });
+        
+        // Initialize toolbar state
+        initializeSessionButtonState();
         
         console.log('Aeris toolbar loaded');
     </script>
