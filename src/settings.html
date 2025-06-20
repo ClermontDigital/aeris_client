@@ -185,6 +185,14 @@
                 </div>
                 
                 <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="enableSessionManagement" name="enableSessionManagement" checked>
+                        <label for="enableSessionManagement">Enable Multi-User Session Management</label>
+                    </div>
+                    <div class="help-text">Disable this for single-user installations to simplify the interface</div>
+                </div>
+                
+                <div class="form-group" id="session-timeout-group">
                     <label for="sessionTimeout">Session Lock Timeout (minutes)</label>
                     <input type="number" id="sessionTimeout" name="sessionTimeout" min="5" max="120" value="30" required>
                     <div class="help-text">Sessions will automatically lock after this period of inactivity</div>
@@ -208,10 +216,21 @@
                 
                 document.getElementById('baseUrl').value = settings.baseUrl;
                 document.getElementById('autoStart').checked = settings.autoStart;
+                document.getElementById('enableSessionManagement').checked = settings.enableSessionManagement !== false; // default to true
                 document.getElementById('sessionTimeout').value = settings.sessionTimeout || 30;
+                
+                // Toggle session timeout visibility
+                toggleSessionTimeout();
             } catch (error) {
                 console.error('Failed to load settings:', error);
             }
+        }
+        
+        function toggleSessionTimeout() {
+            const enableSessionManagement = document.getElementById('enableSessionManagement').checked;
+            const sessionTimeoutGroup = document.getElementById('session-timeout-group');
+            
+            sessionTimeoutGroup.style.display = enableSessionManagement ? 'block' : 'none';
         }
         
         async function testConnection() {
@@ -261,6 +280,7 @@
             const settings = {
                 baseUrl: document.getElementById('baseUrl').value,
                 autoStart: document.getElementById('autoStart').checked,
+                enableSessionManagement: document.getElementById('enableSessionManagement').checked,
                 sessionTimeout: parseInt(document.getElementById('sessionTimeout').value)
             };
             
@@ -283,6 +303,7 @@
         
         // Initialize
         document.getElementById('settings-form').addEventListener('submit', saveSettings);
+        document.getElementById('enableSessionManagement').addEventListener('change', toggleSessionTimeout);
         loadSettings();
     </script>
 </body>

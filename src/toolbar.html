@@ -392,6 +392,8 @@
         
 
         
+
+        
         // Function key handlers - COMMENTED OUT FOR FUTURE REFINEMENT
         /* document.getElementById('f1-btn').addEventListener('click', () => {
             sendAction('navigate-to-url', { url: '/dashboard' });
@@ -479,6 +481,19 @@
         // Check on startup (after a short delay)
         setTimeout(checkForUpdates, 5000);
         
+        // Settings state
+        let sessionManagementEnabled = true;
+        
+        // Function to update session button visibility
+        function updateSessionButtonsVisibility(enabled) {
+            sessionManagementEnabled = enabled;
+            const sessionsBtn = document.getElementById('sessions-btn');
+            
+            if (sessionsBtn) {
+                sessionsBtn.style.display = enabled ? 'flex' : 'none';
+            }
+        }
+        
         // Listen for messages from parent wrapper
         window.addEventListener('message', (event) => {
             if (event.data.type === 'navigation-update') {
@@ -500,6 +515,11 @@
                     userName.textContent = event.data.userName;
                     userInfo.style.display = 'flex';
                 }
+            } else if (event.data.type === 'settings-updated') {
+                // Handle settings updates
+                const settings = event.data.settings;
+                updateSessionButtonsVisibility(settings.enableSessionManagement !== false);
+                console.log('Toolbar: Session management buttons visibility updated:', settings.enableSessionManagement !== false);
             }
         });
         
