@@ -871,6 +871,7 @@ ipcMain.handle('create-session', async (event, name, pin) => {
     const sessionId = sessionManager.createSession(name, pin);
     return { success: true, sessionId };
   } catch (error) {
+    console.error('Failed to create session:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -880,6 +881,7 @@ ipcMain.handle('delete-session', async (event, sessionId) => {
     sessionManager.deleteSession(sessionId);
     return { success: true };
   } catch (error) {
+    console.error('Failed to delete session:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -887,11 +889,9 @@ ipcMain.handle('delete-session', async (event, sessionId) => {
 ipcMain.handle('switch-to-session', async (event, sessionId, pin) => {
   try {
     const session = sessionManager.switchToSession(sessionId, pin);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('session-switched', session);
-    }
     return { success: true, session };
   } catch (error) {
+    console.error('Failed to switch session:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -911,9 +911,10 @@ ipcMain.handle('update-session-url', async (event, sessionId, url) => {
 
 ipcMain.handle('lock-session', async (event, sessionId) => {
   try {
-    sessionManager.lockSession(sessionId);
-    return { success: true };
+    const session = sessionManager.lockSession(sessionId);
+    return { success: true, session };
   } catch (error) {
+    console.error('Failed to lock session:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -986,8 +987,14 @@ app.on('window-all-closed', () => {
   // Clean up session manager
   sessionManager.cleanup();
   
-  // Always quit the app when all windows are closed, even on macOS
-  app.quit();
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('before-quit', () => {
+  // Ensure cleanup happens before quit
+  sessionManager.cleanup();
 });
 
 app.on('web-contents-created', (event, contents) => {

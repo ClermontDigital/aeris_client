@@ -10,6 +10,9 @@ class SessionManager extends EventEmitter {
         this.sessionTimeout = 30; // minutes
         this.encryptionKey = this.generateEncryptionKey();
         this.sessionTimers = new Map();
+        this.pinAttempts = new Map(); // Track PIN attempts per session
+        this.maxPinAttempts = 3;
+        this.pinLockoutDuration = 5 * 60 * 1000; // 5 minutes in milliseconds
     }
 
     generateEncryptionKey() {
@@ -118,8 +121,33 @@ class SessionManager extends EventEmitter {
             throw new Error('Session not found');
         }
 
+        // Check if session is locked out due to too many failed attempts
+        const attemptData = this.pinAttempts.get(sessionId);
+        if (attemptData && attemptData.lockedUntil > Date.now()) {
+            const remainingTime = Math.ceil((attemptData.lockedUntil - Date.now()) / 1000 / 60);
+            throw new Error(`Session locked due to too many failed attempts. Try again in ${remainingTime} minutes.`);
+        }
+
         const decryptedPin = this.decryptPin(session.pin);
-        return decryptedPin === pin.toString();
+        const isValid = decryptedPin === pin.toString();
+        
+        if (!isValid) {
+            // Track failed attempt
+            if (!attemptData) {
+                this.pinAttempts.set(sessionId, { attempts: 1, lockedUntil: null });
+            } else {
+                attemptData.attempts++;
+                if (attemptData.attempts >= this.maxPinAttempts) {
+                    attemptData.lockedUntil = Date.now() + this.pinLockoutDuration;
+                    throw new Error(`Too many failed attempts. Session locked for 5 minutes.`);
+                }
+            }
+        } else {
+            // Clear failed attempts on successful validation
+            this.pinAttempts.delete(sessionId);
+        }
+        
+        return isValid;
     }
 
     unlockSession(sessionId, pin) {
@@ -157,7 +185,13 @@ class SessionManager extends EventEmitter {
     }
 
     setSessionTimeout(minutes) {
-        this.sessionTimeout = minutes;
+        // Validate timeout range (5-120 minutes)
+        if (typeof minutes !== 'number' || minutes < 5 || minutes > 120) {
+            console.warn(`Invalid session timeout: ${minutes}. Using default of 30 minutes.`);
+            this.sessionTimeout = 30;
+        } else {
+            this.sessionTimeout = minutes;
+        }
         
         // Reset all active timers with new timeout
         for (const sessionId of this.sessionTimers.keys()) {
@@ -257,8 +291,6 @@ class SessionManager extends EventEmitter {
         return this.getSession(sessionId);
     }
 
-
-
     cleanupOldSessions() {
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
@@ -285,6 +317,9 @@ class SessionManager extends EventEmitter {
             clearTimeout(timer);
         }
         this.sessionTimers.clear();
+        
+        // Clear PIN attempt tracking
+        this.pinAttempts.clear();
         
         // Clear all sessions
         this.sessions.clear();

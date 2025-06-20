@@ -1,8 +1,10 @@
 # Aeris Client - Source File Inventory
 
+## Version: 1.0.6
+## Last Updated: December 2024
+
 ## Project Structure
 - **Type**: Electron Desktop Application  
-- **Version**: 1.0.6
 - **Main Process**: `src/main.js`
 - **Renderer Process**: `src/app-wrapper.html`
 - **Preload Script**: `src/preload.js`
@@ -170,3 +172,146 @@ The Electron client automatically injects JavaScript code that:
 - Works transparently without requiring any changes to the ERP web application
 - Maintains full compatibility - the same ERP code works in both Electron and web browsers
 - Activates on every page load/navigation automatically 
+
+### Core Application Files
+
+#### `src/main.js` (Primary Electron Main Process)
+- **Purpose**: Main Electron process, window management, IPC handlers
+- **Key Functions**: 
+  - Window creation and management
+  - Settings storage and retrieval
+  - Session management IPC handlers
+  - Print functionality
+  - Update checking
+  - App lifecycle management
+- **Recent Changes**: 
+  - Enhanced error handling for session operations
+  - Added proper cleanup on app close
+  - Improved session management error messages
+  - Fixed settings update logic for immediate vs restart-required changes
+
+#### `src/preload.js` (Electron Preload Script)
+- **Purpose**: Secure bridge between main process and renderer
+- **Key Functions**: 
+  - Exposes electronAPI to renderer processes
+  - Settings management APIs
+  - Session management APIs
+  - Print APIs
+  - Event listeners for settings updates
+- **Recent Changes**: No changes in this review
+
+#### `src/app-wrapper.html` (Main Application Container)
+- **Purpose**: Primary application interface, session management UI
+- **Key Functions**: 
+  - Application initialization
+  - Session switching interface
+  - PIN-based authentication
+  - Settings synchronization across frames
+  - Error handling and connection management
+- **Recent Changes**: 
+  - **CRITICAL FIX**: Optimized settings loading to prevent multiple API calls
+  - Consolidated settings loading logic to reduce debug spam
+  - Improved toolbar settings synchronization
+  - Removed redundant `loadSettings()` function
+
+#### `src/session-manager.js` (Session Management Backend)
+- **Purpose**: Core session management logic with encryption
+- **Key Functions**: 
+  - Session creation, deletion, switching
+  - PIN encryption/decryption using AES-256-GCM
+  - Session timeout management
+  - Activity tracking
+- **Recent Changes**: 
+  - **SECURITY ENHANCEMENT**: Added PIN attempt limiting (3 attempts, 5-minute lockout)
+  - **VALIDATION**: Added session timeout range validation (5-120 minutes)
+  - **STABILITY**: Improved cleanup method to prevent memory leaks
+  - Added PIN attempt tracking and lockout functionality
+
+#### `src/toolbar.html` (Application Toolbar)
+- **Purpose**: Navigation toolbar with session management controls
+- **Key Functions**: 
+  - Navigation controls (back, forward, refresh, home)
+  - Session management buttons (when enabled)
+  - Settings access
+  - Update notifications
+- **Recent Changes**: No changes in this review
+
+#### `src/settings.html` (Settings Configuration Interface)
+- **Purpose**: User settings configuration
+- **Key Functions**: 
+  - Server URL configuration with connection testing
+  - Session management toggle
+  - Session timeout configuration
+  - Auto-start settings
+- **Recent Changes**: No changes in this review
+
+#### `src/session-switcher.html` (Session Management Interface)
+- **Purpose**: Session switching and management UI
+- **Key Functions**: 
+  - Session creation with PIN setup
+  - Session switching with PIN authentication
+  - Session deletion and management
+- **Recent Changes**: No changes in this review (fallback file)
+
+### Static Assets
+
+#### `src/assets/fonts/` (Typography)
+- `poppins.css` - Font definitions
+- `Poppins-Regular.woff2`, `Poppins-Medium.woff2`, `Poppins-SemiBold.woff2` - Font files
+
+#### `src/assets/icons/` (Application Icons)
+- `icon.png`, `icon.ico`, `icon.icns` - Multi-platform app icons
+
+#### `src/assets/images/` (Visual Assets)
+- `logo.png` - Aeris logo for branding
+
+### Configuration Files
+
+#### `package.json` (Node.js Configuration)
+- **Version**: 1.0.6
+- **Dependencies**: Electron, electron-store for settings persistence
+- **Scripts**: Start command for development
+
+#### `package-lock.json` (Dependency Lock File)
+- Ensures consistent dependency versions across installations
+
+### Documentation
+
+#### `README.md` (Project Documentation)
+- Installation and usage instructions
+- Feature overview
+- Development setup
+
+#### `RELEASE.md` (Release Notes)
+- Version history and changelog
+- Feature additions and bug fixes
+
+#### `TESTING.md` (Test Documentation)
+- Comprehensive test scenarios
+- Quality assurance procedures
+- Manual testing guidelines
+
+### Code Quality Improvements Made:
+
+1. **Performance**: Reduced multiple settings API calls from 3 to 1 on startup
+2. **Security**: Added PIN attempt limiting with lockout protection
+3. **Stability**: Added proper cleanup on app close to prevent memory leaks
+4. **Validation**: Added input validation for session timeout ranges
+5. **Error Handling**: Enhanced error messages and logging for better debugging
+6. **Memory Management**: Improved timer and event listener cleanup
+
+### Architecture Notes:
+
+- **Single-User Mode**: When session management is disabled, app launches directly to ERP
+- **Multi-User Mode**: Full session management with PIN protection and timeouts
+- **Settings Synchronization**: Real-time updates across all windows and frames
+- **Security**: AES-256-GCM encryption for PIN storage, attempt limiting, session isolation
+- **Persistence**: Sessions exist only during runtime, settings persist between sessions
+
+### Known Issues Resolved:
+
+1. ✅ **Fixed**: Triple "Returning settings" debug output 
+2. ✅ **Fixed**: Multiple settings loading calls causing performance issues
+3. ✅ **Fixed**: Potential memory leaks from uncleaned timers and event listeners
+4. ✅ **Enhanced**: Security with PIN attempt limiting
+5. ✅ **Enhanced**: Input validation for configuration values 
