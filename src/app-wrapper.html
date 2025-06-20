@@ -729,10 +729,22 @@
             try {
                 const settings = await window.electronAPI.getSettings();
                 currentUrl = settings.baseUrl;
-                console.log('Aeris Client: Starting with session management');
+                currentSettings = settings; // Store settings globally
                 
-                // Show session management on startup instead of loading main app
-                showSessionSwitcher();
+                // Load settings for toolbar button visibility
+                await loadSettings();
+                
+                // Check if session management is enabled
+                if (settings.enableSessionManagement !== false) {
+                    console.log('Aeris Client: Starting with session management');
+                    // Show session management on startup instead of loading main app
+                    showSessionSwitcher();
+                } else {
+                    console.log('Aeris Client: Starting in single-user mode');
+                    // Load main app directly for single-user mode
+                    loadMainApp();
+                    updateSessionState('unlocked');
+                }
             } catch (error) {
                 console.error('Failed to load settings:', error);
                 showError();
@@ -1664,7 +1676,7 @@
         function showPinModal(sessionName) {
             const modal = document.getElementById('pin-modal');
             const subtitle = modal.querySelector('.pin-subtitle');
-            subtitle.textContent = `Enter the 4-digit PIN`;
+            subtitle.textContent = `Enter the 4-digit PIN for ${sessionName}`;
             
             modal.classList.add('show');
             
@@ -1672,6 +1684,50 @@
             const inputs = modal.querySelectorAll('.pin-digit');
             inputs.forEach(input => input.value = '');
             inputs[0].focus();
+            
+            // Set up PIN input handlers
+            setupPinInputHandlers(inputs);
+        }
+        
+        function setupPinInputHandlers(inputs) {
+            inputs.forEach((input, index) => {
+                // Remove existing listeners to avoid duplicates
+                input.removeEventListener('input', input.inputHandler);
+                input.removeEventListener('keydown', input.keydownHandler);
+                
+                // Input handler
+                input.inputHandler = (e) => {
+                    // Only allow digits
+                    e.target.value = e.target.value.replace(/[^0-9]/g, '');
+                    
+                    // Move to next input if value entered
+                    if (e.target.value && index < inputs.length - 1) {
+                        inputs[index + 1].focus();
+                    }
+                    
+                    // Auto-submit if all digits entered
+                    const allFilled = Array.from(inputs).every(inp => inp.value.length === 1);
+                    if (allFilled) {
+                        setTimeout(() => submitPin(), 100);
+                    }
+                };
+                
+                // Keydown handler
+                input.keydownHandler = (e) => {
+                    // Handle backspace
+                    if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                        inputs[index - 1].focus();
+                    }
+                    
+                    // Handle Enter key
+                    if (e.key === 'Enter') {
+                        submitPin();
+                    }
+                };
+                
+                input.addEventListener('input', input.inputHandler);
+                input.addEventListener('keydown', input.keydownHandler);
+            });
         }
         
         function closePinModal() {
@@ -1910,6 +1966,43 @@
             error.classList.remove('show');
         }
 
+        // Settings management
+        let currentSettings = {};
+        
+        // Load settings on startup
+        async function loadSettings() {
+            try {
+                currentSettings = await window.electronAPI.getSettings();
+                console.log('Settings loaded:', currentSettings);
+                
+                // Update toolbar to show/hide session management buttons
+                const toolbarFrame = document.getElementById('toolbar-frame');
+                if (toolbarFrame.contentWindow) {
+                    toolbarFrame.contentWindow.postMessage({
+                        type: 'settings-updated',
+                        settings: currentSettings
+                    }, '*');
+                }
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+            }
+        }
+        
+        // Listen for settings updates
+        window.electronAPI.onSettingsUpdated((settings) => {
+            currentSettings = settings;
+            console.log('Settings updated:', settings);
+            
+            // Update toolbar to show/hide session management buttons
+            const toolbarFrame = document.getElementById('toolbar-frame');
+            if (toolbarFrame.contentWindow) {
+                toolbarFrame.contentWindow.postMessage({
+                    type: 'settings-updated',
+                    settings: settings
+                }, '*');
+            }
+        });
+
         // Listen for toolbar actions
         window.addEventListener('message', (event) => {
             if (event.data.type === 'toolbar-action') {
@@ -1933,9 +2026,17 @@
                         openSettings();
                         break;
                     case 'show-sessions':
-                        showSessionSwitcher();
+                        // Only show sessions if session management is enabled
+                        if (currentSettings.enableSessionManagement !== false) {
+                            showSessionSwitcher();
+                        }
                         break;
-
+                    case 'lock-session':
+                        // Only lock if session management is enabled
+                        if (currentSettings.enableSessionManagement !== false) {
+                            handleLockSession();
+                        }
+                        break;
                     case 'check-update':
                         checkForUpdates();
                         break;

@@ -2,7 +2,7 @@
 
 ## Project Structure
 - **Type**: Electron Desktop Application  
-- **Version**: 1.0.5
+- **Version**: 1.0.6
 - **Main Process**: `src/main.js`
 - **Renderer Process**: `src/app-wrapper.html`
 - **Preload Script**: `src/preload.js`
@@ -15,8 +15,12 @@
 - `src/preload.js` - Secure IPC bridge between main and renderer processes
 - `src/toolbar.html` - Simplified application toolbar with just title display
 
+### Session Management
+- `src/session-manager.js` - Multi-user session management with encrypted PIN storage
+- `src/session-switcher.html` - Session management interface (fallback/placeholder)
+
 ### Settings & Configuration  
-- `src/settings.html` - Application configuration interface
+- `src/settings.html` - Application configuration interface with session management toggle
 
 ### Utility Files
 - `src/error.html` - Error page template
@@ -39,7 +43,7 @@
   - `poppins.css` - Font face definitions
 
 ## Configuration Files
-- `package.json` - Node.js project configuration and dependencies (version 1.0.5)
+- `package.json` - Node.js project configuration and dependencies (version 1.0.6)
 - `package-lock.json` - Dependency lock file
 - `.github/workflows/build-release.yml` - GitHub Actions CI/CD pipeline
 
@@ -56,19 +60,31 @@
 - **Context Isolation**: Secure renderer process isolation
 - **IPC Security**: Controlled inter-process communication
 
-## Recent Updates (v1.0.5)
+## Recent Updates (v1.0.6)
 
-### UI Simplification
-- **Removed Session Management**: Eliminated multi-user session functionality
-- **Simplified Toolbar**: Clean toolbar with just "Aeris ERP" title
-- **Removed Update Checking**: Eliminated automatic update notifications
-- **Streamlined Interface**: Focus on core ERP functionality
+### Session Management Toggle System
+- **Configurable Session Management**: Added ability to enable/disable multi-user session management
+- **Single-User Mode**: When disabled, application launches directly to ERP with simplified interface
+- **Multi-User Mode**: When enabled, provides full session management with PIN-protected user switching
+- **Settings Integration**: New toggle in settings to control session management functionality
 
-### Code Cleanup
-- **Removed Session Manager**: Deleted session management system
-- **Simplified Main Process**: Cleaned up main.js from session-related code
-- **Clean App Wrapper**: Removed session overlays and management UI
-- **Simplified Toolbar**: Removed session and update buttons
+### Session Management Features (When Enabled)
+- **Encrypted PIN Storage**: Secure AES-256-GCM encryption for user PINs
+- **Session Isolation**: Each user gets isolated browser session with separate cookies/storage
+- **Auto-Lock Timeout**: Configurable session timeout (5-120 minutes, default 30 minutes)
+- **Maximum 5 Sessions**: Limit to prevent resource overuse
+- **Session Persistence**: Sessions persist during app runtime but reset on restart
+- **Visual Lock Screen**: Clean overlay when sessions are locked
+
+### UI Enhancements
+- **Dynamic Button Visibility**: Session management buttons automatically hide in single-user mode
+- **Enhanced PIN Input**: Improved PIN entry with auto-advance and validation
+- **Settings Synchronization**: Real-time settings updates across all windows
+- **Better Error Handling**: Improved unlock functionality and error feedback
+
+### Previous Updates (v1.0.5)
+- UI Simplification and session management system implementation
+- Streamlined interface with focus on core ERP functionality
 
 ## Architecture Notes
 - **Secure Storage**: Settings stored using electron-store

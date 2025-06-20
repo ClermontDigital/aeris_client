@@ -15,7 +15,8 @@ let sessionSwitcherWindow;
 const defaultConfig = {
   baseUrl: 'http://localhost:8080',
   autoStart: false,
-  sessionTimeout: 10, // minutes
+  enableSessionManagement: true,
+  sessionTimeout: 30, // minutes
   windowState: {
     width: 1200,
     height: 800,
@@ -415,7 +416,9 @@ function createMenu() {
 ipcMain.handle('get-settings', () => {
   const settings = {
     baseUrl: store.get('baseUrl', defaultConfig.baseUrl),
-    autoStart: store.get('autoStart', defaultConfig.autoStart)
+    autoStart: store.get('autoStart', defaultConfig.autoStart),
+    enableSessionManagement: store.get('enableSessionManagement', defaultConfig.enableSessionManagement),
+    sessionTimeout: store.get('sessionTimeout', defaultConfig.sessionTimeout)
   };
   console.log('Aeris Client: Returning settings:', settings);
   return settings;
@@ -424,11 +427,23 @@ ipcMain.handle('get-settings', () => {
 ipcMain.handle('save-settings', (event, settings) => {
   store.set('baseUrl', settings.baseUrl);
   store.set('autoStart', settings.autoStart);
+  store.set('enableSessionManagement', settings.enableSessionManagement);
+  store.set('sessionTimeout', settings.sessionTimeout);
   
   // Handle auto-start
   app.setLoginItemSettings({
     openAtLogin: settings.autoStart
   });
+  
+  // Update session timeout in session manager
+  if (settings.enableSessionManagement) {
+    sessionManager.setSessionTimeout(settings.sessionTimeout);
+  }
+  
+  // Notify main window of settings change
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('settings-updated', settings);
+  }
   
   return true;
 });

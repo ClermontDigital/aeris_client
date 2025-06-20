@@ -59,11 +59,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Generic event listener for all session events
   on: (eventName, callback) => ipcRenderer.on(eventName, callback),
   
+  // Settings event listener
+  onSettingsUpdated: (callback) => ipcRenderer.on('settings-updated', callback),
+  
   removeSessionListeners: () => {
     ipcRenderer.removeAllListeners('session-locked');
     ipcRenderer.removeAllListeners('session-switched');
     ipcRenderer.removeAllListeners('session-unlocked');
     ipcRenderer.removeAllListeners('session-switcher-opened');
     ipcRenderer.removeAllListeners('session-switcher-closed');
+    ipcRenderer.removeAllListeners('settings-updated');
   }
 }); 
