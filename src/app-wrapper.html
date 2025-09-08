@@ -29,6 +29,344 @@
             width: 100%;
             border: none;
             background: #003049;
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            align-items: center;
+            padding: 5px 10px;
+            user-select: none;
+            -webkit-app-region: drag; /* Make the toolbar draggable */
+        }
+        
+        .toolbar-container {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+            gap: 10px;
+        }
+        
+        .toolbar-logo {
+            height: 60px;
+            width: auto;
+            margin-right: 15px;
+            -webkit-app-region: no-drag;
+        }
+        
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .toolbar-center {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            gap: 5px;
+        }
+        
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .toolbar-button {
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(10px);
+            color: #e2e8f0;
+            font-size: 18px;
+            font-weight: 500;
+            -webkit-app-region: no-drag; /* Buttons should not drag */
+        }
+        
+        .toolbar-button:hover {
+            background: rgba(255, 255, 255, 0.25);
+            border-color: rgba(255, 255, 255, 0.4);
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        }
+        
+        .toolbar-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .toolbar-button.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
+        .toolbar-separator {
+            width: 1px;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.3);
+            margin: 0 5px;
+        }
+        
+        .toolbar-title {
+            text-align: center;
+            color: #e2e8f0;
+            font-size: 14px;
+            font-weight: 500;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            -webkit-app-region: no-drag;
+            margin-right: 10px;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #e2e8f0;
+            font-size: 13px;
+            font-weight: 500;
+            margin-right: 10px;
+            -webkit-app-region: no-drag;
+        }
+        
+        .user-name {
+            color: white;
+        }
+        
+        .user-role {
+            color: #94a3b8;
+            font-size: 11px;
+            opacity: 0.8;
+        }
+        
+        .notification-bell {
+            position: relative;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #e2e8f0;
+            font-size: 16px;
+            margin-right: 8px;
+            -webkit-app-region: no-drag;
+        }
+        
+        .notification-bell:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.3);
+            color: white;
+        }
+        
+        .notification-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            min-width: 18px;
+            height: 18px;
+            background: #ef4444;
+            color: white;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 600;
+            animation: pulse 2s infinite;
+            border: 2px solid #003049;
+        }
+        
+        .notification-badge.hidden {
+            display: none;
+        }
+        
+        .notification-dropdown {
+            position: absolute;
+            top: 50px;
+            right: -10px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            min-width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .notification-dropdown.show {
+            display: block;
+        }
+        
+        .notification-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            color: #334155;
+            background: #f8fafc;
+        }
+        
+        .notification-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .notification-item:hover {
+            background: #f8fafc;
+        }
+        
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+        
+        .notification-title {
+            font-weight: 500;
+            color: #1e293b;
+            margin-bottom: 4px;
+        }
+        
+        .notification-message {
+            font-size: 13px;
+            color: #64748b;
+        }
+        
+        .admin-panel-btn {
+            background: #7c3aed;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-right: 4px;
+            -webkit-app-region: no-drag;
+        }
+        
+        .admin-panel-btn:hover {
+            background: #6d28d9;
+        }
+        
+        .logout-btn {
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            -webkit-app-region: no-drag;
+        }
+        
+        .logout-btn:hover {
+            background: #b91c1c;
+        }
+        
+        .connection-status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4ade80;
+            margin-right: 10px;
+            box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+            animation: pulse 2s infinite;
+        }
+        
+        .connection-status.disconnected {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+        }
+        
+        .tooltip {
+            position: absolute;
+            bottom: -35px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 1000;
+        }
+        
+        .toolbar-button:hover .tooltip {
+            opacity: 1;
+        }
+        
+        /* Function key buttons - smaller text */
+        .function-btn {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        /* Session active buttons - red border styling */
+        .session-active-btn {
+            border: 2px solid #dc2626 !important;
+            background: rgba(220, 38, 38, 0.1) !important;
+        }
+        
+        .session-active-btn:hover {
+            border-color: #b91c1c !important;
+            background: rgba(220, 38, 38, 0.2) !important;
+        }
+        
+        /* Update notification styles */
+        .update-notification {
+            background: #f59e0b;
+            color: white;
+            border: 1px solid #d97706;
+            animation: updatePulse 2s infinite;
+            position: relative;
+        }
+        
+        .update-notification:hover {
+            background: #d97706;
+            border-color: #b45309;
+        }
+        
+        .update-notification::after {
+            content: '';
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 8px;
+            height: 8px;
+            background: #ef4444;
+            border-radius: 50%;
+            border: 2px solid #003049;
+        }
+        
+        @keyframes updatePulse {
+            0%, 100% { 
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+            }
+            50% { 
+                box-shadow: 0 0 0 8px rgba(245, 158, 11, 0);
+            }
         }
         
         .content-frame {
@@ -597,13 +935,97 @@
 <body>
     <div class="app-container">
         <!-- Toolbar at the top -->
-        <iframe 
-            id="toolbar-frame" 
-            class="toolbar-frame" 
-            src="toolbar.html"
-            frameborder="0"
-            scrolling="no">
-        </iframe>
+        <div id="toolbar-frame" class="toolbar-frame">
+            <div class="toolbar-container">
+                <!-- Logo on the left -->
+                <div class="toolbar-left">
+                    <img src="assets/images/logo.png" alt="Aeris" class="toolbar-logo">
+                </div>
+                
+                <!-- Centered navigation and function buttons -->
+                <div class="toolbar-center">
+                    <!-- Navigation buttons -->
+                    <button class="toolbar-button" id="back-btn" title="Go Back">
+                        ←
+                        <div class="tooltip">Go Back (Alt+←)</div>
+                    </button>
+                    
+                    <button class="toolbar-button" id="forward-btn" title="Go Forward">
+                        →
+                        <div class="tooltip">Go Forward (Alt+→)</div>
+                    </button>
+                    
+                    <button class="toolbar-button" id="refresh-btn" title="Refresh">
+                        ↻
+                        <div class="tooltip">Refresh (F5)</div>
+                    </button>
+                    
+                    <button class="toolbar-button" id="home-btn" title="Home">
+                        ⌂
+                        <div class="tooltip">Home (Ctrl+H)</div>
+                    </button>
+                    
+                    <!-- Print button -->
+                    <button class="toolbar-button" id="print-btn" title="Print">
+                        🖨
+                        <div class="tooltip">Print (Ctrl+P)</div>
+                    </button>
+                    
+                    <!-- Lock session button -->
+                    <button class="toolbar-button session-active-btn" id="sessions-btn" title="Lock Session">
+                        🔒
+                        <div class="tooltip">Lock Session (Ctrl+L)</div>
+                    </button>
+                </div>
+                
+                <!-- Right side - Title, user info, status, and settings -->
+                <div class="toolbar-right">
+                    <!-- Notifications -->
+                    <div class="notification-bell" id="notification-bell" style="display: none; position: relative;" title="Notifications">
+                        🔔
+                        <span class="notification-badge hidden" id="notification-badge">0</span>
+                        
+                        <!-- Notification Dropdown -->
+                        <div class="notification-dropdown" id="notification-dropdown">
+                            <div class="notification-header">Notifications (2)</div>
+                            <div class="notification-item">
+                                <div class="notification-title">New Sale Created</div>
+                                <div class="notification-message">Lisa Anderson - $3 • 6 months ago</div>
+                            </div>
+                            <div class="notification-item">
+                                <div class="notification-title">Inventory Alert</div>
+                                <div class="notification-message">Low stock alert for Product Items need restocking</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- User info -->
+                    <div class="user-info" id="user-info" style="display: none;">
+                        <div>
+                            <div id="user-name" class="user-name"></div>
+                            <div id="user-role" class="user-role"></div>
+                        </div>
+                        <button class="admin-panel-btn" id="admin-panel-btn" style="display: none;">Admin Panel</button>
+                        <button class="logout-btn" id="logout-btn">Logout</button>
+                    </div>
+                    
+                    <!-- Connection status -->
+                    <div class="connection-status" id="connection-status"></div>
+                    
+                    <!-- Update notification button (hidden by default) -->
+                    <button class="toolbar-button" id="update-btn" title="Update Available" style="display: none;">
+                        ↗
+                        <div class="tooltip">Update Available - Click to Download</div>
+                    </button>
+                    
+                    <!-- Settings button -->
+                    <button class="toolbar-button" id="settings-btn" title="Application Settings">
+                        ⚙
+                        <div class="tooltip">App Settings (Ctrl+,)</div>
+                    </button>
+                </div>
+            </div>
+        </div>
         
         <!-- Privacy Overlay -->
         <div id="privacy-overlay" class="privacy-overlay">
@@ -731,6 +1153,9 @@
                 currentSettings = await window.electronAPI.getSettings();
                 currentUrl = currentSettings.baseUrl;
                 
+                // Use the configured base URL directly
+                console.log('Using configured base URL:', currentUrl);
+                
                 // Check if session management is enabled
                 if (currentSettings.enableSessionManagement !== false) {
                     console.log('Aeris Client: Starting with session management');
@@ -753,23 +1178,9 @@
         
         // Separate function to update toolbar settings
         async function updateToolbarSettings() {
-            const toolbarFrame = document.getElementById('toolbar-frame');
-            if (toolbarFrame) {
-                const sendSettingsToToolbar = () => {
-                    if (toolbarFrame.contentWindow) {
-                        toolbarFrame.contentWindow.postMessage({
-                            type: 'settings-updated',
-                            settings: currentSettings
-                        }, '*');
-                    }
-                };
-                
-                // Try to send settings after toolbar loads
-                toolbarFrame.addEventListener('load', sendSettingsToToolbar);
-                
-                // Also try after a delay in case toolbar is already loaded
-                setTimeout(sendSettingsToToolbar, 500);
-            }
+            // Direct access to toolbar instead of iframe postMessage
+            const sessionManagementEnabled = currentSettings.enableSessionManagement !== false;
+            updateToolbarSessionButtons(sessionManagementEnabled);
         }
         
         function loadMainApp() {
@@ -783,10 +1194,16 @@
             
             // Set up webview load event handlers
             contentFrame.addEventListener('dom-ready', () => {
-                console.log('Aeris Client: ERP webview loaded successfully');
+                console.log('=== AERIS CLIENT: ERP webview loaded successfully ===');
+                console.log('=== AERIS CLIENT: About to call injectWebsiteCustomizations ===');
                 
                 // Inject CSS to hide the website header and extract user info
-                injectWebsiteCustomizations(contentFrame);
+                try {
+                    injectWebsiteCustomizations(contentFrame);
+                    console.log('=== AERIS CLIENT: injectWebsiteCustomizations completed ===');
+                } catch (error) {
+                    console.error('=== AERIS CLIENT: Error in injectWebsiteCustomizations ===', error);
+                }
                 
                 setTimeout(() => {
                     loadingOverlay.classList.add('hidden');
@@ -847,21 +1264,21 @@
         }
         
         function updateConnectionStatus(connected) {
-            // Send status to toolbar
-            const toolbarFrame = document.getElementById('toolbar-frame');
-            if (toolbarFrame.contentWindow) {
-                toolbarFrame.contentWindow.postMessage({
-                    type: 'connection-status',
-                    connected: connected
-                }, '*');
-            }
+            // Direct toolbar update instead of iframe postMessage
+            updateToolbarConnectionStatus(connected);
         }
         
         function injectWebsiteCustomizations(webview) {
+            console.log('=== AERIS CLIENT: injectWebsiteCustomizations function called ===');
+            
             // Inject CSS and JavaScript to customize the website
             webview.executeJavaScript(`
                 (function() {
-                    // Apply customizations to the website
+                    console.log('=== AERIS CLIENT: JavaScript injection starting ===');
+                    console.log('Page URL:', window.location.href);
+                    console.log('Page title:', document.title);
+                    
+                    // IMMEDIATELY hide the navigation bar first
                     const style = document.createElement('style');
                     style.textContent = \`
                         /* Apply Poppins font to the entire website */
@@ -869,87 +1286,315 @@
                             font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
                         }
                         
-                        /* Keep navigation visible but hide only user dropdown area visually */
-                        .navbar .dropdown-toggle,
-                        .navbar .dropdown-menu,
-                        .navbar .ms-auto .dropdown,
-                        .navbar .ms-auto .d-flex,
-                        .navbar .ms-auto,
-                        .navbar .navbar-nav .dropdown {
-                            position: absolute !important;
-                            left: -9999px !important;
-                            opacity: 0 !important;
-                            pointer-events: none !important;
+                        /* Hide the entire top navigation bar using the specific class */
+                        nav.bg-aeris-navy {
+                            display: none !important;
+                            visibility: hidden !important;
+                            height: 0 !important;
                         }
                         
-                        /* Hide the dark top header if it exists */
-                        .navbar.bg-secondary,
-                        .navbar-dark.bg-secondary {
+                        /* Also hide any elements with bg-aeris-navy class */
+                        .bg-aeris-navy {
                             display: none !important;
+                            visibility: hidden !important;
+                            height: 0 !important;
+                        }
+                        
+                        /* Adjust body padding to account for hidden navbar */
+                        body {
+                            padding-top: 0 !important;
                         }
                     \`;
                     document.head.appendChild(style);
                     
-                    // Extract user information
-                    setTimeout(() => {
-                        let userName = 'User';
+                    // IMMEDIATE extraction on page load - FORCE EXECUTION
+                    function performExtraction() {
+                        console.log('=== AERIS CLIENT DEBUG: Starting user info extraction ===');
+                        console.log('Current URL:', window.location.href);
+                        console.log('Document ready state:', document.readyState);
                         
-                        // Try different selectors to find the username in Aeris ERP
-                        const userSelectors = [
-                            '.dropdown-toggle',  // The user dropdown in top nav
-                            '.navbar .dropdown-toggle',
-                            '.user-dropdown .dropdown-toggle',
-                            '.ms-auto .dropdown-toggle',
-                            'a[data-bs-toggle="dropdown"]',
-                            '.navbar-nav .dropdown-toggle'
-                        ];
+                        // Debug: Log full page text for analysis
+                        const bodyText = document.body.textContent;
+                        console.log('Full page text includes Welcome back:', bodyText.includes('Welcome back'));
+                        console.log('Full page text includes Login:', bodyText.includes('Login'));
+                        console.log('Current page title:', document.title);
                         
-                        for (const selector of userSelectors) {
-                            const element = document.querySelector(selector);
-                            if (element && element.textContent.trim()) {
-                                // Clean up the text (remove extra whitespace, icons, etc.)
-                                let text = element.textContent.trim();
-                                // Remove common icon classes or unicode characters
-                                text = text.replace(/[📤⚡👤🔽▼]/g, '').trim();
-                                if (text && text !== 'User' && text.length > 0) {
-                                    userName = text;
-                                    break;
-                                }
+                        // CHECK: Are we on a login page or logged out?
+                        const isLoginPage = bodyText.toLowerCase().includes('login') || 
+                                          bodyText.toLowerCase().includes('sign in') ||
+                                          document.title.toLowerCase().includes('login') ||
+                                          window.location.href.includes('/login') ||
+                                          document.querySelector('input[type="password"]') !== null;
+                        
+                        console.log('Is login page:', isLoginPage);
+                        
+                        // If we're on login page, send empty user info
+                        if (isLoginPage) {
+                            console.log('On login page - clearing user info');
+                            window.parent.postMessage({
+                                type: 'user-info',
+                                userName: '',
+                                userRole: '',
+                                notificationCount: 0
+                            }, '*');
+                            return; // Exit early
+                        }
+                        
+                        // FIRST: Extract user information only if we're logged in
+                        let userName = '';
+                        let userRole = '';
+                        let notificationCount = 0;
+                        
+                        // Try to find notification count - look for any red badge with numbers
+                        const allSpans = document.querySelectorAll('span');
+                        for (const span of allSpans) {
+                            const text = span.textContent.trim();
+                            const style = window.getComputedStyle(span);
+                            // Look for red background spans with numbers
+                            if (text && !isNaN(text) && text !== '' && 
+                                (style.backgroundColor.includes('rgb(239, 68, 68)') || // red-500
+                                 style.backgroundColor.includes('rgb(220, 38, 38)') || // red-600  
+                                 span.className.includes('bg-red') ||
+                                 span.className.includes('animate-pulse'))) {
+                                notificationCount = parseInt(text, 10);
+                                console.log('Found notification count:', notificationCount, 'from span with text:', text);
+                                break;
                             }
                         }
                         
-                        // If still not found, try looking in the main content area
-                        if (userName === 'User') {
-                            const welcomeElements = document.querySelectorAll('*');
-                            for (const el of welcomeElements) {
-                                const text = el.textContent;
-                                if (text && text.includes('Welcome back,')) {
-                                    const match = text.match(/Welcome back,\\s*([^,]+)/);
+                        // NEW: More aggressive search for Welcome back text anywhere on the page
+                        const welcomeMatches = bodyText.match(/Welcome back,\\s*([A-Za-z\\s]+?)(?:[.!\\n]|$)/i);
+                        if (welcomeMatches && welcomeMatches[1]) {
+                            userName = welcomeMatches[1].trim();
+                            console.log('Found user name from body text:', userName);
+                        } else {
+                            // Fallback to specific element search
+                            const allElements = document.querySelectorAll('h1, h2, h3, div, p, span');
+                            for (const el of allElements) {
+                                const text = el.textContent.trim();
+                                if (text.includes('Welcome back,')) {
+                                    const match = text.match(/Welcome back,\\s*([A-Za-z\\s]+)/i);
                                     if (match && match[1]) {
                                         userName = match[1].trim();
+                                        console.log('Found user name from element:', userName, 'in element:', el.tagName);
                                         break;
                                     }
                                 }
                             }
                         }
                         
-                        // Additional check for direct text content
-                        if (userName === 'User') {
-                            // Try to find "Joe Thorton" specifically in the page
-                            const pageText = document.body.textContent;
-                            if (pageText.includes('Joe Thorton')) {
-                                userName = 'Joe Thorton';
+                        // If no user found, we might be logged out - clear everything
+                        if (!userName) {
+                            console.log('No user name found - user might be logged out');
+                            window.parent.postMessage({
+                                type: 'user-info',
+                                userName: '',
+                                userRole: '',
+                                notificationCount: 0
+                            }, '*');
+                            return;
+                        }
+                        
+                        // Try to determine role from the user name
+                        if (userName) {
+                            const lowerUserName = userName.toLowerCase();
+                            if (lowerUserName.includes('super admin') || lowerUserName.includes('superadmin')) {
+                                userRole = 'super admin';
+                            } else if (lowerUserName.includes('admin')) {
+                                userRole = 'admin';
+                            } else if (lowerUserName.includes('manager')) {
+                                userRole = 'manager';
+                            } else {
+                                userRole = 'user';
+                            }
+                            console.log('Determined role from name:', userRole);
+                        }
+                        
+                        // Debug: Log all potential elements for troubleshooting
+                        console.log('Aeris Client: Page debugging info:');
+                        console.log('- Bell icons found:', document.querySelectorAll('.lucide-bell').length);
+                        console.log('- Red background spans:', document.querySelectorAll('span[class*="bg-red"]').length);
+                        console.log('- Dropdown triggers:', document.querySelectorAll('[data-slot="dropdown-menu-trigger"]').length);
+                        console.log('- Text-right elements:', document.querySelectorAll('.text-right').length);
+                        
+                        console.log('Aeris Client: Final extracted user info:', {
+                            userName,
+                            userRole,
+                            notificationCount
+                        });
+                        
+                        // Send enhanced user info to parent immediately
+                        window.parent.postMessage({
+                            type: 'user-info',
+                            userName: userName,
+                            userRole: userRole,
+                            notificationCount: notificationCount
+                        }, '*');
+                    }
+                    
+                    // Run extraction immediately, then again after a delay
+                    console.log('=== AERIS CLIENT: About to run performExtraction ===');
+                    performExtraction();
+                    console.log('=== AERIS CLIENT: First extraction completed ===');
+                    
+                    setTimeout(function() {
+                        console.log('=== AERIS CLIENT: Running delayed extraction ===');
+                        performExtraction();
+                        console.log('=== AERIS CLIENT: Delayed extraction completed ===');
+                    }, 2000); // Also wait 2 seconds for page to fully load
+                    
+                    // Set up periodic updates every 30 seconds to check for notification changes
+                    setInterval(function() {
+                        let currentNotificationCount = 0;
+                        
+                        // Re-scan for notification count
+                        const allSpans = document.querySelectorAll('span');
+                        for (const span of allSpans) {
+                            const text = span.textContent.trim();
+                            const style = window.getComputedStyle(span);
+                            if (text && !isNaN(text) && text !== '' && 
+                                (style.backgroundColor.includes('rgb(239, 68, 68)') || 
+                                 style.backgroundColor.includes('rgb(220, 38, 38)') || 
+                                 span.className.includes('bg-red') ||
+                                 span.className.includes('animate-pulse'))) {
+                                currentNotificationCount = parseInt(text, 10);
+                                break;
                             }
                         }
                         
-                        console.log('Aeris Client: Extracted username:', userName);
+                        // Send updated count to toolbar
+                        window.parent.postMessage({
+                            type: 'notification-update',
+                            notificationCount: currentNotificationCount
+                        }, '*');
                         
-                        // Send user info to parent
+                    }, 30000); // Update every 30 seconds
+                    
+                    // Set up mutation observer to detect page content changes (like user login/logout)
+                    const observer = new MutationObserver(function(mutations) {
+                        let shouldReExtract = false;
+                        
+                        mutations.forEach(function(mutation) {
+                            // Check if the page content changed significantly
+                            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                                for (let node of mutation.addedNodes) {
+                                    if (node.nodeType === 1) { // Element node
+                                        // Look for welcome text changes or login/dashboard changes
+                                        if (node.textContent && 
+                                            (node.textContent.includes('Welcome back') || 
+                                             node.textContent.includes('Dashboard') ||
+                                             node.textContent.includes('Login'))) {
+                                            shouldReExtract = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Also check for text changes in existing nodes
+                            if (mutation.type === 'characterData' && mutation.target.textContent) {
+                                if (mutation.target.textContent.includes('Welcome back') || 
+                                    mutation.target.textContent.includes('Dashboard')) {
+                                    shouldReExtract = true;
+                                }
+                            }
+                        });
+                        
+                        if (shouldReExtract) {
+                            // Debounce re-extraction to avoid too many updates
+                            clearTimeout(window.reExtractionTimeout);
+                            window.reExtractionTimeout = setTimeout(() => {
+                                // Re-run the extraction logic
+                                console.log('Aeris Client: Re-extracting user info due to page changes');
+                                performExtraction();
+                            }, 1000);
+                        }
+                    });
+                    
+                    // Start observing the document for changes
+                    observer.observe(document.body, {
+                        childList: true,
+                        subtree: true,
+                        characterData: true
+                    });
+                    
+                    // Extract user info function (reusable)
+                    function extractAndSendUserInfo() {
+                        let userName = 'User';
+                        let userRole = '';
+                        let notificationCount = 0;
+                        
+                        // Re-scan for notification count
+                        const allSpans = document.querySelectorAll('span');
+                        for (const span of allSpans) {
+                            const text = span.textContent.trim();
+                            const style = window.getComputedStyle(span);
+                            if (text && !isNaN(text) && text !== '' && 
+                                (style.backgroundColor.includes('rgb(239, 68, 68)') || 
+                                 style.backgroundColor.includes('rgb(220, 38, 38)') || 
+                                 span.className.includes('bg-red') ||
+                                 span.className.includes('animate-pulse'))) {
+                                notificationCount = parseInt(text, 10);
+                                break;
+                            }
+                        }
+                        
+                        // Re-extract user name from welcome text
+                        const welcomeElement = document.querySelector('h1, .welcome, [class*="welcome"]');
+                        if (welcomeElement) {
+                            const text = welcomeElement.textContent;
+                            if (text && text.includes('Welcome back,')) {
+                                const match = text.match(/Welcome back,\\s*([A-Za-z\\s]+)/);
+                                if (match && match[1]) {
+                                    userName = match[1].trim();
+                                    console.log('Re-extracted user name from welcome element:', userName);
+                                }
+                            }
+                        }
+                        
+                        // Fallback: check page text for current welcome message
+                        if (userName === 'User') {
+                            const pageText = document.body.textContent;
+                            const welcomeMatch = pageText.match(/Welcome back,\\s*([A-Za-z\\s]+)/);
+                            if (welcomeMatch && welcomeMatch[1]) {
+                                userName = welcomeMatch[1].trim();
+                                console.log('Re-extracted user name from page text:', userName);
+                            }
+                        }
+                        
+                        // Determine user role based on name or look for role text
+                        if (userName.toLowerCase().includes('super admin')) {
+                            userRole = 'super admin';
+                        } else if (userName.toLowerCase().includes('admin')) {
+                            userRole = 'admin';
+                        } else if (userName.toLowerCase().includes('manager')) {
+                            userRole = 'manager';
+                        } else {
+                            // Try to find role from text on page
+                            const allElements = document.querySelectorAll('*');
+                            for (const el of allElements) {
+                                const text = el.textContent.trim().toLowerCase();
+                                if (text === 'warehouse manager' || text === 'super admin' || text === 'admin' || text === 'manager') {
+                                    userRole = text;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        console.log('Re-extracted user info:', {
+                            userName,
+                            userRole,
+                            notificationCount
+                        });
+                        
+                        // Send updated user info to parent
                         window.parent.postMessage({
                             type: 'user-info',
-                            userName: userName
+                            userName: userName,
+                            userRole: userRole,
+                            notificationCount: notificationCount
                         }, '*');
-                    }, 2000);
+                    }
                 })();
             `).catch(err => {
                 console.log('Could not inject website customizations:', err);
@@ -957,31 +1602,8 @@
         }
         
         function updateNavigationState() {
-            const contentFrame = document.getElementById('content-frame');
-            const toolbarFrame = document.getElementById('toolbar-frame');
-            
-            if (contentFrame && toolbarFrame.contentWindow) {
-                try {
-                    const canGoBack = contentFrame.canGoBack();
-                    const canGoForward = contentFrame.canGoForward();
-                    const title = contentFrame.getTitle() || 'Aeris ERP';
-                    
-                    toolbarFrame.contentWindow.postMessage({
-                        type: 'navigation-update',
-                        canGoBack: canGoBack,
-                        canGoForward: canGoForward,
-                        title: title
-                    }, '*');
-                } catch (error) {
-                    // Fallback to defaults
-                    toolbarFrame.contentWindow.postMessage({
-                        type: 'navigation-update',
-                        canGoBack: false,
-                        canGoForward: false,
-                        title: 'Aeris ERP'
-                    }, '*');
-                }
-            }
+            // Direct toolbar update instead of iframe postMessage
+            updateToolbarNavigationState();
         }
         
         // Listen for messages from toolbar and webview
@@ -989,13 +1611,24 @@
             if (event.data.type === 'toolbar-action') {
                 handleToolbarAction(event.data.action, event.data.data);
             } else if (event.data.type === 'user-info') {
-                // Update toolbar with user information
-                const toolbarFrame = document.getElementById('toolbar-frame');
-                if (toolbarFrame.contentWindow) {
-                    toolbarFrame.contentWindow.postMessage({
-                        type: 'user-info',
-                        userName: event.data.userName
-                    }, '*');
+                // Update toolbar with enhanced user information (direct access)
+                updateToolbarUserInfo({
+                    userName: event.data.userName,
+                    userRole: event.data.userRole || '',
+                    notificationCount: event.data.notificationCount || 0
+                });
+            } else if (event.data.type === 'notification-update') {
+                // Update toolbar with new notification count only
+                const notificationBadge = document.getElementById('notification-badge');
+                const notificationBell = document.getElementById('notification-bell');
+                if (notificationBadge && notificationBell) {
+                    if (event.data.notificationCount > 0) {
+                        notificationBadge.textContent = event.data.notificationCount;
+                        notificationBadge.classList.remove('hidden');
+                        notificationBell.style.display = 'flex';
+                    } else {
+                        notificationBadge.classList.add('hidden');
+                    }
                 }
             }
         });
@@ -1047,7 +1680,13 @@
                     break;
                     
                 case 'open-settings':
-                    window.electronAPI.openSettings();
+                    console.log('=== APP-WRAPPER: Received open-settings action ===');
+                    try {
+                        window.electronAPI.openSettings();
+                        console.log('=== APP-WRAPPER: Called electronAPI.openSettings() ===');
+                    } catch (error) {
+                        console.error('=== APP-WRAPPER: Error calling openSettings ===', error);
+                    }
                     break;
                     
                 case 'logout':
@@ -1095,6 +1734,105 @@
                 case 'check-update':
                     handleUpdateCheck();
                     break;
+                    
+                case 'web-logout':
+                    // Trigger logout using POST method (as required by Laravel)
+                    try {
+                        contentFrame.executeJavaScript(`
+                            // First try to find and click existing logout buttons/forms
+                            const logoutSelectors = [
+                                'form[action*="logout"] button[type="submit"]',
+                                'button[type="submit"][name*="logout"]',
+                                'form[method="post"][action*="logout"] button',
+                                '.logout-btn',
+                                '[data-action="logout"]'
+                            ];
+                            
+                            let logoutTriggered = false;
+                            for (const selector of logoutSelectors) {
+                                try {
+                                    const logoutElement = document.querySelector(selector);
+                                    if (logoutElement) {
+                                        logoutElement.click();
+                                        logoutTriggered = true;
+                                        console.log('Triggered logout via:', selector);
+                                        break;
+                                    }
+                                } catch (e) {
+                                    continue;
+                                }
+                            }
+                            
+                            if (!logoutTriggered) {
+                                // Create and submit a POST form for logout
+                                const form = document.createElement('form');
+                                form.method = 'POST';
+                                form.action = '/logout';
+                                
+                                // Add CSRF token if available
+                                const csrfToken = document.querySelector('meta[name="csrf-token"]');
+                                if (csrfToken) {
+                                    const tokenInput = document.createElement('input');
+                                    tokenInput.type = 'hidden';
+                                    tokenInput.name = '_token';
+                                    tokenInput.value = csrfToken.getAttribute('content');
+                                    form.appendChild(tokenInput);
+                                }
+                                
+                                document.body.appendChild(form);
+                                form.submit();
+                                console.log('Submitted logout form with POST method');
+                            }
+                        `);
+                    } catch (error) {
+                        console.log('Could not trigger web logout:', error);
+                    }
+                    break;
+                    
+                case 'open-admin-panel':
+                    // Navigate to admin panel in the web interface
+                    try {
+                        contentFrame.executeJavaScript(`
+                            // Try to find admin panel links or navigate directly
+                            const adminPanelSelectors = [
+                                'a[href*="admin"]',
+                                'a[href*="super-admin"]', 
+                                '.admin-panel',
+                                '.super-admin',
+                                '[data-action="admin-panel"]'
+                            ];
+                            
+                            let adminTriggered = false;
+                            for (const selector of adminPanelSelectors) {
+                                try {
+                                    const adminElement = document.querySelector(selector);
+                                    if (adminElement) {
+                                        adminElement.click();
+                                        adminTriggered = true;
+                                        console.log('Opened admin panel via:', selector);
+                                        break;
+                                    }
+                                } catch (e) {
+                                    continue;
+                                }
+                            }
+                            
+                            if (!adminTriggered) {
+                                // Try navigating to common admin URLs
+                                const currentUrl = window.location.href;
+                                const baseUrl = currentUrl.split('/').slice(0, 3).join('/');
+                                const adminUrls = ['/admin', '/super-admin', '/administration'];
+                                
+                                // Try the first admin URL
+                                window.location.href = baseUrl + adminUrls[0];
+                                console.log('Navigating to admin panel:', baseUrl + adminUrls[0]);
+                            }
+                        `);
+                    } catch (error) {
+                        console.log('Could not open admin panel:', error);
+                    }
+                    break;
+                    
                 case 'show-sessions':
                     handleShowSessions();
                     break;
@@ -2049,6 +2787,355 @@
             }
         });
 
+        // MANUAL USER EXTRACTION - Updated to handle Aeris ERP dashboard
+        function manuallyExtractUserInfo() {
+            const contentFrame = document.getElementById('content-frame');
+            if (!contentFrame) return;
+            
+            console.log('=== MANUAL EXTRACTION: Attempting to get webview content ===');
+            
+            // Try to get the page content using executeJavaScript with enhanced extraction
+            contentFrame.executeJavaScript(`
+                // Return comprehensive page info for Aeris ERP
+                ({
+                    url: window.location.href,
+                    title: document.title,
+                    bodyText: document.body.textContent.substring(0, 2000),
+                    hasLoginForm: document.querySelector('input[type="password"]') !== null,
+                    hasWelcomeText: document.body.textContent.includes('Welcome back'),
+                    hasDashboard: document.body.textContent.includes('Dashboard') || 
+                                  document.body.textContent.includes('Sales') || 
+                                  document.body.textContent.includes('Reports') ||
+                                  document.body.textContent.includes('Point of Sale'),
+                    allText: document.body.innerText.substring(0, 3000), // Get more formatted text
+                    // Look for common user info patterns
+                    hasUserDropdown: document.querySelector('[data-bs-toggle="dropdown"]') !== null,
+                    hasUserMenu: document.querySelector('.dropdown-menu') !== null,
+                    userLinks: Array.from(document.querySelectorAll('a')).map(a => a.textContent.trim()).filter(text => 
+                        text.toLowerCase().includes('logout') || 
+                        text.toLowerCase().includes('profile') ||
+                        text.toLowerCase().includes('admin')
+                    )
+                })
+            `).then(result => {
+                console.log('=== MANUAL EXTRACTION: Enhanced page info received ===', result);
+                
+                if (result.hasLoginForm) {
+                    console.log('=== MANUAL EXTRACTION: Login page detected, clearing user info ===');
+                    // Clear user info for login page (direct access)
+                    updateToolbarUserInfo({
+                        userName: '',
+                        userRole: '',
+                        notificationCount: 0
+                    });
+                } else if (result.hasDashboard) {
+                    console.log('=== MANUAL EXTRACTION: Dashboard detected, looking for user info ===');
+                    
+                    // Try multiple patterns to find user info
+                    let userName = '';
+                    let userRole = 'user';
+                    
+                    // Pattern 1: Welcome back
+                    const welcomeMatch = result.allText.match(/Welcome back,\\s*([A-Za-z\\s]+?)(?:[.!\\n]|$)/i);
+                    if (welcomeMatch && welcomeMatch[1]) {
+                        userName = welcomeMatch[1].trim();
+                        console.log('=== MANUAL EXTRACTION: Found user name from Welcome text:', userName);
+                    }
+                    
+                    // Pattern 2: Look for Admin in text (common in Aeris)
+                    if (!userName) {
+                        const adminMatch = result.allText.match(/(Super Admin|Admin|Manager)([A-Za-z\\s]*)/i);
+                        if (adminMatch) {
+                            userName = adminMatch[0].trim();
+                            console.log('=== MANUAL EXTRACTION: Found user name from Admin pattern:', userName);
+                        }
+                    }
+                    
+                    // Pattern 3: If we're on dashboard but no specific user found, show generic admin
+                    if (!userName && result.userLinks.some(link => link.toLowerCase().includes('admin'))) {
+                        userName = 'Super Admin';
+                        userRole = 'super admin';
+                        console.log('=== MANUAL EXTRACTION: Found admin links, assuming Super Admin');
+                    } else if (!userName) {
+                        userName = 'User';
+                        console.log('=== MANUAL EXTRACTION: Using generic user name');
+                    }
+                    
+                    // Determine role from name
+                    const lowerUserName = userName.toLowerCase();
+                    if (lowerUserName.includes('super admin') || lowerUserName.includes('superadmin')) {
+                        userRole = 'super admin';
+                    } else if (lowerUserName.includes('admin')) {
+                        userRole = 'admin';
+                    } else if (lowerUserName.includes('manager')) {
+                        userRole = 'manager';
+                    }
+                    
+                    console.log('=== MANUAL EXTRACTION: Final user info:', { userName, userRole });
+                    
+                    // Update toolbar with user info (direct access)
+                    updateToolbarUserInfo({
+                        userName: userName,
+                        userRole: userRole,
+                        notificationCount: 2 // Default for now
+                    });
+                }
+            }).catch(error => {
+                console.log('=== MANUAL EXTRACTION: Error getting page info ===', error);
+            });
+        }
+        
+        // Run manual extraction every 3 seconds as a fallback
+        setInterval(manuallyExtractUserInfo, 3000);
+        
+        // Also run it once after a short delay
+        setTimeout(manuallyExtractUserInfo, 1000);
+        
+        // IMMEDIATE TEST - This should always show in console
+        console.log('=== AERIS CLIENT: App-wrapper script loaded and running ===');
+        
+        // Enhanced debugging for toolbar iframe loading
+        function debugToolbarFrame() {
+            console.log('=== TOOLBAR DEBUG: Starting comprehensive toolbar iframe debugging ===');
+            
+            const toolbarFrame = document.getElementById('toolbar-frame');
+            console.log('=== TOOLBAR DEBUG: iframe element:', toolbarFrame);
+            console.log('=== TOOLBAR DEBUG: iframe src:', toolbarFrame ? toolbarFrame.src : 'NO IFRAME');
+            console.log('=== TOOLBAR DEBUG: iframe contentWindow:', toolbarFrame ? toolbarFrame.contentWindow : 'NO IFRAME');
+            
+            if (toolbarFrame) {
+                console.log('=== TOOLBAR DEBUG: iframe readyState:', toolbarFrame.readyState);
+                console.log('=== TOOLBAR DEBUG: iframe complete:', toolbarFrame.complete);
+                
+                // Check if iframe has loaded
+                toolbarFrame.addEventListener('load', () => {
+                    console.log('=== TOOLBAR DEBUG: iframe load event fired ===');
+                    console.log('=== TOOLBAR DEBUG: contentWindow after load:', toolbarFrame.contentWindow);
+                    console.log('=== TOOLBAR DEBUG: contentDocument after load:', toolbarFrame.contentDocument);
+                    
+                    if (toolbarFrame.contentDocument) {
+                        console.log('=== TOOLBAR DEBUG: contentDocument body:', toolbarFrame.contentDocument.body);
+                        console.log('=== TOOLBAR DEBUG: contentDocument HTML:', toolbarFrame.contentDocument.documentElement.outerHTML.substring(0, 500));
+                    }
+                    
+                    // Try to send test message after load
+                    setTimeout(() => {
+                        console.log('=== TOOLBAR DEBUG: Sending test message after load ===');
+                        if (toolbarFrame.contentWindow) {
+                            toolbarFrame.contentWindow.postMessage({
+                                type: 'user-info',
+                                userName: 'Test User After Load',
+                                userRole: 'test role',
+                                notificationCount: 1
+                            }, '*');
+                        }
+                    }, 500);
+                });
+                
+                toolbarFrame.addEventListener('error', (error) => {
+                    console.log('=== TOOLBAR DEBUG: iframe error event:', error);
+                });
+                
+                // Check if already loaded
+                if (toolbarFrame.contentDocument && toolbarFrame.contentDocument.readyState === 'complete') {
+                    console.log('=== TOOLBAR DEBUG: iframe already loaded ===');
+                }
+            }
+        }
+        
+        // Run debugging immediately and after delays
+        debugToolbarFrame();
+        setTimeout(debugToolbarFrame, 1000);
+        setTimeout(debugToolbarFrame, 3000);
+        
+        // Remove test user info - let real extraction work
+        console.log('=== AERIS CLIENT: Toolbar now using direct access instead of iframe ===');
+        
+        // CRITICAL: Actually initialize the app
+        initializeApp();
+        
+        // =============================================
+        // TOOLBAR FUNCTIONALITY (Previously in iframe)
+        // =============================================
+        
+        // Initialize toolbar functionality
+        function initializeToolbar() {
+            console.log('=== TOOLBAR: Initializing toolbar functionality ===');
+            
+            // Toolbar button click handlers - now direct DOM access instead of postMessage
+            document.getElementById('back-btn').addEventListener('click', () => {
+                handleToolbarAction('navigate-back');
+            });
+            
+            document.getElementById('forward-btn').addEventListener('click', () => {
+                handleToolbarAction('navigate-forward');
+            });
+            
+            document.getElementById('refresh-btn').addEventListener('click', () => {
+                handleToolbarAction('refresh');
+            });
+            
+            document.getElementById('home-btn').addEventListener('click', () => {
+                handleToolbarAction('home');
+            });
+            
+            document.getElementById('print-btn').addEventListener('click', () => {
+                handleToolbarAction('print');
+            });
+            
+            document.getElementById('settings-btn').addEventListener('click', () => {
+                console.log('=== TOOLBAR: Settings button clicked ===');
+                handleToolbarAction('open-settings');
+                console.log('=== TOOLBAR: Settings action handled ===');
+            });
+            
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                handleToolbarAction('web-logout');
+            });
+            
+            document.getElementById('admin-panel-btn').addEventListener('click', () => {
+                handleToolbarAction('open-admin-panel');
+            });
+            
+            document.getElementById('update-btn').addEventListener('click', () => {
+                handleToolbarAction('check-update');
+            });
+            
+            document.getElementById('sessions-btn').addEventListener('click', () => {
+                handleToolbarAction('show-sessions');
+            });
+            
+            // Notification dropdown functionality
+            document.getElementById('notification-bell').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const dropdown = document.getElementById('notification-dropdown');
+                dropdown.classList.toggle('show');
+            });
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', () => {
+                const dropdown = document.getElementById('notification-dropdown');
+                if (dropdown) {
+                    dropdown.classList.remove('show');
+                }
+            });
+            
+            // Toolbar keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.altKey && e.key === 'ArrowLeft') {
+                    document.getElementById('back-btn').click();
+                } else if (e.altKey && e.key === 'ArrowRight') {
+                    document.getElementById('forward-btn').click();
+                } else if (e.key === 'F5') {
+                    e.preventDefault();
+                    document.getElementById('refresh-btn').click();
+                } else if (e.ctrlKey && e.key === 'h') {
+                    e.preventDefault();
+                    document.getElementById('home-btn').click();
+                } else if (e.ctrlKey && e.key === 'p') {
+                    e.preventDefault();
+                    document.getElementById('print-btn').click();
+                } else if (e.ctrlKey && e.key === 'l') {
+                    e.preventDefault();
+                    document.getElementById('sessions-btn').click();
+                } else if (e.ctrlKey && e.key === ',') {
+                    e.preventDefault();
+                    document.getElementById('settings-btn').click();
+                }
+            });
+            
+            console.log('=== TOOLBAR: Toolbar functionality initialized ===');
+        }
+        
+        // Function to update toolbar with user information (direct DOM access)
+        function updateToolbarUserInfo(userInfo) {
+            console.log('=== TOOLBAR: Updating user info:', userInfo);
+            
+            const userInfoDiv = document.getElementById('user-info');
+            const userName = document.getElementById('user-name');
+            const userRole = document.getElementById('user-role');
+            const notificationBell = document.getElementById('notification-bell');
+            const notificationBadge = document.getElementById('notification-badge');
+            const adminPanelBtn = document.getElementById('admin-panel-btn');
+            
+            // Check if we have valid user data or if we should hide user info
+            if (userInfo.userName && userInfo.userName !== 'User' && userInfo.userName !== '') {
+                console.log('=== TOOLBAR: Setting user name to:', userInfo.userName);
+                userName.textContent = userInfo.userName;
+                userInfoDiv.style.display = 'flex';
+                
+                // Update user role
+                if (userInfo.userRole) {
+                    console.log('=== TOOLBAR: Setting user role to:', userInfo.userRole);
+                    userRole.textContent = userInfo.userRole;
+                    
+                    // Show/hide admin panel button based on user role
+                    if (userInfo.userRole.toLowerCase().includes('super admin') || 
+                        userInfo.userName.toLowerCase().includes('super admin')) {
+                        adminPanelBtn.style.display = 'inline-block';
+                        console.log('=== TOOLBAR: Showing admin panel button for super admin');
+                    } else {
+                        adminPanelBtn.style.display = 'none';
+                        console.log('=== TOOLBAR: Hiding admin panel button for role:', userInfo.userRole);
+                    }
+                }
+            } else {
+                // No user or logged out - hide user info completely
+                console.log('=== TOOLBAR: No user data or empty username - hiding user info');
+                userInfoDiv.style.display = 'none';
+            }
+            
+            // Update notification count
+            if (userInfo.notificationCount !== undefined) {
+                console.log('=== TOOLBAR: Setting notification count to:', userInfo.notificationCount);
+                notificationBell.style.display = 'flex';
+                
+                if (userInfo.notificationCount > 0) {
+                    notificationBadge.textContent = userInfo.notificationCount;
+                    notificationBadge.classList.remove('hidden');
+                } else {
+                    notificationBadge.classList.add('hidden');
+                }
+            }
+        }
+        
+        // Function to update connection status in toolbar
+        function updateToolbarConnectionStatus(connected) {
+            const status = document.getElementById('connection-status');
+            if (status) {
+                status.classList.toggle('disconnected', !connected);
+            }
+        }
+        
+        // Function to update session buttons visibility
+        function updateToolbarSessionButtons(sessionManagementEnabled) {
+            const sessionsBtn = document.getElementById('sessions-btn');
+            if (sessionsBtn) {
+                sessionsBtn.style.display = sessionManagementEnabled ? 'flex' : 'none';
+            }
+        }
+        
+        // Function to update navigation state in toolbar
+        function updateToolbarNavigationState() {
+            const contentFrame = document.getElementById('content-frame');
+            
+            if (contentFrame) {
+                try {
+                    const canGoBack = contentFrame.canGoBack();
+                    const canGoForward = contentFrame.canGoForward();
+                    
+                    document.getElementById('back-btn').classList.toggle('disabled', !canGoBack);
+                    document.getElementById('forward-btn').classList.toggle('disabled', !canGoForward);
+                } catch (error) {
+                    // Fallback to defaults
+                    document.getElementById('back-btn').classList.add('disabled');
+                    document.getElementById('forward-btn').classList.add('disabled');
+                }
+            }
+        }
+        
+        // Initialize toolbar when DOM is ready
+        document.addEventListener('DOMContentLoaded', initializeToolbar);
         
     </script>
 </body>
