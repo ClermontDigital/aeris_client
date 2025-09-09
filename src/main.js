@@ -1,4 +1,6 @@
+
 const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
+console.log('Loaded electron module: Object Version:', app ? app.getVersion() : 'No app');
 const path = require('path');
 const Store = require('electron-store');
 const https = require('https');
@@ -13,7 +15,7 @@ let sessionSwitcherWindow;
 
 // Default configuration
 const defaultConfig = {
-  baseUrl: 'http://localhost:8080',
+  baseUrl: 'http://localhost:8822',
   autoStart: false,
   enableSessionManagement: true,
   sessionTimeout: 30, // minutes
@@ -114,6 +116,13 @@ function createMainWindow() {
     }
   });
 
+  // Handle window close - quit the app when main window is closed
+  mainWindow.on('close', () => {
+    // Clean up session manager before quitting
+    sessionManager.cleanup();
+    app.quit();
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -159,7 +168,7 @@ function injectModalFix() {
         
         // Create a synchronous-style promise handler
         let result = false;
-        const promise =         window.electronAPI.showConfirmDialog({
+        const promise = window.electronAPI.showConfirmDialog({
           message: message || 'Are you sure?',
           title: 'Aeris - Confirm'
         });
@@ -461,15 +470,15 @@ ipcMain.handle('save-settings', (event, settings) => {
     // For non-restart changes, apply them immediately
     if (!needsRestart) {
       // Send immediate update for session button visibility
-             mainWindow.webContents.executeJavaScript(`
-         const toolbarFrame = document.getElementById('toolbar-frame');
-         if (toolbarFrame && toolbarFrame.contentWindow) {
-           toolbarFrame.contentWindow.postMessage({
-             type: 'settings-updated',
-             settings: ${JSON.stringify(settings)}
-           }, '*');
-         }
-       `).catch(() => {});
+      mainWindow.webContents.executeJavaScript(`
+        const toolbarFrame = document.getElementById('toolbar-frame');
+        if (toolbarFrame && toolbarFrame.contentWindow) {
+          toolbarFrame.contentWindow.postMessage({
+            type: 'settings-updated',
+            settings: ${JSON.stringify(settings)}
+          }, '*');
+        }
+      `).catch(() => {});
     }
   }
   
@@ -700,120 +709,6 @@ ipcMain.handle('show-alert-dialog', async (event, options) => {
   }
 });
 
-// Add update checking functionality
-async function checkForUpdates() {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.github.com',
-      path: '/repos/YOUR_USERNAME/YOUR_REPO_NAME/releases/latest', // Replace with your repo
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Aeris-Client'
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let data = '';
-      
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
-      
-      res.on('end', () => {
-        try {
-          if (res.statusCode === 200) {
-            const release = JSON.parse(data);
-            const currentVersion = app.getVersion();
-            const latestVersion = release.tag_name.replace(/^v/, ''); // Remove 'v' prefix if present
-            
-            const updateAvailable = compareVersions(latestVersion, currentVersion) > 0;
-            
-            resolve({
-              updateAvailable,
-              currentVersion,
-              latestVersion,
-              releaseUrl: release.html_url,
-              releaseNotes: release.body,
-              downloadUrl: getDownloadUrl(release.assets),
-              publishedAt: release.published_at
-            });
-          } else {
-            reject(new Error(`GitHub API returned ${res.statusCode}`));
-          }
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
-
-    req.on('error', (error) => {
-      reject(error);
-    });
-    
-    req.setTimeout(10000, () => {
-      req.abort();
-      reject(new Error('Request timeout'));
-    });
-
-    req.end();
-  });
-}
-
-function compareVersions(version1, version2) {
-  const v1parts = version1.split('.').map(n => parseInt(n, 10));
-  const v2parts = version2.split('.').map(n => parseInt(n, 10));
-  
-  for (let i = 0; i < Math.max(v1parts.length, v2parts.length); i++) {
-    const v1part = v1parts[i] || 0;
-    const v2part = v2parts[i] || 0;
-    
-    if (v1part > v2part) return 1;
-    if (v1part < v2part) return -1;
-  }
-  return 0;
-}
-
-function getDownloadUrl(assets) {
-  const platform = process.platform;
-  
-  if (platform === 'darwin') {
-    // Look for .dmg file for macOS
-    const dmgAsset = assets.find(asset => 
-      asset.name.toLowerCase().includes('.dmg') && 
-      !asset.name.toLowerCase().includes('blockmap')
-    );
-    return dmgAsset ? dmgAsset.browser_download_url : null;
-  } else if (platform === 'win32') {
-    // Look for .exe file for Windows
-    const exeAsset = assets.find(asset => 
-      asset.name.toLowerCase().includes('.exe') && 
-      !asset.name.toLowerCase().includes('blockmap')
-    );
-    return exeAsset ? exeAsset.browser_download_url : null;
-  }
-  
-  return null;
-}
-
-// IPC handler for update checking
-ipcMain.handle('check-for-updates', async () => {
-  try {
-    const updateInfo = await checkForUpdates();
-    return { success: true, ...updateInfo };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('open-release-page', async (event, url) => {
-  try {
-    await shell.openExternal(url);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
 // Session Management Functions
 function createSessionSwitcher() {
   // Instead of creating a separate window, send event to main window to show overlay
@@ -964,13 +859,6 @@ app.whenReady().then(() => {
       store.set(key, defaultConfig[key]);
     }
   });
-  
-  // Reset URL to correct localhost:8080 if it was changed to 10.0.0.140:8000
-  const currentBaseUrl = store.get('baseUrl');
-  if (currentBaseUrl === 'http://10.0.0.140:8000') {
-    console.log('Aeris Client: Resetting URL from 10.0.0.140:8000 back to localhost:8080');
-    store.set('baseUrl', defaultConfig.baseUrl);
-  }
 
   createMainWindow();
   createMenu();
@@ -987,12 +875,19 @@ app.on('window-all-closed', () => {
   // Clean up session manager
   sessionManager.cleanup();
   
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Always quit the app when all windows are closed (including macOS)
+  // This is appropriate for a single-window ERP client application
+  app.quit();
 });
 
 app.on('before-quit', () => {
+  // Clear web session data before quit to prevent CSRF token issues
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.session.clearStorageData({
+      storages: ['cookies', 'localstorage', 'sessionstorage', 'indexdb', 'websql']
+    });
+  }
+  
   // Ensure cleanup happens before quit
   sessionManager.cleanup();
 });
@@ -1002,4 +897,4 @@ app.on('web-contents-created', (event, contents) => {
     event.preventDefault();
     shell.openExternal(navigationUrl);
   });
-}); 
+});
