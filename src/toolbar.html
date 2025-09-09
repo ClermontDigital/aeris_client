@@ -127,6 +127,129 @@
             color: white;
         }
         
+        .user-role {
+            color: #94a3b8;
+            font-size: 11px;
+            opacity: 0.8;
+        }
+        
+        .notification-bell {
+            position: relative;
+            width: 40px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #e2e8f0;
+            font-size: 16px;
+            margin-right: 8px;
+            -webkit-app-region: no-drag;
+        }
+        
+        .notification-bell:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.3);
+            color: white;
+        }
+        
+        .notification-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            min-width: 18px;
+            height: 18px;
+            background: #ef4444;
+            color: white;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 600;
+            animation: pulse 2s infinite;
+            border: 2px solid #003049;
+        }
+        
+        .notification-badge.hidden {
+            display: none;
+        }
+        
+        .notification-dropdown {
+            position: absolute;
+            top: 50px;
+            right: -10px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            min-width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .notification-dropdown.show {
+            display: block;
+        }
+        
+        .notification-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            color: #334155;
+            background: #f8fafc;
+        }
+        
+        .notification-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .notification-item:hover {
+            background: #f8fafc;
+        }
+        
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+        
+        .notification-title {
+            font-weight: 500;
+            color: #1e293b;
+            margin-bottom: 4px;
+        }
+        
+        .notification-message {
+            font-size: 13px;
+            color: #64748b;
+        }
+        
+        .admin-panel-btn {
+            background: #7c3aed;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-right: 4px;
+            -webkit-app-region: no-drag;
+        }
+        
+        .admin-panel-btn:hover {
+            background: #6d28d9;
+        }
+        
         .logout-btn {
             background: #dc2626;
             color: white;
@@ -316,9 +439,32 @@
         
         <!-- Right side - Title, user info, status, and settings -->
         <div class="toolbar-right">
+            <!-- Notifications -->
+            <div class="notification-bell" id="notification-bell" style="display: none; position: relative;" title="Notifications">
+                🔔
+                <span class="notification-badge" id="notification-badge">0</span>
+                
+                <!-- Notification Dropdown -->
+                <div class="notification-dropdown" id="notification-dropdown">
+                    <div class="notification-header">Notifications (2)</div>
+                    <div class="notification-item">
+                        <div class="notification-title">New Sale Created</div>
+                        <div class="notification-message">Lisa Anderson - $3 • 6 months ago</div>
+                    </div>
+                    <div class="notification-item">
+                        <div class="notification-title">Inventory Alert</div>
+                        <div class="notification-message">Low stock alert for Product Items need restocking</div>
+                    </div>
+                </div>
+            </div>
+            
             <!-- User info -->
             <div class="user-info" id="user-info" style="display: none;">
-                <span id="user-name" class="user-name">Joe Thorton</span>
+                <div>
+                    <div id="user-name" class="user-name"></div>
+                    <div id="user-role" class="user-role"></div>
+                </div>
+                <button class="admin-panel-btn" id="admin-panel-btn" style="display: none;">Admin Panel</button>
                 <button class="logout-btn" id="logout-btn">Logout</button>
             </div>
             
@@ -340,6 +486,18 @@
     </div>
 
     <script>
+        // Initialize toolbar
+        console.log('=== TOOLBAR SCRIPT: Script section reached ===');
+        
+        // Try to log to parent window console as well
+        try {
+            if (window.parent && window.parent.console) {
+                window.parent.console.log('=== TOOLBAR SCRIPT: Toolbar JavaScript is executing ===');
+            }
+        } catch (e) {
+            console.log('=== TOOLBAR SCRIPT: Could not log to parent:', e);
+        }
+        
         // Function to send messages to parent wrapper
         function sendAction(action, data = null) {
             if (window.parent && window.parent !== window) {
@@ -373,11 +531,17 @@
         });
         
         document.getElementById('settings-btn').addEventListener('click', () => {
+            console.log('=== TOOLBAR: Settings button clicked ===');
             sendAction('open-settings');
+            console.log('=== TOOLBAR: Sent open-settings action ===');
         });
         
         document.getElementById('logout-btn').addEventListener('click', () => {
-            sendAction('logout');
+            sendAction('web-logout');
+        });
+        
+        document.getElementById('admin-panel-btn').addEventListener('click', () => {
+            sendAction('open-admin-panel');
         });
         
 
@@ -388,6 +552,19 @@
         
         document.getElementById('sessions-btn').addEventListener('click', () => {
             sendAction('show-sessions');
+        });
+        
+        // Notification dropdown functionality
+        document.getElementById('notification-bell').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const dropdown = document.getElementById('notification-dropdown');
+            dropdown.classList.toggle('show');
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', () => {
+            const dropdown = document.getElementById('notification-dropdown');
+            dropdown.classList.remove('show');
         });
         
 
@@ -484,6 +661,61 @@
         // Settings state
         let sessionManagementEnabled = true;
         
+        // Cache the first successful user info to prevent override by partial data
+        let cachedUserInfo = null;
+        
+        // Function to display user info in the toolbar
+        function displayUserInfo(userInfoData) {
+            const userInfo = document.getElementById('user-info');
+            const userName = document.getElementById('user-name');
+            const userRole = document.getElementById('user-role');
+            const notificationBell = document.getElementById('notification-bell');
+            const notificationBadge = document.getElementById('notification-badge');
+            
+            console.log('Displaying user info:', userInfoData);
+            
+            // Check if we have valid user data
+            if (userInfoData.userName && userInfoData.userName !== 'User' && userInfoData.userName !== '') {
+                console.log('Setting user name to:', userInfoData.userName);
+                userName.textContent = userInfoData.userName;
+                userInfo.style.display = 'flex';
+                
+                // Update user role
+                if (userInfoData.userRole) {
+                    console.log('Setting user role to:', userInfoData.userRole);
+                    userRole.textContent = userInfoData.userRole;
+                    
+                    // Show/hide admin panel button based on user role
+                    const adminPanelBtn = document.getElementById('admin-panel-btn');
+                    if (userInfoData.userRole.toLowerCase().includes('super admin') || 
+                        userInfoData.userName.toLowerCase().includes('super admin')) {
+                        adminPanelBtn.style.display = 'inline-block';
+                        console.log('Showing admin panel button for super admin');
+                    } else {
+                        adminPanelBtn.style.display = 'none';
+                        console.log('Hiding admin panel button for role:', userInfoData.userRole);
+                    }
+                }
+                
+                // Update notification count
+                if (userInfoData.notificationCount !== undefined) {
+                    console.log('Setting notification count to:', userInfoData.notificationCount);
+                    notificationBell.style.display = 'flex';
+                    
+                    if (userInfoData.notificationCount > 0) {
+                        notificationBadge.textContent = userInfoData.notificationCount;
+                        notificationBadge.classList.remove('hidden');
+                    } else {
+                        notificationBadge.classList.add('hidden');
+                    }
+                }
+            } else {
+                // No user or logged out - hide user info completely
+                console.log('No user data or empty username - hiding user info');
+                userInfo.style.display = 'none';
+            }
+        }
+        
         // Function to update session button visibility
         function updateSessionButtonsVisibility(enabled) {
             sessionManagementEnabled = enabled;
@@ -516,13 +748,46 @@
                 const status = document.getElementById('connection-status');
                 status.classList.toggle('disconnected', !event.data.connected);
             } else if (event.data.type === 'user-info') {
-                // Update user information in toolbar
-                const userInfo = document.getElementById('user-info');
-                const userName = document.getElementById('user-name');
+                // Debug: Log received user info
+                console.log('Toolbar received user info:', event.data);
                 
-                if (event.data.userName && event.data.userName !== 'User') {
-                    userName.textContent = event.data.userName;
-                    userInfo.style.display = 'flex';
+                // Check if this is a complete user info (has both userName and userRole)
+                const isCompleteUserInfo = event.data.userName && 
+                                          event.data.userName !== 'User' && 
+                                          event.data.userName !== '' &&
+                                          event.data.userRole &&
+                                          event.data.userRole !== '';
+                
+                // If we have cached complete user info and this new info is incomplete, ignore it
+                if (cachedUserInfo && !isCompleteUserInfo) {
+                    console.log('Ignoring incomplete user info, using cached:', cachedUserInfo);
+                    // Re-display cached user info instead
+                    displayUserInfo(cachedUserInfo);
+                    return;
+                }
+                
+                // If this is complete user info, cache it
+                if (isCompleteUserInfo) {
+                    cachedUserInfo = {
+                        userName: event.data.userName,
+                        userRole: event.data.userRole,
+                        notificationCount: event.data.notificationCount || 0
+                    };
+                    console.log('Caching complete user info:', cachedUserInfo);
+                }
+                
+                // Display the user info
+                displayUserInfo(event.data);
+            } else if (event.data.type === 'notification-update') {
+                // Handle live notification count updates
+                const notificationBadge = document.getElementById('notification-badge');
+                if (notificationBadge) {
+                    if (event.data.notificationCount > 0) {
+                        notificationBadge.textContent = event.data.notificationCount;
+                        notificationBadge.classList.remove('hidden');
+                    } else {
+                        notificationBadge.classList.add('hidden');
+                    }
                 }
             } else if (event.data.type === 'settings-updated') {
                 // Handle settings updates
@@ -535,7 +800,8 @@
         // Initialize toolbar state
         initializeSessionButtonState();
         
-        console.log('Aeris toolbar loaded');
+        console.log('=== AERIS TOOLBAR: Toolbar loaded ===');
+        
     </script>
 </body>
 </html> 

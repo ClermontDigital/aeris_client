@@ -1119,12 +1119,13 @@
         <!-- Main content area -->
         <webview 
             id="content-frame" 
-            class="content-frame" 
-            allowpopups>
+            class="content-frame"
+            src="http://localhost:8822"
+            partition="persist:main">
         </webview>
         
         <!-- Loading overlay -->
-        <div id="loading-overlay" class="loading-overlay">
+        <div id="loading-overlay" class="loading-overlay hidden">
             <div class="loading-spinner"></div>
             <div class="loading-text">Connecting to Aeris ERP...</div>
         </div>
@@ -1155,6 +1156,9 @@
                 
                 // Use the configured base URL directly
                 console.log('Using configured base URL:', currentUrl);
+                
+                // Check sessionStorage for persisted user info on init
+                manuallyExtractUserInfo(); // Initial extraction, will use persisted if available
                 
                 // Check if session management is enabled
                 if (currentSettings.enableSessionManagement !== false) {
@@ -1188,52 +1192,42 @@
             const loadingOverlay = document.getElementById('loading-overlay');
             const errorOverlay = document.getElementById('error-overlay');
             
-            // Show loading
-            loadingOverlay.classList.remove('hidden');
+            // Keep loading overlay hidden
+            loadingOverlay.classList.add('hidden');
             errorOverlay.style.display = 'none';
             
-            // Set up webview load event handlers
+            // Clear any existing session/cache data by forcing a fresh load
+            contentFrame.src = 'about:blank';
+            
+            // Wait a moment then load the actual URL to ensure clean start
+            setTimeout(() => {
+                contentFrame.src = currentUrl + '?t=' + Date.now(); // Add timestamp to prevent caching
+            }, 100);
+            
+            // Webview load handler
             contentFrame.addEventListener('dom-ready', () => {
-                console.log('=== AERIS CLIENT: ERP webview loaded successfully ===');
-                console.log('=== AERIS CLIENT: About to call injectWebsiteCustomizations ===');
+                isConnected = true;
+                updateConnectionStatus(true);
                 
-                // Inject CSS to hide the website header and extract user info
+                // Inject CSS after webview loads
                 try {
-                    injectWebsiteCustomizations(contentFrame);
-                    console.log('=== AERIS CLIENT: injectWebsiteCustomizations completed ===');
+                    setTimeout(() => {
+                        injectWebsiteCustomizations(contentFrame);
+                        manuallyExtractUserInfo();
+                    }, 500);
                 } catch (error) {
-                    console.error('=== AERIS CLIENT: Error in injectWebsiteCustomizations ===', error);
+                    console.error('Error in post-load processing:', error);
                 }
-                
-                setTimeout(() => {
-                    loadingOverlay.classList.add('hidden');
-                    isConnected = true;
-                    updateConnectionStatus(true);
-                }, 500);
             });
             
+            // Error handler for webview
             contentFrame.addEventListener('did-fail-load', (error) => {
-                console.error('Aeris Client: ERP webview load error:', error);
+                console.error('Webview load error:', error);
                 showError();
-            });
-            
-            // Add timeout for loading
-            const timeout = setTimeout(() => {
-                console.error('Aeris Client: ERP webview load timeout');
-                showError();
-            }, 15000); // 15 second timeout
-            
-            // Load the main application
-            console.log('Aeris Client: Setting webview src to:', currentUrl);
-            contentFrame.src = currentUrl;
-            
-            // Clear timeout on successful load
-            contentFrame.addEventListener('dom-ready', () => {
-                clearTimeout(timeout);
             });
             
             // Set up periodic connection check
-            setInterval(checkConnection, 30000); // Check every 30 seconds
+            setInterval(checkConnection, 30000);
         }
         
         function showError() {
@@ -1269,335 +1263,80 @@
         }
         
         function injectWebsiteCustomizations(webview) {
-            console.log('=== AERIS CLIENT: injectWebsiteCustomizations function called ===');
             
-            // Inject CSS and JavaScript to customize the website
+            // Inject only CSS to hide the web app's navigation bar
             webview.executeJavaScript(`
                 (function() {
-                    console.log('=== AERIS CLIENT: JavaScript injection starting ===');
-                    console.log('Page URL:', window.location.href);
-                    console.log('Page title:', document.title);
                     
-                    // IMMEDIATELY hide the navigation bar first
-                    const style = document.createElement('style');
-                    style.textContent = \`
+                    // Run immediately and also after page load
+                    function applyCSS() {
+                        const style = document.createElement('style');
+                        style.id = 'aeris-navbar-hider';
+                        style.textContent = \`
                         /* Apply Poppins font to the entire website */
                         * {
                             font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
                         }
                         
-                        /* Hide the entire top navigation bar using the specific class */
+                        /* Hide only the top header with AERIS logo - be very specific */
                         nav.bg-aeris-navy {
                             display: none !important;
                             visibility: hidden !important;
                             height: 0 !important;
+                            min-height: 0 !important;
+                            max-height: 0 !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            overflow: hidden !important;
                         }
                         
-                        /* Also hide any elements with bg-aeris-navy class */
-                        .bg-aeris-navy {
+                        /* Alternative selectors for the top header only */
+                        header:has(.aeris-logo),
+                        .top-header,
+                        .main-header,
+                        nav:first-child:not([class*="menu"]):not([class*="sidebar"]) {
                             display: none !important;
                             visibility: hidden !important;
                             height: 0 !important;
+                            overflow: hidden !important;
+                        }
+                        
+                        /* Ensure navigation menu stays visible */
+                        nav[class*="menu"],
+                        .navigation-menu,
+                        .nav-menu,
+                        .sidebar-nav,
+                        [role="navigation"]:not(.bg-aeris-navy) {
+                            display: block !important;
+                            visibility: visible !important;
                         }
                         
                         /* Adjust body padding to account for hidden navbar */
                         body {
                             padding-top: 0 !important;
                         }
-                    \`;
-                    document.head.appendChild(style);
-                    
-                    // IMMEDIATE extraction on page load - FORCE EXECUTION
-                    function performExtraction() {
-                        console.log('=== AERIS CLIENT DEBUG: Starting user info extraction ===');
-                        console.log('Current URL:', window.location.href);
-                        console.log('Document ready state:', document.readyState);
+                        \`;
+                        // Remove existing style if present
+                        const existing = document.getElementById('aeris-navbar-hider');
+                        if (existing) existing.remove();
                         
-                        // Debug: Log full page text for analysis
-                        const bodyText = document.body.textContent;
-                        console.log('Full page text includes Welcome back:', bodyText.includes('Welcome back'));
-                        console.log('Full page text includes Login:', bodyText.includes('Login'));
-                        console.log('Current page title:', document.title);
-                        
-                        // CHECK: Are we on a login page or logged out?
-                        const isLoginPage = bodyText.toLowerCase().includes('login') || 
-                                          bodyText.toLowerCase().includes('sign in') ||
-                                          document.title.toLowerCase().includes('login') ||
-                                          window.location.href.includes('/login') ||
-                                          document.querySelector('input[type="password"]') !== null;
-                        
-                        console.log('Is login page:', isLoginPage);
-                        
-                        // If we're on login page, send empty user info
-                        if (isLoginPage) {
-                            console.log('On login page - clearing user info');
-                            window.parent.postMessage({
-                                type: 'user-info',
-                                userName: '',
-                                userRole: '',
-                                notificationCount: 0
-                            }, '*');
-                            return; // Exit early
-                        }
-                        
-                        // FIRST: Extract user information only if we're logged in
-                        let userName = '';
-                        let userRole = '';
-                        let notificationCount = 0;
-                        
-                        // Try to find notification count - look for any red badge with numbers
-                        const allSpans = document.querySelectorAll('span');
-                        for (const span of allSpans) {
-                            const text = span.textContent.trim();
-                            const style = window.getComputedStyle(span);
-                            // Look for red background spans with numbers
-                            if (text && !isNaN(text) && text !== '' && 
-                                (style.backgroundColor.includes('rgb(239, 68, 68)') || // red-500
-                                 style.backgroundColor.includes('rgb(220, 38, 38)') || // red-600  
-                                 span.className.includes('bg-red') ||
-                                 span.className.includes('animate-pulse'))) {
-                                notificationCount = parseInt(text, 10);
-                                console.log('Found notification count:', notificationCount, 'from span with text:', text);
-                                break;
-                            }
-                        }
-                        
-                        // NEW: More aggressive search for Welcome back text anywhere on the page
-                        const welcomeMatches = bodyText.match(/Welcome back,\\s*([A-Za-z\\s]+?)(?:[.!\\n]|$)/i);
-                        if (welcomeMatches && welcomeMatches[1]) {
-                            userName = welcomeMatches[1].trim();
-                            console.log('Found user name from body text:', userName);
-                        } else {
-                            // Fallback to specific element search
-                            const allElements = document.querySelectorAll('h1, h2, h3, div, p, span');
-                            for (const el of allElements) {
-                                const text = el.textContent.trim();
-                                if (text.includes('Welcome back,')) {
-                                    const match = text.match(/Welcome back,\\s*([A-Za-z\\s]+)/i);
-                                    if (match && match[1]) {
-                                        userName = match[1].trim();
-                                        console.log('Found user name from element:', userName, 'in element:', el.tagName);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // If no user found, we might be logged out - clear everything
-                        if (!userName) {
-                            console.log('No user name found - user might be logged out');
-                            window.parent.postMessage({
-                                type: 'user-info',
-                                userName: '',
-                                userRole: '',
-                                notificationCount: 0
-                            }, '*');
-                            return;
-                        }
-                        
-                        // Try to determine role from the user name
-                        if (userName) {
-                            const lowerUserName = userName.toLowerCase();
-                            if (lowerUserName.includes('super admin') || lowerUserName.includes('superadmin')) {
-                                userRole = 'super admin';
-                            } else if (lowerUserName.includes('admin')) {
-                                userRole = 'admin';
-                            } else if (lowerUserName.includes('manager')) {
-                                userRole = 'manager';
-                            } else {
-                                userRole = 'user';
-                            }
-                            console.log('Determined role from name:', userRole);
-                        }
-                        
-                        // Debug: Log all potential elements for troubleshooting
-                        console.log('Aeris Client: Page debugging info:');
-                        console.log('- Bell icons found:', document.querySelectorAll('.lucide-bell').length);
-                        console.log('- Red background spans:', document.querySelectorAll('span[class*="bg-red"]').length);
-                        console.log('- Dropdown triggers:', document.querySelectorAll('[data-slot="dropdown-menu-trigger"]').length);
-                        console.log('- Text-right elements:', document.querySelectorAll('.text-right').length);
-                        
-                        console.log('Aeris Client: Final extracted user info:', {
-                            userName,
-                            userRole,
-                            notificationCount
-                        });
-                        
-                        // Send enhanced user info to parent immediately
-                        window.parent.postMessage({
-                            type: 'user-info',
-                            userName: userName,
-                            userRole: userRole,
-                            notificationCount: notificationCount
-                        }, '*');
+                        document.head.appendChild(style);
                     }
                     
-                    // Run extraction immediately, then again after a delay
-                    console.log('=== AERIS CLIENT: About to run performExtraction ===');
-                    performExtraction();
-                    console.log('=== AERIS CLIENT: First extraction completed ===');
+                    // Apply immediately
+                    applyCSS();
                     
-                    setTimeout(function() {
-                        console.log('=== AERIS CLIENT: Running delayed extraction ===');
-                        performExtraction();
-                        console.log('=== AERIS CLIENT: Delayed extraction completed ===');
-                    }, 2000); // Also wait 2 seconds for page to fully load
-                    
-                    // Set up periodic updates every 30 seconds to check for notification changes
-                    setInterval(function() {
-                        let currentNotificationCount = 0;
-                        
-                        // Re-scan for notification count
-                        const allSpans = document.querySelectorAll('span');
-                        for (const span of allSpans) {
-                            const text = span.textContent.trim();
-                            const style = window.getComputedStyle(span);
-                            if (text && !isNaN(text) && text !== '' && 
-                                (style.backgroundColor.includes('rgb(239, 68, 68)') || 
-                                 style.backgroundColor.includes('rgb(220, 38, 38)') || 
-                                 span.className.includes('bg-red') ||
-                                 span.className.includes('animate-pulse'))) {
-                                currentNotificationCount = parseInt(text, 10);
-                                break;
-                            }
-                        }
-                        
-                        // Send updated count to toolbar
-                        window.parent.postMessage({
-                            type: 'notification-update',
-                            notificationCount: currentNotificationCount
-                        }, '*');
-                        
-                    }, 30000); // Update every 30 seconds
-                    
-                    // Set up mutation observer to detect page content changes (like user login/logout)
-                    const observer = new MutationObserver(function(mutations) {
-                        let shouldReExtract = false;
-                        
-                        mutations.forEach(function(mutation) {
-                            // Check if the page content changed significantly
-                            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                                for (let node of mutation.addedNodes) {
-                                    if (node.nodeType === 1) { // Element node
-                                        // Look for welcome text changes or login/dashboard changes
-                                        if (node.textContent && 
-                                            (node.textContent.includes('Welcome back') || 
-                                             node.textContent.includes('Dashboard') ||
-                                             node.textContent.includes('Login'))) {
-                                            shouldReExtract = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            // Also check for text changes in existing nodes
-                            if (mutation.type === 'characterData' && mutation.target.textContent) {
-                                if (mutation.target.textContent.includes('Welcome back') || 
-                                    mutation.target.textContent.includes('Dashboard')) {
-                                    shouldReExtract = true;
-                                }
-                            }
-                        });
-                        
-                        if (shouldReExtract) {
-                            // Debounce re-extraction to avoid too many updates
-                            clearTimeout(window.reExtractionTimeout);
-                            window.reExtractionTimeout = setTimeout(() => {
-                                // Re-run the extraction logic
-                                console.log('Aeris Client: Re-extracting user info due to page changes');
-                                performExtraction();
-                            }, 1000);
-                        }
-                    });
-                    
-                    // Start observing the document for changes
-                    observer.observe(document.body, {
-                        childList: true,
-                        subtree: true,
-                        characterData: true
-                    });
-                    
-                    // Extract user info function (reusable)
-                    function extractAndSendUserInfo() {
-                        let userName = 'User';
-                        let userRole = '';
-                        let notificationCount = 0;
-                        
-                        // Re-scan for notification count
-                        const allSpans = document.querySelectorAll('span');
-                        for (const span of allSpans) {
-                            const text = span.textContent.trim();
-                            const style = window.getComputedStyle(span);
-                            if (text && !isNaN(text) && text !== '' && 
-                                (style.backgroundColor.includes('rgb(239, 68, 68)') || 
-                                 style.backgroundColor.includes('rgb(220, 38, 38)') || 
-                                 span.className.includes('bg-red') ||
-                                 span.className.includes('animate-pulse'))) {
-                                notificationCount = parseInt(text, 10);
-                                break;
-                            }
-                        }
-                        
-                        // Re-extract user name from welcome text
-                        const welcomeElement = document.querySelector('h1, .welcome, [class*="welcome"]');
-                        if (welcomeElement) {
-                            const text = welcomeElement.textContent;
-                            if (text && text.includes('Welcome back,')) {
-                                const match = text.match(/Welcome back,\\s*([A-Za-z\\s]+)/);
-                                if (match && match[1]) {
-                                    userName = match[1].trim();
-                                    console.log('Re-extracted user name from welcome element:', userName);
-                                }
-                            }
-                        }
-                        
-                        // Fallback: check page text for current welcome message
-                        if (userName === 'User') {
-                            const pageText = document.body.textContent;
-                            const welcomeMatch = pageText.match(/Welcome back,\\s*([A-Za-z\\s]+)/);
-                            if (welcomeMatch && welcomeMatch[1]) {
-                                userName = welcomeMatch[1].trim();
-                                console.log('Re-extracted user name from page text:', userName);
-                            }
-                        }
-                        
-                        // Determine user role based on name or look for role text
-                        if (userName.toLowerCase().includes('super admin')) {
-                            userRole = 'super admin';
-                        } else if (userName.toLowerCase().includes('admin')) {
-                            userRole = 'admin';
-                        } else if (userName.toLowerCase().includes('manager')) {
-                            userRole = 'manager';
-                        } else {
-                            // Try to find role from text on page
-                            const allElements = document.querySelectorAll('*');
-                            for (const el of allElements) {
-                                const text = el.textContent.trim().toLowerCase();
-                                if (text === 'warehouse manager' || text === 'super admin' || text === 'admin' || text === 'manager') {
-                                    userRole = text;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        console.log('Re-extracted user info:', {
-                            userName,
-                            userRole,
-                            notificationCount
-                        });
-                        
-                        // Send updated user info to parent
-                        window.parent.postMessage({
-                            type: 'user-info',
-                            userName: userName,
-                            userRole: userRole,
-                            notificationCount: notificationCount
-                        }, '*');
+                    // Also apply after DOM is fully loaded
+                    if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', applyCSS);
                     }
+                    
+                    // And apply after a delay to catch dynamically loaded content
+                    setTimeout(applyCSS, 1000);
+                    setTimeout(applyCSS, 3000);
                 })();
             `).catch(err => {
-                console.log('Could not inject website customizations:', err);
+                console.log('Could not inject CSS:', err);
             });
         }
         
@@ -1611,7 +1350,8 @@
             if (event.data.type === 'toolbar-action') {
                 handleToolbarAction(event.data.action, event.data.data);
             } else if (event.data.type === 'user-info') {
-                // Update toolbar with enhanced user information (direct access)
+                // Update toolbar with webview user information
+                console.log('=== WEBVIEW MESSAGE: Received user info:', event.data);
                 updateToolbarUserInfo({
                     userName: event.data.userName,
                     userRole: event.data.userRole || '',
@@ -2792,107 +2532,117 @@
             const contentFrame = document.getElementById('content-frame');
             if (!contentFrame) return;
             
-            console.log('=== MANUAL EXTRACTION: Attempting to get webview content ===');
+            console.log('=== MANUAL EXTRACTION: Attempting DOM-based extraction ===');
             
-            // Try to get the page content using executeJavaScript with enhanced extraction
+            // First, check sessionStorage for persisted user info
+            const persisted = sessionStorage.getItem('aerisUserInfo');
+            if (persisted) {
+                try {
+                    const userInfo = JSON.parse(persisted);
+                    if (userInfo.userName && userInfo.userRole) {
+                        console.log('=== MANUAL EXTRACTION: Using persisted user info:', userInfo);
+                        updateToolbarUserInfo(userInfo);
+                        return; // Use persisted if valid
+                    }
+                } catch (e) {
+                    console.log('=== MANUAL EXTRACTION: Invalid persisted data, proceeding with extraction');
+                }
+            }
+            
+            // DOM-based extraction via executeJavaScript
             contentFrame.executeJavaScript(`
-                // Return comprehensive page info for Aeris ERP
-                ({
-                    url: window.location.href,
-                    title: document.title,
-                    bodyText: document.body.textContent.substring(0, 2000),
-                    hasLoginForm: document.querySelector('input[type="password"]') !== null,
-                    hasWelcomeText: document.body.textContent.includes('Welcome back'),
-                    hasDashboard: document.body.textContent.includes('Dashboard') || 
-                                  document.body.textContent.includes('Sales') || 
-                                  document.body.textContent.includes('Reports') ||
-                                  document.body.textContent.includes('Point of Sale'),
-                    allText: document.body.innerText.substring(0, 3000), // Get more formatted text
-                    // Look for common user info patterns
-                    hasUserDropdown: document.querySelector('[data-bs-toggle="dropdown"]') !== null,
-                    hasUserMenu: document.querySelector('.dropdown-menu') !== null,
-                    userLinks: Array.from(document.querySelectorAll('a')).map(a => a.textContent.trim()).filter(text => 
-                        text.toLowerCase().includes('logout') || 
-                        text.toLowerCase().includes('profile') ||
-                        text.toLowerCase().includes('admin')
-                    )
-                })
+                (function() {
+                    // Target selectors based on webapp header structure from images
+                    const userSelectors = [
+                        '.user-name',
+                        '.super-admin span',
+                        '[class*="user"] span',
+                        '.dropdown-menu .user-name',
+                        'header .user-info span',
+                        '.navbar .user-name',
+                        '#user-profile',
+                        '.admin-dropdown .user'
+                    ];
+                    
+                    let userName = null;
+                    let userRole = null;
+                    
+                    // Try to find user name/role
+                    for (const selector of userSelectors) {
+                        const element = document.querySelector(selector);
+                        if (element) {
+                            userName = element.textContent.trim();
+                            if (userName) {
+                                console.log('Found user name via selector:', selector, userName);
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Fallback to text patterns if DOM fails
+                    if (!userName) {
+                        const allText = document.body.innerText;
+                        const welcomeMatch = allText.match(/Welcome back,\\s*([A-Za-z\\s]+?)(?:[.!\\n,]|$)/i);
+                        if (welcomeMatch) {
+                            userName = welcomeMatch[1].trim();
+                        } else {
+                            // Default for dashboard/authenticated pages
+                            userName = 'Super Admin';
+                        }
+                    }
+                    
+                    // Determine role from name
+                    if (userName) {
+                        const lowerName = userName.toLowerCase();
+                        if (lowerName.includes('super admin')) {
+                            userRole = 'super admin';
+                        } else if (lowerName.includes('admin')) {
+                            userRole = 'admin';
+                        } else if (lowerName.includes('manager')) {
+                            userRole = 'manager';
+                        } else {
+                            userRole = 'user';
+                        }
+                    }
+                    
+                    // Check if login page (no user info)
+                    const hasLoginForm = document.querySelector('input[type="password"]') !== null;
+                    
+                    return {
+                        userName: hasLoginForm ? '' : userName || '',
+                        userRole: hasLoginForm ? '' : userRole || '',
+                        notificationCount: 2, // Default; can be enhanced later
+                        isLogin: hasLoginForm
+                    };
+                })()
             `).then(result => {
-                console.log('=== MANUAL EXTRACTION: Enhanced page info received ===', result);
+                console.log('=== MANUAL EXTRACTION: DOM extraction result:', result);
                 
-                if (result.hasLoginForm) {
-                    console.log('=== MANUAL EXTRACTION: Login page detected, clearing user info ===');
-                    // Clear user info for login page (direct access)
+                if (result.isLogin || (!result.userName && !result.userRole)) {
+                    // Clear on login or no info
+                    sessionStorage.removeItem('aerisUserInfo');
                     updateToolbarUserInfo({
                         userName: '',
                         userRole: '',
                         notificationCount: 0
                     });
-                } else if (result.hasDashboard) {
-                    console.log('=== MANUAL EXTRACTION: Dashboard detected, looking for user info ===');
-                    
-                    // Try multiple patterns to find user info
-                    let userName = '';
-                    let userRole = 'user';
-                    
-                    // Pattern 1: Welcome back
-                    const welcomeMatch = result.allText.match(/Welcome back,\\s*([A-Za-z\\s]+?)(?:[.!\\n]|$)/i);
-                    if (welcomeMatch && welcomeMatch[1]) {
-                        userName = welcomeMatch[1].trim();
-                        console.log('=== MANUAL EXTRACTION: Found user name from Welcome text:', userName);
-                    }
-                    
-                    // Pattern 2: Look for Admin in text (common in Aeris)
-                    if (!userName) {
-                        const adminMatch = result.allText.match(/(Super Admin|Admin|Manager)([A-Za-z\\s]*)/i);
-                        if (adminMatch) {
-                            userName = adminMatch[0].trim();
-                            console.log('=== MANUAL EXTRACTION: Found user name from Admin pattern:', userName);
-                        }
-                    }
-                    
-                    // Pattern 3: If we're on dashboard but no specific user found, show generic admin
-                    if (!userName && result.userLinks.some(link => link.toLowerCase().includes('admin'))) {
-                        userName = 'Super Admin';
-                        userRole = 'super admin';
-                        console.log('=== MANUAL EXTRACTION: Found admin links, assuming Super Admin');
-                    } else if (!userName) {
-                        userName = 'User';
-                        console.log('=== MANUAL EXTRACTION: Using generic user name');
-                    }
-                    
-                    // Determine role from name
-                    const lowerUserName = userName.toLowerCase();
-                    if (lowerUserName.includes('super admin') || lowerUserName.includes('superadmin')) {
-                        userRole = 'super admin';
-                    } else if (lowerUserName.includes('admin')) {
-                        userRole = 'admin';
-                    } else if (lowerUserName.includes('manager')) {
-                        userRole = 'manager';
-                    }
-                    
-                    console.log('=== MANUAL EXTRACTION: Final user info:', { userName, userRole });
-                    
-                    // Update toolbar with user info (direct access)
-                    updateToolbarUserInfo({
-                        userName: userName,
-                        userRole: userRole,
-                        notificationCount: 2 // Default for now
-                    });
+                } else {
+                    // Persist valid info
+                    sessionStorage.setItem('aerisUserInfo', JSON.stringify(result));
+                    updateToolbarUserInfo(result);
                 }
             }).catch(error => {
-                console.log('=== MANUAL EXTRACTION: Error getting page info ===', error);
+                console.log('=== MANUAL EXTRACTION: Error in DOM extraction:', error);
+                // Fallback to persisted if error
+                manuallyExtractUserInfo(); // Retry with persisted check
             });
         }
         
-        // Run manual extraction every 3 seconds as a fallback
-        setInterval(manuallyExtractUserInfo, 3000);
-        
-        // Also run it once after a short delay
+        // Enable periodic extraction as backup (less frequent now with events)
+        setInterval(manuallyExtractUserInfo, 10000); // Every 10s
         setTimeout(manuallyExtractUserInfo, 1000);
         
         // IMMEDIATE TEST - This should always show in console
-        console.log('=== AERIS CLIENT: App-wrapper script loaded and running ===');
         
         // Enhanced debugging for toolbar iframe loading
         function debugToolbarFrame() {
@@ -2949,7 +2699,6 @@
         setTimeout(debugToolbarFrame, 3000);
         
         // Remove test user info - let real extraction work
-        console.log('=== AERIS CLIENT: Toolbar now using direct access instead of iframe ===');
         
         // CRITICAL: Actually initialize the app
         initializeApp();
