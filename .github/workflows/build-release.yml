@@ -37,6 +37,9 @@ jobs:
       env:
         CI: false
         GITHUB_ACTIONS: false
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: npm run build:mac
       
     - name: Build for Windows
