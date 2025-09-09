@@ -1,5 +1,18 @@
 
 const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
+
+// Set the app name for dock/taskbar display - must be done before app ready
+if (process.platform === 'darwin') {
+  app.setName('AERIS');
+  // Also try setting the dock badge
+  app.whenReady().then(() => {
+    if (app.dock) {
+      app.dock.setBadge('AERIS');
+    }
+  });
+} else {
+  app.setName('AERIS');
+}
 console.log('Loaded electron module: Object Version:', app ? app.getVersion() : 'No app');
 const path = require('path');
 const Store = require('electron-store');
@@ -39,6 +52,7 @@ function createMainWindow() {
     height: windowState.height,
     minWidth: 800,
     minHeight: 600,
+    title: 'AERIS',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -343,7 +357,7 @@ function createPrintPreviewWindow(pdfData) {
 function createMenu() {
   const template = [
     {
-      label: 'File',
+      label: 'AERIS',
       submenu: [
         {
           label: 'Settings',
