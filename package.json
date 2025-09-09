@@ -1,6 +1,6 @@
 {
   "name": "aeris",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Aeris ERP Point of Sale Application",
   "main": "src/main.js",
   "author": "Aeris",
