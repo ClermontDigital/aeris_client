@@ -4,12 +4,6 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron')
 // Set the app name for dock/taskbar display - must be done before app ready
 if (process.platform === 'darwin') {
   app.setName('AERIS');
-  // Also try setting the dock badge
-  app.whenReady().then(() => {
-    if (app.dock) {
-      app.dock.setBadge('AERIS');
-    }
-  });
 } else {
   app.setName('AERIS');
 }
