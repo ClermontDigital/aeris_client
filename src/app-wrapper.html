@@ -1120,7 +1120,7 @@
         <webview 
             id="content-frame" 
             class="content-frame"
-            src="http://localhost:8822"
+            src="http://aeris.local"
             partition="persist:main">
         </webview>
         
@@ -1146,6 +1146,7 @@
     <script>
         let currentUrl = '';
         let isConnected = false;
+        let connectionCheckInterval = null; // Track interval for cleanup
         
         // Initialize the app
         async function initializeApp() {
@@ -1209,10 +1210,12 @@
                 isConnected = true;
                 updateConnectionStatus(true);
                 
-                // Inject CSS after webview loads
+                // Inject CSS, modal fix, and copy/paste handlers after webview loads
                 try {
                     setTimeout(() => {
                         injectWebsiteCustomizations(contentFrame);
+                        injectModalFix(contentFrame);
+                        injectCopyPasteHandlers(contentFrame);
                         manuallyExtractUserInfo();
                     }, 500);
                 } catch (error) {
@@ -1226,8 +1229,11 @@
                 showError();
             });
             
-            // Set up periodic connection check
-            setInterval(checkConnection, 30000);
+            // Set up periodic connection check (clear any existing interval)
+            if (connectionCheckInterval) {
+                clearInterval(connectionCheckInterval);
+            }
+            connectionCheckInterval = setInterval(checkConnection, 30000);
         }
         
         function showError() {
@@ -1339,7 +1345,127 @@
                 console.log('Could not inject CSS:', err);
             });
         }
-        
+
+        function injectCopyPasteHandlers(webview) {
+            // Enable copy/paste keyboard shortcuts in webview
+            const copyPasteScript = `
+                (function() {
+                    'use strict';
+
+                    // Skip if already injected
+                    if (window.aerisCopyPasteInjected) return;
+                    window.aerisCopyPasteInjected = true;
+
+                    // Ensure copy/paste keyboard shortcuts work properly
+                    // The webview should handle these natively, but we ensure they're not blocked
+                    document.addEventListener('keydown', function(e) {
+                        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                        const ctrlKey = isMac ? e.metaKey : e.ctrlKey;
+
+                        // Don't prevent default on copy/paste operations
+                        if (ctrlKey && (
+                            e.key === 'c' || e.key === 'C' ||  // Copy
+                            e.key === 'x' || e.key === 'X' ||  // Cut
+                            e.key === 'v' || e.key === 'V' ||  // Paste
+                            e.key === 'a' || e.key === 'A' ||  // Select All
+                            e.key === 'z' || e.key === 'Z' ||  // Undo
+                            (e.key === 'y' || e.key === 'Y')   // Redo (Windows)
+                        )) {
+                            // Explicitly don't prevent default - let browser handle it
+                            e.stopPropagation(); // Stop other handlers from interfering
+                        }
+                    }, true); // Use capture phase to handle before other listeners
+
+                    console.log('Aeris Client: Copy/paste handlers protection enabled');
+                })();
+            `;
+
+            // Inject the script into the webview
+            webview.executeJavaScript(copyPasteScript).catch(error => {
+                console.error('Failed to inject copy/paste handlers:', error);
+            });
+        }
+
+        function injectModalFix(webview) {
+            const modalFixScript = `
+                (function() {
+                    'use strict';
+
+                    // Skip if already injected
+                    if (window.aerisModalFixInjected) return;
+                    window.aerisModalFixInjected = true;
+
+                    console.log('Aeris Client: Injecting Bootstrap modal focus fix');
+
+                    // Store original dialog functions
+                    const originalConfirm = window.confirm;
+                    const originalAlert = window.alert;
+
+                    // Replace window.confirm - use synchronous calls for webview compatibility
+                    window.confirm = function(message) {
+                        // Use native confirm in webview since electronAPI may not be available
+                        return originalConfirm.call(this, message || 'Are you sure?');
+                    };
+
+                    // Replace window.alert
+                    window.alert = function(message) {
+                        originalAlert.call(this, message || '');
+
+                        // Restore focus to any open modals after alert
+                        setTimeout(() => {
+                            const openModals = document.querySelectorAll('.modal.show');
+                            openModals.forEach(modal => {
+                                const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
+                                if (firstInput) {
+                                    firstInput.focus();
+                                    console.log('Aeris Client: Restored focus to modal input after alert');
+                                }
+                            });
+                        }, 100);
+                    };
+
+                    // Enhanced focus restoration for Bootstrap modals
+                    document.addEventListener('shown.bs.modal', function(event) {
+                        setTimeout(() => {
+                            const modal = event.target;
+                            const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
+                            if (firstInput) {
+                                firstInput.focus();
+                                console.log('Aeris Client: Auto-focused modal input');
+                            }
+                        }, 150);
+                    });
+
+                    // Additional focus restoration on modal events
+                    document.addEventListener('click', function(event) {
+                        // Check if click was on a modal backdrop or close button
+                        if (event.target.classList.contains('modal') ||
+                            event.target.classList.contains('btn-close') ||
+                            event.target.closest('[data-bs-dismiss="modal"]')) {
+
+                            setTimeout(() => {
+                                const openModals = document.querySelectorAll('.modal.show');
+                                if (openModals.length > 0) {
+                                    const lastModal = openModals[openModals.length - 1];
+                                    const firstInput = lastModal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
+                                    if (firstInput) {
+                                        firstInput.focus();
+                                    }
+                                }
+                            }, 200);
+                        }
+                    });
+
+                    console.log('Aeris Client: Modal focus fix injected successfully');
+                })();
+            `;
+
+            // Inject the script into the webview
+            webview.executeJavaScript(modalFixScript).catch(error => {
+                console.error('Failed to inject modal fix script:', error);
+            });
+        }
+
         function updateNavigationState() {
             // Direct toolbar update instead of iframe postMessage
             updateToolbarNavigationState();
@@ -2002,7 +2128,19 @@
             window.electronAPI.on('hide-session-overlay', () => {
                 hideSessionSwitcher();
             });
-            
+
+            // Print request handlers
+            window.electronAPI.on('print-request', (options) => {
+                printPage();
+            });
+
+            window.electronAPI.on('print-silent-request', (options) => {
+                const contentFrame = document.getElementById('content-frame');
+                if (contentFrame && contentFrame.print) {
+                    contentFrame.print(options);
+                }
+            });
+
             // PIN input handling
             const pinInputs = document.querySelectorAll('.pin-digit');
             
@@ -2292,7 +2430,7 @@
             // Copy all attributes from original webview
             newWebview.id = 'content-frame';
             newWebview.className = 'content-frame';
-            newWebview.setAttribute('allowpopups', '');
+            // Removed allowpopups for security - popups should be handled by main window
             newWebview.partition = partitionName;
             
             // Replace the old webview with the new one
@@ -2314,10 +2452,16 @@
         function setupWebviewHandlers(webview) {
             webview.addEventListener('dom-ready', () => {
                 console.log('Webview loaded successfully');
-                
+
                 // Inject CSS to hide the website header and extract user info
                 injectWebsiteCustomizations(webview);
-                
+
+                // Inject modal fix for Bootstrap dialogs
+                injectModalFix(webview);
+
+                // Inject copy/paste keyboard handlers
+                injectCopyPasteHandlers(webview);
+
                 setTimeout(() => {
                     const loadingOverlay = document.getElementById('loading-overlay');
                     if (loadingOverlay) {
@@ -2327,7 +2471,7 @@
                     updateConnectionStatus(true);
                 }, 500);
             });
-            
+
             webview.addEventListener('did-fail-load', (error) => {
                 console.error('Webview load error:', error);
                 showError();
