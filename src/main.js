@@ -1,16 +1,11 @@
 
-const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, MenuItem, ipcMain, dialog, shell } = require('electron');
 
 // Set the app name for dock/taskbar display - must be done before app ready
-if (process.platform === 'darwin') {
-  app.setName('AERIS');
-} else {
-  app.setName('AERIS');
-}
+app.setName('AERIS');
 console.log('Loaded electron module: Object Version:', app ? app.getVersion() : 'No app');
 const path = require('path');
 const Store = require('electron-store');
-const https = require('https');
 const SessionManager = require('./session-manager');
 
 const store = new Store();
@@ -22,7 +17,7 @@ let sessionSwitcherWindow;
 
 // Default configuration
 const defaultConfig = {
-  baseUrl: 'http://localhost:8822',
+  baseUrl: 'http://aeris.local',
   autoStart: false,
   enableSessionManagement: true,
   sessionTimeout: 30, // minutes
@@ -72,11 +67,6 @@ function createMainWindow() {
     mainWindow.show();
   });
 
-  // Automatically inject modal fix script when DOM is ready
-  mainWindow.webContents.on('dom-ready', () => {
-    injectModalFix();
-  });
-
   // Intercept JavaScript confirm dialogs automatically
   mainWindow.webContents.on('before-input-event', (event, input) => {
     // Ensure input events are properly handled
@@ -84,15 +74,6 @@ function createMainWindow() {
       // Allow all keyboard input to pass through
       return;
     }
-  });
-
-  // Handle page reloads and navigation
-  mainWindow.webContents.on('did-finish-load', () => {
-    injectModalFix();
-  });
-
-  mainWindow.webContents.on('did-navigate', () => {
-    injectModalFix();
   });
 
   // Handle window state changes
@@ -105,22 +86,38 @@ function createMainWindow() {
     store.set('windowState.maximized', false);
   });
 
-  // Handle external links
+  // Handle external links with security validation
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // Validate URL scheme for security
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      shell.openExternal(url);
+    } else {
+      console.warn('Blocked external link with invalid scheme:', url);
+    }
     return { action: 'deny' };
   });
 
-  // Handle navigation
+  // Handle navigation with security validation
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
     const baseUrl = store.get('baseUrl', defaultConfig.baseUrl);
-    const parsedUrl = new URL(navigationUrl);
-    const parsedBaseUrl = new URL(baseUrl);
-    
-    // Allow navigation within the same domain
-    if (parsedUrl.hostname !== parsedBaseUrl.hostname) {
+
+    try {
+      const parsedUrl = new URL(navigationUrl);
+      const parsedBaseUrl = new URL(baseUrl);
+
+      // Allow navigation within the same domain
+      if (parsedUrl.hostname !== parsedBaseUrl.hostname) {
+        event.preventDefault();
+        // Only open external links with valid schemes
+        if (navigationUrl.startsWith('https://') || navigationUrl.startsWith('http://')) {
+          shell.openExternal(navigationUrl);
+        } else {
+          console.warn('Blocked navigation to invalid scheme:', navigationUrl);
+        }
+      }
+    } catch (error) {
       event.preventDefault();
-      shell.openExternal(navigationUrl);
+      console.warn('Blocked navigation to malformed URL:', navigationUrl);
     }
   });
 
@@ -134,6 +131,49 @@ function createMainWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Add context menu for right-click copy/paste
+  mainWindow.webContents.on('context-menu', (event, params) => {
+    const contextMenu = new Menu();
+
+    // Add edit actions based on context
+    if (params.editFlags.canCut) {
+      contextMenu.append(new MenuItem({
+        label: 'Cut',
+        accelerator: 'CmdOrCtrl+X',
+        role: 'cut'
+      }));
+    }
+
+    if (params.editFlags.canCopy) {
+      contextMenu.append(new MenuItem({
+        label: 'Copy',
+        accelerator: 'CmdOrCtrl+C',
+        role: 'copy'
+      }));
+    }
+
+    if (params.editFlags.canPaste) {
+      contextMenu.append(new MenuItem({
+        label: 'Paste',
+        accelerator: 'CmdOrCtrl+V',
+        role: 'paste'
+      }));
+    }
+
+    if (params.editFlags.canSelectAll) {
+      contextMenu.append(new MenuItem({
+        label: 'Select All',
+        accelerator: 'CmdOrCtrl+A',
+        role: 'selectAll'
+      }));
+    }
+
+    // Only show menu if there are items
+    if (contextMenu.items.length > 0) {
+      contextMenu.popup();
+    }
+  });
 }
 
 function loadApplication() {
@@ -144,143 +184,6 @@ function loadApplication() {
   });
 }
 
-// Automatically inject modal fix script only on ERP pages (not toolbar/wrapper)
-function injectModalFix() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  
-  // Skip injection for local HTML files (toolbar, wrapper, etc)
-  const currentUrl = mainWindow.webContents.getURL();
-  if (currentUrl.startsWith('file://') || currentUrl.includes('toolbar.html') || currentUrl.includes('app-wrapper.html')) {
-    return;
-  }
-  
-  const modalFixScript = `
-    (function() {
-      'use strict';
-      
-      // Skip if already injected
-      if (window.aerisModalFixInjected) return;
-      window.aerisModalFixInjected = true;
-      
-      console.log('Aeris Client: Injecting Bootstrap modal focus fix');
-      
-      // Store original dialog functions
-      const originalConfirm = window.confirm;
-      const originalAlert = window.alert;
-      
-      // Replace window.confirm with async function that uses Electron dialogs
-      window.confirm = function(message) {
-        if (!window.electronAPI || !window.electronAPI.showConfirmDialog) {
-          return originalConfirm.call(this, message);
-        }
-        
-        // Create a synchronous-style promise handler
-        let result = false;
-        const promise = window.electronAPI.showConfirmDialog({
-          message: message || 'Are you sure?',
-          title: 'Aeris - Confirm'
-        });
-        
-        // Use a flag to track completion
-        let completed = false;
-        promise.then(res => {
-          result = res.confirmed;
-          completed = true;
-          
-          // Restore focus to any open modals
-          setTimeout(() => {
-            const openModals = document.querySelectorAll('.modal.show');
-            openModals.forEach(modal => {
-              const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
-              if (firstInput) {
-                firstInput.focus();
-                console.log('Aeris Client: Restored focus to modal input');
-              }
-            });
-          }, 100);
-          
-        }).catch(error => {
-          console.error('Aeris Client: Dialog error:', error);
-          result = originalConfirm.call(this, message);
-          completed = true;
-        });
-        
-        // For legacy compatibility, return immediately with false
-        // Most modern code should handle this properly with the promise
-        return false;
-      };
-      
-      // Replace window.alert 
-      window.alert = function(message) {
-        if (!window.electronAPI || !window.electronAPI.showAlertDialog) {
-          return originalAlert.call(this, message);
-        }
-        
-        window.electronAPI.showAlertDialog({
-          message: message || '',
-          title: 'Aeris - Alert',
-          type: 'info'
-        }).then(() => {
-          // Restore focus to any open modals
-          setTimeout(() => {
-            const openModals = document.querySelectorAll('.modal.show');
-            openModals.forEach(modal => {
-              const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
-              if (firstInput) {
-                firstInput.focus();
-                console.log('Aeris Client: Restored focus to modal input after alert');
-              }
-            });
-          }, 100);
-        }).catch(error => {
-          console.error('Aeris Client: Alert error:', error);
-          originalAlert.call(this, message);
-        });
-      };
-      
-      // Enhanced focus restoration for Bootstrap modals
-      document.addEventListener('shown.bs.modal', function(event) {
-        setTimeout(() => {
-          const modal = event.target;
-          const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
-          if (firstInput) {
-            firstInput.focus();
-          }
-        }, 150);
-      });
-      
-      // Better dialog handling with promises for modern code
-      if (window.electronAPI) {
-        window.electronAPI.confirmDialog = async function(message, title = 'Confirm') {
-          const result = await window.electronAPI.showConfirmDialog({
-            message: message,
-            title: title
-          });
-          
-          // Restore modal focus
-          setTimeout(() => {
-            const openModals = document.querySelectorAll('.modal.show');
-            openModals.forEach(modal => {
-              const firstInput = modal.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])');
-              if (firstInput) {
-                firstInput.focus();
-              }
-            });
-          }, 100);
-          
-          return result.confirmed;
-        };
-      }
-      
-      console.log('Aeris Client: Modal focus fix injected successfully');
-    })();
-  `;
-
-  // Inject the script into the page
-  mainWindow.webContents.executeJavaScript(modalFixScript).catch(error => {
-    console.error('Failed to inject modal fix script:', error);
-  });
-}
 
 function saveWindowState() {
   if (!mainWindow) return;
@@ -377,6 +280,42 @@ function createMenu() {
       ]
     },
     {
+      label: 'Edit',
+      submenu: [
+        {
+          label: 'Undo',
+          accelerator: 'CmdOrCtrl+Z',
+          role: 'undo'
+        },
+        {
+          label: 'Redo',
+          accelerator: process.platform === 'darwin' ? 'Cmd+Shift+Z' : 'Ctrl+Y',
+          role: 'redo'
+        },
+        { type: 'separator' },
+        {
+          label: 'Cut',
+          accelerator: 'CmdOrCtrl+X',
+          role: 'cut'
+        },
+        {
+          label: 'Copy',
+          accelerator: 'CmdOrCtrl+C',
+          role: 'copy'
+        },
+        {
+          label: 'Paste',
+          accelerator: 'CmdOrCtrl+V',
+          role: 'paste'
+        },
+        {
+          label: 'Select All',
+          accelerator: 'CmdOrCtrl+A',
+          role: 'selectAll'
+        }
+      ]
+    },
+    {
       label: 'View',
       submenu: [
         {
@@ -411,19 +350,23 @@ function createMenu() {
               mainWindow.setFullScreen(!mainWindow.isFullScreen());
             }
           }
-        },
-        {
-          label: 'Developer Tools',
-          accelerator: 'F12',
-          click: () => {
-            if (mainWindow) {
-              mainWindow.webContents.toggleDevTools();
-            }
-          }
         }
       ]
     }
   ];
+
+  // Add DevTools menu item only in development
+  if (process.env.NODE_ENV !== 'production') {
+    template[2].submenu.push({
+      label: 'Developer Tools',
+      accelerator: 'F12',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.toggleDevTools();
+        }
+      }
+    });
+  }
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
@@ -475,19 +418,7 @@ ipcMain.handle('save-settings', (event, settings) => {
       needsRestart
     });
     
-    // For non-restart changes, apply them immediately
-    if (!needsRestart) {
-      // Send immediate update for session button visibility
-      mainWindow.webContents.executeJavaScript(`
-        const toolbarFrame = document.getElementById('toolbar-frame');
-        if (toolbarFrame && toolbarFrame.contentWindow) {
-          toolbarFrame.contentWindow.postMessage({
-            type: 'settings-updated',
-            settings: ${JSON.stringify(settings)}
-          }, '*');
-        }
-      `).catch(() => {});
-    }
+    // Note: Settings updates are now handled via IPC in the app-wrapper
   }
   
   return { success: true, needsRestart };
@@ -516,33 +447,16 @@ ipcMain.handle('test-connection', async (event, url) => {
 });
 
 // Print-related IPC handlers
+// Note: Primary printing is handled by app-wrapper.html via webview.print()
+// These handlers serve as fallbacks for cases where direct webview printing fails
 ipcMain.handle('print-page', async (event, options = {}) => {
   try {
     if (!mainWindow) {
       throw new Error('Main window not available');
     }
 
-    const printOptions = {
-      silent: options.silent || false,
-      printBackground: options.printBackground !== false,
-      color: options.color !== false,
-      margins: options.margins || {
-        marginType: 'printableArea'
-      },
-      landscape: options.landscape || false,
-      scaleFactor: options.scaleFactor || 100,
-      pagesPerSheet: options.pagesPerSheet || 1,
-      collate: options.collate !== false,
-      copies: options.copies || 1,
-      header: options.header || '',
-      footer: options.footer || ''
-    };
-
-    if (options.deviceName) {
-      printOptions.deviceName = options.deviceName;
-    }
-
-    await mainWindow.webContents.print(printOptions);
+    // Send print request to app wrapper to handle webview printing
+    mainWindow.webContents.send('print-request', options);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -555,6 +469,8 @@ ipcMain.handle('print-to-pdf', async (event, options = {}) => {
       throw new Error('Main window not available');
     }
 
+    // For PDF generation, we need to use the main window's webContents as a fallback
+    // since webview PDF generation requires complex message passing
     const pdfOptions = {
       marginsType: options.marginsType || 0,
       pageSize: options.pageSize || 'A4',
@@ -570,6 +486,7 @@ ipcMain.handle('print-to-pdf', async (event, options = {}) => {
   }
 });
 
+// Get available printers - this needs to be handled at the main process level
 ipcMain.handle('get-printers', async () => {
   try {
     if (!mainWindow) {
@@ -583,19 +500,15 @@ ipcMain.handle('get-printers', async () => {
   }
 });
 
+// Silent printing - route through app wrapper for webview targeting
 ipcMain.handle('print-silent', async (event, options = {}) => {
   try {
     if (!mainWindow) {
       throw new Error('Main window not available');
     }
 
-    const printOptions = {
-      silent: true,
-      printBackground: options.printBackground !== false,
-      deviceName: options.printerName
-    };
-
-    await mainWindow.webContents.print(printOptions);
+    // Send silent print request to app wrapper
+    mainWindow.webContents.send('print-silent-request', options);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -711,6 +624,41 @@ ipcMain.handle('show-alert-dialog', async (event, options) => {
       }
     }, 50);
 
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Update checking functions
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    // Basic stub implementation - can be enhanced with actual update checking
+    // For now, return no updates available
+    return {
+      success: true,
+      updateAvailable: false,
+      version: app.getVersion(),
+      releaseUrl: null,
+      downloadUrl: null
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('open-release-page', async (event, url) => {
+  try {
+    if (!url || typeof url !== 'string') {
+      throw new Error('Invalid URL provided');
+    }
+
+    // Validate URL scheme for security
+    if (!url.startsWith('https://') && !url.startsWith('http://')) {
+      throw new Error('Only http/https URLs are allowed');
+    }
+
+    await shell.openExternal(url);
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
@@ -892,7 +840,7 @@ app.on('before-quit', () => {
   // Clear web session data before quit to prevent CSRF token issues
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.session.clearStorageData({
-      storages: ['cookies', 'localstorage', 'sessionstorage', 'indexdb', 'websql']
+      storages: ['cookies', 'localstorage', 'sessionstorage', 'indexeddb', 'websql']
     });
   }
   
@@ -903,6 +851,11 @@ app.on('before-quit', () => {
 app.on('web-contents-created', (event, contents) => {
   contents.on('new-window', (event, navigationUrl) => {
     event.preventDefault();
-    shell.openExternal(navigationUrl);
+    // Validate URL scheme for security
+    if (navigationUrl.startsWith('https://') || navigationUrl.startsWith('http://')) {
+      shell.openExternal(navigationUrl);
+    } else {
+      console.warn('Blocked new-window request to invalid scheme:', navigationUrl);
+    }
   });
 });
