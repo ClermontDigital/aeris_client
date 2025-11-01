@@ -28,9 +28,12 @@
 - `src/error.html` - Error page template
 - `src/print-example.html` - Print functionality example
 
-### Testing & Documentation
-- `TESTING.md` - Comprehensive test suite with 15 test categories
+### Documentation
+- `docs/TESTING.md` - Comprehensive manual test suite with 15 test categories
+- `docs/CLAUDE.md` - Development guide with architecture and workflows
+- `docs/TDD_REVIEW.md` - Test-driven development analysis and recommendations
 - `RELEASE.md` - Release process documentation
+- `README.md` - Project overview and setup instructions
 
 ## Assets
 
@@ -286,10 +289,21 @@ The Electron client automatically injects JavaScript code that:
 - Version history and changelog
 - Feature additions and bug fixes
 
-#### `TESTING.md` (Test Documentation)
-- Comprehensive test scenarios
-- Quality assurance procedures
-- Manual testing guidelines
+#### `docs/TESTING.md` (Test Documentation)
+- Comprehensive test scenarios covering 15 categories
+- Quality assurance procedures for both operating modes
+- Manual testing guidelines for all features
+
+#### `docs/CLAUDE.md` (Development Guide)
+- Project architecture and patterns
+- Development commands and CI/CD
+- Feature implementation notes
+
+#### `docs/TDD_REVIEW.md` (TDD Analysis)
+- Comprehensive test-driven development review
+- Current state analysis (0% test coverage)
+- Actionable recommendations for implementing automated tests
+- Refactoring guidance for improved testability
 
 ### Code Quality Improvements Made:
 
