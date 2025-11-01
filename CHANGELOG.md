@@ -2,7 +2,7 @@
 
 All notable changes to the Aeris ERP Client will be documented in this file.
 
-## [1.2.0] - 2025-10-31
+## [1.2.0] - 2025-11-01
 
 ### Added - Major Testing Implementation
 - **Automated Test Suite**: Comprehensive Jest-based testing with 121 tests
@@ -43,9 +43,16 @@ All notable changes to the Aeris ERP Client will be documented in this file.
 ### Technical Improvements
 - Testable architecture with dependency injection
 - Mock infrastructure for Electron testing
-- CI/CD ready test configuration
+- **CI/CD Test Integration**: Tests run automatically before builds
 - Regression protection for all critical paths
 - Comprehensive error handling validation
+
+### CI/CD Enhancements
+- **Test-First Pipeline**: Tests execute before build phase
+- **Build Gating**: Build only proceeds if all tests pass
+- **Coverage Artifacts**: Uploads coverage reports (7-day retention)
+- **Quality Assurance**: Ensures 92.4% coverage on every release
+- **Pull Request Testing**: Tests run on release branch PRs
 
 ### Developer Experience
 - Instant feedback via automated tests
