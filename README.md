@@ -128,7 +128,9 @@ Available settings:
 
 - **[Development Guide](docs/CLAUDE.md)** - Project overview, architecture, and development commands
 - **[Testing Guide](docs/TESTING.md)** - Comprehensive manual test procedures
+- **[Automated Testing](docs/TESTING_AUTOMATED.md)** - Automated test suite guide (121 tests, 92.4% coverage)
 - **[TDD Review](docs/TDD_REVIEW.md)** - Test-driven development analysis and recommendations
+- **[CI/CD Pipeline](docs/CICD.md)** - Continuous integration and deployment documentation
 
 ## Technical Details
 
