@@ -79,29 +79,49 @@ The CI/CD workflow is defined in `.github/workflows/build-release.yml` and consi
 - ✅ Success message if all jobs pass
 - ❌ Failure message with exit code 1 if any job fails
 
+## Branch Strategy
+
+**Main Branch**:
+- Stable codebase for development
+- No CI/CD automation (manual workflow only)
+- Receives merges from `release` after successful deployments
+
+**Release Branch**:
+- Deployment branch with full CI/CD automation
+- All pushes trigger test → build → release pipeline
+- Pull requests run test + build validation only
+
 ## Trigger Conditions
 
-The pipeline triggers on:
+The pipeline triggers **ONLY** on the `release` branch:
 
-### Push Events
+### Push Events to Release Branch
 ```yaml
 on:
   push:
     branches: [ release ]
 ```
-- Runs full pipeline (test → build → release → notify)
-- Creates GitHub release
-- Uploads artifacts
+- ✅ Runs full pipeline (test → build → release → notify)
+- ✅ Creates GitHub release with artifacts
+- ✅ Uploads DMG and EXE installers
+- ❌ Does NOT run on `main` branch
 
-### Pull Request Events
+### Pull Request Events to Release Branch
 ```yaml
 on:
   pull_request:
     branches: [ release ]
 ```
-- Runs test and build jobs only
-- No release creation
-- Validates PR before merge
+- ✅ Runs test and build jobs only
+- ✅ Validates code quality before merge
+- ❌ Does NOT create GitHub release
+- ❌ Does NOT run on PRs to `main` branch
+
+### Main Branch Behavior
+- No CI/CD triggers configured
+- Manual testing and validation only
+- Receives stable code from `release` via manual merge
+- Developers work on feature branches, then merge to `release` for deployment
 
 ## Test-First Approach
 
@@ -265,18 +285,52 @@ Required secrets in GitHub repository settings:
 
 ### For Releases
 
-1. **Update version** in package.json
-2. **Update CHANGELOG.md** with release notes
-3. **Push to release branch**:
+**Recommended Workflow**:
+
+1. **Work on main branch**:
+   ```bash
+   git checkout main
+   # Make your changes, run tests locally
+   npm test
+   ```
+
+2. **Update version** in package.json
+3. **Update CHANGELOG.md** with release notes
+4. **Commit changes on main**:
+   ```bash
+   git add package.json CHANGELOG.md src/
+   git commit -m "Implement feature X with tests"
+   ```
+
+5. **Merge to release branch** (triggers CI/CD):
    ```bash
    git checkout release
-   git add package.json CHANGELOG.md
-   git commit -m "Bump version to X.Y.Z"
+   git merge main --no-ff -m "Release version X.Y.Z"
    git push origin release
    ```
-4. **Monitor pipeline** in GitHub Actions
-5. **Verify release** artifacts are correct
-6. **Merge to main** after successful release
+
+6. **Monitor pipeline** in GitHub Actions:
+   - Watch test job pass (3 seconds)
+   - Watch build jobs for macOS and Windows (~15 minutes)
+   - Verify release creation
+
+7. **Verify release artifacts**:
+   - Check GitHub Releases page
+   - Download and test installers (optional)
+
+8. **Sync main with release** (optional):
+   ```bash
+   git checkout main
+   git merge release --ff-only
+   git push origin main
+   ```
+
+**Key Points**:
+- ✅ Main branch = development and testing
+- ✅ Release branch = deployment trigger
+- ✅ CI/CD only runs on release branch
+- ✅ Merge main → release to deploy
+- ✅ Keep branches in sync after successful deployments
 
 ## Troubleshooting
 
