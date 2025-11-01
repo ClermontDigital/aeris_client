@@ -4,11 +4,14 @@ A cross-platform desktop application for accessing the Aeris ERP Point of Sale s
 
 ## Features
 
+- **Multi-User Session Management**: PIN-protected user sessions with auto-lock timeout
 - **Seamless Integration**: Loads your Aeris ERP web application in a native desktop environment
-- **Configurable Server**: Connect to any Aeris ERP server (default: 10.0.0.140:8000)
+- **Configurable Server**: Connect to any Aeris ERP server (default: aeris.local, IP configurable)
+- **Dual Operating Modes**: Single-user or multi-user session management
+- **Secure**: AES-256-GCM encryption for PIN storage, context isolation, sandboxed renderer
 - **Offline Handling**: Graceful error handling when the server is unavailable
 - **Auto-Start Option**: Configure the app to start automatically with your computer
-- **Cross-Platform**: Works on Windows and macOS
+- **Cross-Platform**: Works on Windows and macOS (Intel/ARM64)
 - **Full-Screen Ready**: Optimized for point-of-sale operations
 - **Native Menus**: Keyboard shortcuts and native menu integration
 - **Print Support**: Full printing functionality with network printer support
@@ -42,6 +45,20 @@ A cross-platform desktop application for accessing the Aeris ERP Point of Sale s
 npm run dev
 ```
 
+### Testing
+
+Run automated tests:
+```bash
+npm test                # Run all tests
+npm run test:coverage   # Run with coverage report
+npm run test:watch      # Run in watch mode
+```
+
+**Test Coverage:**
+- 92.4% overall code coverage
+- 121 passing tests (100% pass rate)
+- See [Automated Testing Guide](docs/TESTING_AUTOMATED.md) for details
+
 ### Building for Production
 
 Build for current platform:
@@ -66,20 +83,22 @@ Built applications will be available in the `dist/` directory.
 ### First Run
 
 1. Launch the application
-2. If your Aeris ERP server is not running on 10.0.0.140:8000, open Settings (Cmd/Ctrl + ,)
+2. If your Aeris ERP server is not running on aeris.local, open Settings (Cmd/Ctrl + ,)
 3. Configure your server URL
 4. Test the connection
-5. Optionally enable auto-start
+5. Optionally enable session management and auto-start
 
 ### Settings
 
 Access settings via:
-- Menu: File → Settings
+- Menu: AERIS → Settings
 - Keyboard shortcut: Cmd/Ctrl + ,
 
 Available settings:
-- **Server URL**: The URL where your Aeris ERP server is running
-- **Auto-Start**: Start Aeris automatically when your computer starts
+- **Server URL**: The URL where your Aeris ERP server is running (requires restart)
+- **Enable Session Management**: Toggle multi-user session mode (immediate effect)
+- **Session Timeout**: Auto-lock timeout in minutes (5-120, immediate effect)
+- **Auto-Start**: Start Aeris automatically when your computer starts (immediate effect)
 
 ## Keyboard Shortcuts
 
@@ -105,21 +124,31 @@ Available settings:
 2. Verify all dependencies are installed: `npm install`
 3. Try running in development mode: `npm run dev`
 
+## Documentation
+
+- **[Development Guide](docs/CLAUDE.md)** - Project overview, architecture, and development commands
+- **[Testing Guide](docs/TESTING.md)** - Comprehensive manual test procedures
+- **[TDD Review](docs/TDD_REVIEW.md)** - Test-driven development analysis and recommendations
+
 ## Technical Details
 
 ### Architecture
 
-- **Main Process**: `src/main.js` - Manages application lifecycle and windows
-- **Renderer Process**: Loads the Aeris ERP web application
-- **Preload Script**: `src/preload.js` - Secure communication bridge
+- **Main Process**: `src/main.js` - Manages application lifecycle, windows, and IPC handlers
+- **Session Manager**: `src/session-manager.js` - Multi-user session management with encryption
+- **Renderer Process**: Loads the Aeris ERP web application in isolated context
+- **Preload Script**: `src/preload.js` - Secure IPC communication bridge
 - **Settings Storage**: Persistent configuration using electron-store
 
 ### Security
 
 - Context isolation enabled
 - Node integration disabled in renderer
+- AES-256-GCM encryption for PIN storage
+- PIN attempt limiting (3 attempts, 5-minute lockout)
 - External links open in default browser
 - Navigation restricted to configured server domain
+- Secure URL validation for all external links
 
 ## Icon Requirements
 
