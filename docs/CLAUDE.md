@@ -31,14 +31,27 @@ Aeris is a cross-platform Electron desktop application that provides a native wr
 - 100% pass rate
 
 ### CI/CD
+
+**Branch Strategy**:
+- **Main Branch**: Development and testing (no CI/CD automation)
+- **Release Branch**: Deployment trigger (full CI/CD pipeline)
+
 The project uses GitHub Actions for automated building and releases:
-- Triggers on `release` branch pushes and pull requests
+- Triggers **ONLY** on `release` branch pushes and pull requests
+- Does **NOT** run on `main` branch
 - **Test Phase**: Runs full test suite with coverage before building
 - **Build Phase**: Only runs if all tests pass
 - Builds for both macOS (Intel/ARM64) and Windows
 - Automatically creates GitHub releases with version from package.json
 - Uploads coverage reports as artifacts (7-day retention)
 - Supports macOS notarization (requires APPLE_ID, APPLE_ID_PASS, APPLE_TEAM_ID env vars)
+
+**Deployment Workflow**:
+1. Work on `main` branch (development)
+2. Run tests locally with `npm test`
+3. Merge `main` → `release` to trigger deployment
+4. CI/CD pipeline runs automatically on `release`
+5. GitHub release created with installers
 
 ## Architecture
 
