@@ -132,106 +132,7 @@
             font-size: 11px;
             opacity: 0.8;
         }
-        
-        .notification-bell {
-            position: relative;
-            width: 40px;
-            height: 40px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            color: #e2e8f0;
-            font-size: 16px;
-            margin-right: 8px;
-            -webkit-app-region: no-drag;
-        }
-        
-        .notification-bell:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: rgba(255, 255, 255, 0.3);
-            color: white;
-        }
-        
-        .notification-badge {
-            position: absolute;
-            top: -4px;
-            right: -4px;
-            min-width: 18px;
-            height: 18px;
-            background: #ef4444;
-            color: white;
-            border-radius: 9px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: 600;
-            animation: pulse 2s infinite;
-            border: 2px solid #003049;
-        }
-        
-        .notification-badge.hidden {
-            display: none;
-        }
-        
-        .notification-dropdown {
-            position: absolute;
-            top: 50px;
-            right: -10px;
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-            min-width: 300px;
-            max-height: 400px;
-            overflow-y: auto;
-            z-index: 1000;
-            display: none;
-        }
-        
-        .notification-dropdown.show {
-            display: block;
-        }
-        
-        .notification-header {
-            padding: 12px 16px;
-            border-bottom: 1px solid #e2e8f0;
-            font-weight: 600;
-            color: #334155;
-            background: #f8fafc;
-        }
-        
-        .notification-item {
-            padding: 12px 16px;
-            border-bottom: 1px solid #f1f5f9;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        
-        .notification-item:hover {
-            background: #f8fafc;
-        }
-        
-        .notification-item:last-child {
-            border-bottom: none;
-        }
-        
-        .notification-title {
-            font-weight: 500;
-            color: #1e293b;
-            margin-bottom: 4px;
-        }
-        
-        .notification-message {
-            font-size: 13px;
-            color: #64748b;
-        }
-        
+
         .admin-panel-btn {
             background: #7c3aed;
             color: white;
@@ -439,25 +340,6 @@
         
         <!-- Right side - Title, user info, status, and settings -->
         <div class="toolbar-right">
-            <!-- Notifications -->
-            <div class="notification-bell" id="notification-bell" style="display: none; position: relative;" title="Notifications">
-                🔔
-                <span class="notification-badge" id="notification-badge">0</span>
-                
-                <!-- Notification Dropdown -->
-                <div class="notification-dropdown" id="notification-dropdown">
-                    <div class="notification-header">Notifications (2)</div>
-                    <div class="notification-item">
-                        <div class="notification-title">New Sale Created</div>
-                        <div class="notification-message">Lisa Anderson - $3 • 6 months ago</div>
-                    </div>
-                    <div class="notification-item">
-                        <div class="notification-title">Inventory Alert</div>
-                        <div class="notification-message">Low stock alert for Product Items need restocking</div>
-                    </div>
-                </div>
-            </div>
-            
             <!-- User info -->
             <div class="user-info" id="user-info" style="display: none;">
                 <div>
@@ -553,24 +435,7 @@
         document.getElementById('sessions-btn').addEventListener('click', () => {
             sendAction('show-sessions');
         });
-        
-        // Notification dropdown functionality
-        document.getElementById('notification-bell').addEventListener('click', (e) => {
-            e.stopPropagation();
-            const dropdown = document.getElementById('notification-dropdown');
-            dropdown.classList.toggle('show');
-        });
-        
-        // Close dropdown when clicking outside
-        document.addEventListener('click', () => {
-            const dropdown = document.getElementById('notification-dropdown');
-            dropdown.classList.remove('show');
-        });
-        
 
-        
-
-        
         // Function key handlers - COMMENTED OUT FOR FUTURE REFINEMENT
         /* document.getElementById('f1-btn').addEventListener('click', () => {
             sendAction('navigate-to-url', { url: '/dashboard' });
@@ -669,44 +534,29 @@
             const userInfo = document.getElementById('user-info');
             const userName = document.getElementById('user-name');
             const userRole = document.getElementById('user-role');
-            const notificationBell = document.getElementById('notification-bell');
-            const notificationBadge = document.getElementById('notification-badge');
-            
+
             console.log('Displaying user info:', userInfoData);
-            
+
             // Check if we have valid user data
             if (userInfoData.userName && userInfoData.userName !== 'User' && userInfoData.userName !== '') {
                 console.log('Setting user name to:', userInfoData.userName);
                 userName.textContent = userInfoData.userName;
                 userInfo.style.display = 'flex';
-                
+
                 // Update user role
                 if (userInfoData.userRole) {
                     console.log('Setting user role to:', userInfoData.userRole);
                     userRole.textContent = userInfoData.userRole;
-                    
+
                     // Show/hide admin panel button based on user role
                     const adminPanelBtn = document.getElementById('admin-panel-btn');
-                    if (userInfoData.userRole.toLowerCase().includes('super admin') || 
+                    if (userInfoData.userRole.toLowerCase().includes('super admin') ||
                         userInfoData.userName.toLowerCase().includes('super admin')) {
                         adminPanelBtn.style.display = 'inline-block';
                         console.log('Showing admin panel button for super admin');
                     } else {
                         adminPanelBtn.style.display = 'none';
                         console.log('Hiding admin panel button for role:', userInfoData.userRole);
-                    }
-                }
-                
-                // Update notification count
-                if (userInfoData.notificationCount !== undefined) {
-                    console.log('Setting notification count to:', userInfoData.notificationCount);
-                    notificationBell.style.display = 'flex';
-                    
-                    if (userInfoData.notificationCount > 0) {
-                        notificationBadge.textContent = userInfoData.notificationCount;
-                        notificationBadge.classList.remove('hidden');
-                    } else {
-                        notificationBadge.classList.add('hidden');
                     }
                 }
             } else {
@@ -770,25 +620,13 @@
                 if (isCompleteUserInfo) {
                     cachedUserInfo = {
                         userName: event.data.userName,
-                        userRole: event.data.userRole,
-                        notificationCount: event.data.notificationCount || 0
+                        userRole: event.data.userRole
                     };
                     console.log('Caching complete user info:', cachedUserInfo);
                 }
-                
+
                 // Display the user info
                 displayUserInfo(event.data);
-            } else if (event.data.type === 'notification-update') {
-                // Handle live notification count updates
-                const notificationBadge = document.getElementById('notification-badge');
-                if (notificationBadge) {
-                    if (event.data.notificationCount > 0) {
-                        notificationBadge.textContent = event.data.notificationCount;
-                        notificationBadge.classList.remove('hidden');
-                    } else {
-                        notificationBadge.classList.add('hidden');
-                    }
-                }
             } else if (event.data.type === 'settings-updated') {
                 // Handle settings updates
                 const settings = event.data.settings;
