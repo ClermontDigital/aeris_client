@@ -146,106 +146,7 @@
             font-size: 11px;
             opacity: 0.8;
         }
-        
-        .notification-bell {
-            position: relative;
-            width: 40px;
-            height: 40px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            color: #e2e8f0;
-            font-size: 16px;
-            margin-right: 8px;
-            -webkit-app-region: no-drag;
-        }
-        
-        .notification-bell:hover {
-            background: rgba(255, 255, 255, 0.2);
-            border-color: rgba(255, 255, 255, 0.3);
-            color: white;
-        }
-        
-        .notification-badge {
-            position: absolute;
-            top: -4px;
-            right: -4px;
-            min-width: 18px;
-            height: 18px;
-            background: #ef4444;
-            color: white;
-            border-radius: 9px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: 600;
-            animation: pulse 2s infinite;
-            border: 2px solid #003049;
-        }
-        
-        .notification-badge.hidden {
-            display: none;
-        }
-        
-        .notification-dropdown {
-            position: absolute;
-            top: 50px;
-            right: -10px;
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-            min-width: 300px;
-            max-height: 400px;
-            overflow-y: auto;
-            z-index: 1000;
-            display: none;
-        }
-        
-        .notification-dropdown.show {
-            display: block;
-        }
-        
-        .notification-header {
-            padding: 12px 16px;
-            border-bottom: 1px solid #e2e8f0;
-            font-weight: 600;
-            color: #334155;
-            background: #f8fafc;
-        }
-        
-        .notification-item {
-            padding: 12px 16px;
-            border-bottom: 1px solid #f1f5f9;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        
-        .notification-item:hover {
-            background: #f8fafc;
-        }
-        
-        .notification-item:last-child {
-            border-bottom: none;
-        }
-        
-        .notification-title {
-            font-weight: 500;
-            color: #1e293b;
-            margin-bottom: 4px;
-        }
-        
-        .notification-message {
-            font-size: 13px;
-            color: #64748b;
-        }
-        
+
         .admin-panel-btn {
             background: #7c3aed;
             color: white;
@@ -980,25 +881,6 @@
                 
                 <!-- Right side - Title, user info, status, and settings -->
                 <div class="toolbar-right">
-                    <!-- Notifications -->
-                    <div class="notification-bell" id="notification-bell" style="display: none; position: relative;" title="Notifications">
-                        🔔
-                        <span class="notification-badge hidden" id="notification-badge">0</span>
-                        
-                        <!-- Notification Dropdown -->
-                        <div class="notification-dropdown" id="notification-dropdown">
-                            <div class="notification-header">Notifications (2)</div>
-                            <div class="notification-item">
-                                <div class="notification-title">New Sale Created</div>
-                                <div class="notification-message">Lisa Anderson - $3 • 6 months ago</div>
-                            </div>
-                            <div class="notification-item">
-                                <div class="notification-title">Inventory Alert</div>
-                                <div class="notification-message">Low stock alert for Product Items need restocking</div>
-                            </div>
-                        </div>
-                    </div>
-                    
                     <!-- User info -->
                     <div class="user-info" id="user-info" style="display: none;">
                         <div>
@@ -1480,22 +1362,8 @@
                 console.log('=== WEBVIEW MESSAGE: Received user info:', event.data);
                 updateToolbarUserInfo({
                     userName: event.data.userName,
-                    userRole: event.data.userRole || '',
-                    notificationCount: event.data.notificationCount || 0
+                    userRole: event.data.userRole || ''
                 });
-            } else if (event.data.type === 'notification-update') {
-                // Update toolbar with new notification count only
-                const notificationBadge = document.getElementById('notification-badge');
-                const notificationBell = document.getElementById('notification-bell');
-                if (notificationBadge && notificationBell) {
-                    if (event.data.notificationCount > 0) {
-                        notificationBadge.textContent = event.data.notificationCount;
-                        notificationBadge.classList.remove('hidden');
-                        notificationBell.style.display = 'flex';
-                    } else {
-                        notificationBadge.classList.add('hidden');
-                    }
-                }
             }
         });
         
@@ -1556,6 +1424,10 @@
                     break;
                     
                 case 'logout':
+                    // Clear cached user info on logout to prevent stale data
+                    sessionStorage.removeItem('aerisUserInfo');
+                    updateToolbarUserInfo({ userName: '', userRole: '' });
+
                     // Trigger logout in the webview
                     try {
                         contentFrame.executeJavaScript(`
@@ -1602,6 +1474,10 @@
                     break;
                     
                 case 'web-logout':
+                    // Clear cached user info on logout to prevent stale data
+                    sessionStorage.removeItem('aerisUserInfo');
+                    updateToolbarUserInfo({ userName: '', userRole: '' });
+
                     // Trigger logout using POST method (as required by Laravel)
                     try {
                         contentFrame.executeJavaScript(`
@@ -1706,7 +1582,8 @@
                     handleLockSession();
                     break;
                 case 'logout-aeris':
-                    logoutFromAeris();
+                    // Reuse web-logout logic which handles cache clearing and proper logout
+                    handleToolbarAction('web-logout');
                     break;
             }
             
@@ -2675,7 +2552,18 @@
         function manuallyExtractUserInfo() {
             const contentFrame = document.getElementById('content-frame');
             if (!contentFrame) return;
-            
+
+            // Check if webview is ready and not navigating
+            try {
+                if (!contentFrame.getWebContentsId || contentFrame.isLoading()) {
+                    console.log('=== MANUAL EXTRACTION: Webview not ready, skipping ===');
+                    return;
+                }
+            } catch (e) {
+                console.log('=== MANUAL EXTRACTION: Webview check failed, skipping ===');
+                return;
+            }
+
             console.log('=== MANUAL EXTRACTION: Attempting DOM-based extraction ===');
             
             // First, check sessionStorage for persisted user info
@@ -2729,10 +2617,9 @@
                         const welcomeMatch = allText.match(/Welcome back,\\s*([A-Za-z\\s]+?)(?:[.!\\n,]|$)/i);
                         if (welcomeMatch) {
                             userName = welcomeMatch[1].trim();
-                        } else {
-                            // Default for dashboard/authenticated pages
-                            userName = 'Super Admin';
                         }
+                        // No fallback - if we can't find user info, leave it empty
+                        // This prevents incorrectly showing "Super Admin" for non-admin users
                     }
                     
                     // Determine role from name
@@ -2755,7 +2642,6 @@
                     return {
                         userName: hasLoginForm ? '' : userName || '',
                         userRole: hasLoginForm ? '' : userRole || '',
-                        notificationCount: 2, // Default; can be enhanced later
                         isLogin: hasLoginForm
                     };
                 })()
@@ -2767,8 +2653,7 @@
                     sessionStorage.removeItem('aerisUserInfo');
                     updateToolbarUserInfo({
                         userName: '',
-                        userRole: '',
-                        notificationCount: 0
+                        userRole: ''
                     });
                 } else {
                     // Persist valid info
@@ -2776,9 +2661,9 @@
                     updateToolbarUserInfo(result);
                 }
             }).catch(error => {
-                console.log('=== MANUAL EXTRACTION: Error in DOM extraction:', error);
-                // Fallback to persisted if error
-                manuallyExtractUserInfo(); // Retry with persisted check
+                // Silently handle errors - frame may have navigated or been disposed
+                // The periodic extraction will retry automatically
+                console.log('=== MANUAL EXTRACTION: Error in DOM extraction (frame may be navigating)');
             });
         }
         
@@ -2819,8 +2704,7 @@
                             toolbarFrame.contentWindow.postMessage({
                                 type: 'user-info',
                                 userName: 'Test User After Load',
-                                userRole: 'test role',
-                                notificationCount: 1
+                                userRole: 'test role'
                             }, '*');
                         }
                     }, 500);
@@ -2898,21 +2782,6 @@
                 handleToolbarAction('show-sessions');
             });
             
-            // Notification dropdown functionality
-            document.getElementById('notification-bell').addEventListener('click', (e) => {
-                e.stopPropagation();
-                const dropdown = document.getElementById('notification-dropdown');
-                dropdown.classList.toggle('show');
-            });
-            
-            // Close dropdown when clicking outside
-            document.addEventListener('click', () => {
-                const dropdown = document.getElementById('notification-dropdown');
-                if (dropdown) {
-                    dropdown.classList.remove('show');
-                }
-            });
-            
             // Toolbar keyboard shortcuts
             document.addEventListener('keydown', (e) => {
                 if (e.altKey && e.key === 'ArrowLeft') {
@@ -2943,27 +2812,25 @@
         // Function to update toolbar with user information (direct DOM access)
         function updateToolbarUserInfo(userInfo) {
             console.log('=== TOOLBAR: Updating user info:', userInfo);
-            
+
             const userInfoDiv = document.getElementById('user-info');
             const userName = document.getElementById('user-name');
             const userRole = document.getElementById('user-role');
-            const notificationBell = document.getElementById('notification-bell');
-            const notificationBadge = document.getElementById('notification-badge');
             const adminPanelBtn = document.getElementById('admin-panel-btn');
-            
+
             // Check if we have valid user data or if we should hide user info
             if (userInfo.userName && userInfo.userName !== 'User' && userInfo.userName !== '') {
                 console.log('=== TOOLBAR: Setting user name to:', userInfo.userName);
                 userName.textContent = userInfo.userName;
                 userInfoDiv.style.display = 'flex';
-                
+
                 // Update user role
                 if (userInfo.userRole) {
                     console.log('=== TOOLBAR: Setting user role to:', userInfo.userRole);
                     userRole.textContent = userInfo.userRole;
-                    
+
                     // Show/hide admin panel button based on user role
-                    if (userInfo.userRole.toLowerCase().includes('super admin') || 
+                    if (userInfo.userRole.toLowerCase().includes('super admin') ||
                         userInfo.userName.toLowerCase().includes('super admin')) {
                         adminPanelBtn.style.display = 'inline-block';
                         console.log('=== TOOLBAR: Showing admin panel button for super admin');
@@ -2976,19 +2843,6 @@
                 // No user or logged out - hide user info completely
                 console.log('=== TOOLBAR: No user data or empty username - hiding user info');
                 userInfoDiv.style.display = 'none';
-            }
-            
-            // Update notification count
-            if (userInfo.notificationCount !== undefined) {
-                console.log('=== TOOLBAR: Setting notification count to:', userInfo.notificationCount);
-                notificationBell.style.display = 'flex';
-                
-                if (userInfo.notificationCount > 0) {
-                    notificationBadge.textContent = userInfo.notificationCount;
-                    notificationBadge.classList.remove('hidden');
-                } else {
-                    notificationBadge.classList.add('hidden');
-                }
             }
         }
         
