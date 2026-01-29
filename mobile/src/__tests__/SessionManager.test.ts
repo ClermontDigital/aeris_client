@@ -126,7 +126,10 @@ describe('SessionManager', () => {
 
   describe('getAllSessions', () => {
     test('should return all sessions sorted by lastAccessedAt', () => {
-      SessionManager.createSession('A', '1234');
+      const idA = SessionManager.createSession('A', '1234');
+      // Ensure B has a later timestamp by backdating A in the internal map
+      const internalSession = (SessionManager as any).sessions.get(idA);
+      internalSession.lastAccessedAt = new Date(Date.now() - 10000).toISOString();
       SessionManager.createSession('B', '5678');
       const sessions = SessionManager.getAllSessions();
       expect(sessions.length).toBe(2);
