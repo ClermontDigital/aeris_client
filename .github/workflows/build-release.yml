@@ -6,15 +6,16 @@ on:
   pull_request:
     branches: [ release ]
 
-# Add permissions for GitHub token
 permissions:
   contents: write
   discussions: write
 
 jobs:
-  test:
+  test-desktop:
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: desktop
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -24,6 +25,7 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
+        cache-dependency-path: desktop/package-lock.json
 
     - name: Install dependencies
       run: npm ci
@@ -37,18 +39,15 @@ jobs:
     - name: Upload coverage reports
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-report
-        path: coverage/
+        name: desktop-coverage
+        path: desktop/coverage/
         retention-days: 7
 
-  build:
-    needs: test
-    strategy:
-      matrix:
-        os: [macos-latest, windows-latest]
-
-    runs-on: ${{ matrix.os }}
-
+  test-mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -58,12 +57,51 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
+        cache-dependency-path: mobile/package-lock.json
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
 
     - name: Install dependencies
       run: npm ci
-      
+
+    - name: Run tests
+      run: npm test
+
+    - name: Run tests with coverage
+      run: npm run test:coverage
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: mobile-coverage
+        path: mobile/coverage/
+        retention-days: 7
+
+  build-desktop-mac:
+    needs: test-desktop
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: desktop/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
     - name: Build for macOS
-      if: matrix.os == 'macos-latest'
       env:
         CI: false
         GITHUB_ACTIONS: false
@@ -71,144 +109,301 @@ jobs:
         APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
         APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: npm run build:mac
-      
+
+    - name: Upload macOS artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: aeris-macos
+        path: desktop/dist/*.dmg
+        retention-days: 30
+
+  build-desktop-win:
+    needs: test-desktop
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: desktop/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
     - name: Build for Windows
-      if: matrix.os == 'windows-latest'
       env:
         CI: false
         GITHUB_ACTIONS: false
       run: npm run build:win
-      
-    - name: Upload macOS artifacts
-      if: matrix.os == 'macos-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: aeris-macos
-        path: dist/*.dmg
-        retention-days: 30
-        
+
     - name: Upload Windows artifacts
-      if: matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
         name: aeris-windows
-        path: dist/*.exe
+        path: desktop/dist/*.exe
         retention-days: 30
 
-  release:
-    needs: build
+  build-mobile-android:
+    needs: test-mobile
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/release' && github.event_name == 'push'
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Get version from package.json
-      id: package-version
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: mobile/package-lock.json
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Install JS dependencies
+      working-directory: mobile
+      run: npm ci
+
+    - name: Cache Gradle
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-${{ hashFiles('mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+
+    - name: Decode Android signing keystore
+      working-directory: mobile
+      run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+      env:
+        ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+    - name: Build Android APK
+      working-directory: mobile/android
+      run: ./gradlew assembleRelease
+      env:
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    - name: Upload Android artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: aeris-android
+        path: mobile/android/app/build/outputs/apk/release/*.apk
+        retention-days: 30
+
+  build-mobile-ios:
+    needs: test-mobile
+    runs-on: macos-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: mobile/package-lock.json
+
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.2'
+
+    - name: Install JS dependencies
+      working-directory: mobile
+      run: npm ci
+
+    - name: Cache CocoaPods
+      uses: actions/cache@v4
+      with:
+        path: mobile/ios/Pods
+        key: pods-${{ hashFiles('mobile/ios/Podfile.lock') }}
+
+    - name: Install CocoaPods
+      working-directory: mobile/ios
+      run: pod install
+
+    - name: Install Apple certificate
+      env:
+        IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+        IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+        IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
       run: |
-        VERSION=$(node -p "require('./package.json').version")
+        KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+        KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+        security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+        echo "$IOS_CERTIFICATE_BASE64" | base64 -d > $RUNNER_TEMP/certificate.p12
+        security import $RUNNER_TEMP/certificate.p12 -P "$IOS_CERTIFICATE_PASSWORD" \
+          -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+        security list-keychain -d user -s "$KEYCHAIN_PATH"
+        mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+        echo "$IOS_PROVISIONING_PROFILE" | base64 -d \
+          > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+
+    - name: Build iOS archive
+      working-directory: mobile/ios
+      run: |
+        xcodebuild archive \
+          -workspace Aeris.xcworkspace \
+          -scheme Aeris \
+          -configuration Release \
+          -archivePath $RUNNER_TEMP/Aeris.xcarchive \
+          -destination 'generic/platform=iOS' \
+          CODE_SIGN_STYLE=Manual \
+          PROVISIONING_PROFILE_SPECIFIER="Aeris Distribution"
+
+    - name: Export IPA
+      env:
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        sed -i '' "s/\$(APPLE_TEAM_ID)/$APPLE_TEAM_ID/" mobile/ios/exportOptions.plist
+        xcodebuild -exportArchive \
+          -archivePath $RUNNER_TEMP/Aeris.xcarchive \
+          -exportPath $RUNNER_TEMP/export \
+          -exportOptionsPlist mobile/ios/exportOptions.plist
+
+    - name: Upload iOS artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: aeris-ios
+        path: ${{ runner.temp }}/export/*.ipa
+        retention-days: 30
+
+    - name: Cleanup keychain
+      if: always()
+      run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
+
+  release:
+    needs: [build-desktop-mac, build-desktop-win, build-mobile-android, build-mobile-ios]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/release' && github.event_name == 'push'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get version
+      id: version
+      run: |
+        VERSION=$(cat VERSION)
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
-        echo "Package.json version: $VERSION"
-      
+
     - name: Download macOS artifacts
       uses: actions/download-artifact@v4
       with:
         name: aeris-macos
         path: ./release-assets/
-        
+
     - name: Download Windows artifacts
       uses: actions/download-artifact@v4
       with:
         name: aeris-windows
         path: ./release-assets/
-        
+
+    - name: Download Android artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: aeris-android
+        path: ./release-assets/
+
+    - name: Download iOS artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: aeris-ios
+        path: ./release-assets/
+
     - name: Display downloaded artifacts
       run: ls -la ./release-assets/
-      
+
     - name: Create Release
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.package-version.outputs.tag_name }}
-        name: Aeris Client ${{ steps.package-version.outputs.version }}
+        tag_name: ${{ steps.version.outputs.tag_name }}
+        name: Aeris Client ${{ steps.version.outputs.version }}
         generate_release_notes: false
         body: |
-          ## Aeris ERP Desktop Client ${{ steps.package-version.outputs.version }}
-          
-          **Version:** ${{ steps.package-version.outputs.version }}
+          ## Aeris ERP Client ${{ steps.version.outputs.version }}
+
+          **Version:** ${{ steps.version.outputs.version }}
           **Build Date:** ${{ github.event.head_commit.timestamp }}
           **Commit:** ${{ github.sha }}
-          
-          ### 🚀 Features
-          - 🖥️ Cross-platform desktop application (Windows/macOS)
-          - 🌐 Connects to Aeris ERP server at `10.0.0.140:8000`
-          - 🖨️ Full printing support including network printers
-          - 🔧 Automatic Bootstrap modal focus fix (no ERP changes required)
-          - ⚙️ Configurable settings and auto-start functionality
-          
-          ### 📦 Downloads
-          Choose the appropriate file for your platform:
-          
-          **Windows:**
-          - `Aeris Setup ${{ steps.package-version.outputs.version }}.exe` - Windows installer
-          
-          **macOS:**
-          - `Aeris-${{ steps.package-version.outputs.version }}-x64.dmg` - macOS Intel
-          - `Aeris-${{ steps.package-version.outputs.version }}-arm64.dmg` - macOS Apple Silicon
-          
-          > **Note:** Only the installer files (.exe/.dmg) are included in this release. Source code archives are excluded to keep downloads clean and focused.
-          
-          ### 🔧 Installation
-          1. Download the appropriate file for your platform
-          2. **Windows**: Run the installer and follow the wizard
-          3. **macOS**: Open the DMG and drag Aeris to Applications folder
-          4. Launch Aeris - it will automatically connect to your ERP server
-          
-          ### ⚠️ Security Note
-          On macOS, you may need to right-click the app and select "Open" the first time, or go to System Preferences > Security & Privacy to allow the app to run.
-          
+
+          ### Downloads
+
+          **Desktop:**
+          - `Aeris Setup ${{ steps.version.outputs.version }}.exe` - Windows installer
+          - `Aeris-${{ steps.version.outputs.version }}-x64.dmg` - macOS Intel
+          - `Aeris-${{ steps.version.outputs.version }}-arm64.dmg` - macOS Apple Silicon
+
+          **Mobile:**
+          - `aeris-release.apk` - Android (tablet)
+          - `Aeris.ipa` - iOS (iPad/iPhone)
+
+          ### Installation
+          1. **Windows**: Run the installer and follow the wizard
+          2. **macOS**: Open the DMG and drag Aeris to Applications folder
+          3. **Android**: Enable "Install from unknown sources" and install the APK
+          4. **iOS**: Install via enterprise distribution or TestFlight
+
           ---
           *Built automatically from release branch*
         draft: false
         prerelease: false
         files: |
           ./release-assets/*
-          
+
     - name: Remove source code archives
       run: |
-        # Get the release ID
         RELEASE_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.package-version.outputs.tag_name }}" | \
+          "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.version.outputs.tag_name }}" | \
           jq -r '.id')
-        
-        # Get assets and delete source code archives
         curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets" | \
           jq -r '.[] | select(.name | endswith(".zip") or endswith(".tar.gz")) | .id' | \
           while read asset_id; do
-            echo "Deleting source archive asset ID: $asset_id"
             curl -X DELETE -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               "https://api.github.com/repos/${{ github.repository }}/releases/assets/$asset_id"
           done
 
   notify:
-    needs: [build, release]
+    needs: [build-desktop-mac, build-desktop-win, build-mobile-android, build-mobile-ios, release]
     runs-on: ubuntu-latest
     if: always() && github.ref == 'refs/heads/release' && github.event_name == 'push'
-    
+
     steps:
     - name: Notify Success
-      if: needs.build.result == 'success' && needs.release.result == 'success'
-      run: |
-        echo "✅ Release build completed successfully!"
-        echo "📦 New version released with auto-incremented version number"
-        
+      if: |
+        needs.build-desktop-mac.result == 'success' &&
+        needs.build-desktop-win.result == 'success' &&
+        needs.build-mobile-android.result == 'success' &&
+        needs.build-mobile-ios.result == 'success' &&
+        needs.release.result == 'success'
+      run: echo "Release build completed successfully for all 4 platforms!"
+
     - name: Notify Failure
-      if: needs.build.result == 'failure' || needs.release.result == 'failure'
+      if: |
+        needs.build-desktop-mac.result == 'failure' ||
+        needs.build-desktop-win.result == 'failure' ||
+        needs.build-mobile-android.result == 'failure' ||
+        needs.build-mobile-ios.result == 'failure' ||
+        needs.release.result == 'failure'
       run: |
-        echo "❌ Release build failed!"
-        echo "🔍 Check the workflow logs for details"
-        exit 1 
+        echo "Release build failed! Check workflow logs."
+        exit 1

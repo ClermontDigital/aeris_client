@@ -190,4 +190,20 @@ $RECYCLE.BIN/
 *.msp
 
 # Windows shortcuts
-*.lnk 
+*.lnk
+
+# React Native
+mobile/android/app/build/
+mobile/ios/build/
+mobile/ios/Pods/
+mobile/ios/*.xcworkspace
+*.apk
+*.aab
+*.ipa
+
+# Metro
+.metro-health-check*
+
+# Gradle
+.gradle/
+local.properties

@@ -1,0 +1,4 @@
+source 'https://rubygems.org'
+
+# CocoaPods for iOS dependency management
+gem 'cocoapods', '~> 1.14'
