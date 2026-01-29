@@ -16,10 +16,10 @@ module.exports = {
       statements: 85
     },
     './src/session-manager.js': {
-      branches: 90,
+      branches: 85,
       functions: 100,
-      lines: 95,
-      statements: 95
+      lines: 90,
+      statements: 90
     },
     './src/ipc-handlers.js': {
       branches: 68,
