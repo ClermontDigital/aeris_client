@@ -24,6 +24,10 @@ import {useSettingsStore} from '../stores/settingsStore';
 describe('settingsStore', () => {
   beforeEach(async () => {
     Object.keys(mockStorage).forEach(k => delete mockStorage[k]);
+    useSettingsStore.setState({
+      settings: {baseUrl: 'http://aeris.local:8000', sessionTimeout: 30, enableSessionManagement: false, autoStart: false},
+      isLoading: false,
+    });
     await useSettingsStore.getState().init();
   });
 
