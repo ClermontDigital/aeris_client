@@ -1026,6 +1026,17 @@
     </div>
 
     <script>
+        // HTML entity escaping to prevent XSS when interpolating user data into innerHTML
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return '';
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         let currentUrl = '';
         let isConnected = false;
         let connectionCheckInterval = null; // Track interval for cleanup
@@ -1353,13 +1364,12 @@
             updateToolbarNavigationState();
         }
         
-        // Listen for messages from toolbar and webview
+        // Listen for messages from toolbar and webview (same-origin only)
         window.addEventListener('message', (event) => {
+            if (event.origin !== 'null' && event.origin !== window.location.origin) return;
             if (event.data.type === 'toolbar-action') {
                 handleToolbarAction(event.data.action, event.data.data);
             } else if (event.data.type === 'user-info') {
-                // Update toolbar with webview user information
-                console.log('=== WEBVIEW MESSAGE: Received user info:', event.data);
                 updateToolbarUserInfo({
                     userName: event.data.userName,
                     userRole: event.data.userRole || ''
@@ -1460,8 +1470,20 @@
                             }
                             
                             if (!logoutFound) {
-                                // Fallback - try to navigate to logout URL
-                                window.location.href = '/logout';
+                                // Fallback - submit a POST form for logout (required by Laravel)
+                                var form = document.createElement('form');
+                                form.method = 'POST';
+                                form.action = '/logout';
+                                var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+                                if (csrfMeta) {
+                                    var tokenInput = document.createElement('input');
+                                    tokenInput.type = 'hidden';
+                                    tokenInput.name = '_token';
+                                    tokenInput.value = csrfMeta.getAttribute('content');
+                                    form.appendChild(tokenInput);
+                                }
+                                document.body.appendChild(form);
+                                form.submit();
                             }
                         `);
                     } catch (error) {
@@ -1593,7 +1615,7 @@
         
         // Listen for navigation messages from main process
         if (window.electronAPI && window.electronAPI.onNavigateToUrl) {
-            window.electronAPI.onNavigateToUrl((event, data) => {
+            window.electronAPI.onNavigateToUrl((data) => {
                 handleToolbarAction('navigate-to-url', data);
             });
         }
@@ -1779,8 +1801,8 @@
                 <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">Update Available!</h2>
                 <p style="color: #666; margin-bottom: 20px; line-height: 1.5;">
                     A new version of Aeris is available.<br>
-                    <strong>Current:</strong> v${updateInfo.currentVersion}<br>
-                    <strong>Latest:</strong> v${updateInfo.latestVersion}
+                    <strong>Current:</strong> v${escapeHtml(updateInfo.currentVersion)}<br>
+                    <strong>Latest:</strong> v${escapeHtml(updateInfo.latestVersion)}
                 </p>
                 <div style="margin-bottom: 25px;">
                     <button id="download-update" style="
@@ -1880,7 +1902,7 @@
                 <h2 style="color: #333; margin-bottom: 15px; font-size: 24px;">You're Up to Date!</h2>
                 <p style="color: #666; margin-bottom: 25px; line-height: 1.5;">
                     You have the latest version of Aeris.<br>
-                    <strong>Current:</strong> v${updateInfo.currentVersion}
+                    <strong>Current:</strong> v${escapeHtml(updateInfo.currentVersion)}
                 </p>
                 <button id="close-dialog" style="
                     background: #667eea;
@@ -1984,34 +2006,34 @@
             }
 
             // Listen for session events from main process
-            window.electronAPI.on('session-locked', (sessionId) => {
+            window.electronAPI.onSessionLocked((sessionId) => {
                 updateSessionState('locked');
                 showNotification('Session locked due to inactivity');
             });
 
-            window.electronAPI.on('session-unlocked', (session) => {
+            window.electronAPI.onSessionUnlocked((session) => {
                 updateSessionState('unlocked');
             });
 
-            window.electronAPI.on('session-switched', (session) => {
+            window.electronAPI.onSessionSwitched((session) => {
                 updateSessionState('unlocked');
             });
 
             // Listen for session overlay events
-            window.electronAPI.on('show-session-overlay', () => {
+            window.electronAPI.onShowSessionOverlay(() => {
                 showSessionSwitcher();
             });
 
-            window.electronAPI.on('hide-session-overlay', () => {
+            window.electronAPI.onHideSessionOverlay(() => {
                 hideSessionSwitcher();
             });
 
             // Print request handlers
-            window.electronAPI.on('print-request', (options) => {
+            window.electronAPI.onPrintRequest((options) => {
                 printPage();
             });
 
-            window.electronAPI.on('print-silent-request', (options) => {
+            window.electronAPI.onPrintSilentRequest((options) => {
                 const contentFrame = document.getElementById('content-frame');
                 if (contentFrame && contentFrame.print) {
                     contentFrame.print(options);
@@ -2156,22 +2178,32 @@
                         const isLocked = session.status === 'locked' || session.isLocked;
                         const statusText = isActive ? 'Active' : (isLocked ? 'Locked' : 'Available');
                         const cardClass = isActive ? 'active' : (isLocked ? 'locked' : '');
-                        
+                        const safeName = escapeHtml(session.name);
+                        const safeId = escapeHtml(session.id);
+
                         return `
-                            <div class="session-card ${cardClass}" onclick="selectSession('${session.id}')">
+                            <div class="session-card ${cardClass}" data-session-id="${safeId}">
                                 <div class="session-details">
-                                    <h4>${session.name}</h4>
+                                    <h4>${safeName}</h4>
                                     <p>Status: ${statusText}</p>
                                     ${session.lastAccessedAt ? `<p>Last used: ${new Date(session.lastAccessedAt).toLocaleString()}</p>` : ''}
                                 </div>
                                 <div class="session-actions">
-                                    <button class="session-btn" onclick="event.stopPropagation(); deleteSession('${session.id}')">🗑️ Delete</button>
+                                    <button class="session-btn session-delete-btn" data-session-id="${safeId}">🗑️ Delete</button>
                                 </div>
                             </div>
                         `;
                     }).join('');
-                    
+
                     container.innerHTML = sessionCards;
+
+                    // Attach event listeners via delegation instead of inline onclick
+                    container.querySelectorAll('.session-card').forEach(card => {
+                        card.addEventListener('click', () => selectSession(card.dataset.sessionId));
+                    });
+                    container.querySelectorAll('.session-delete-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => { e.stopPropagation(); deleteSession(btn.dataset.sessionId); });
+                    });
                 }
             } catch (error) {
                 console.error('Failed to load sessions:', error);
@@ -2507,46 +2539,7 @@
             }
         });
 
-        // Listen for toolbar actions
-        window.addEventListener('message', (event) => {
-            if (event.data.type === 'toolbar-action') {
-                switch (event.data.action) {
-                    case 'navigate-back':
-                        navigateBack();
-                        break;
-                    case 'navigate-forward':
-                        navigateForward();
-                        break;
-                    case 'refresh':
-                        refreshPage();
-                        break;
-                    case 'home':
-                        goHome();
-                        break;
-                    case 'print':
-                        printPage();
-                        break;
-                    case 'open-settings':
-                        openSettings();
-                        break;
-                    case 'show-sessions':
-                        // Only show sessions if session management is enabled
-                        if (currentSettings.enableSessionManagement !== false) {
-                            showSessionSwitcher();
-                        }
-                        break;
-                    case 'lock-session':
-                        // Only lock if session management is enabled
-                        if (currentSettings.enableSessionManagement !== false) {
-                            handleLockSession();
-                        }
-                        break;
-                    case 'check-update':
-                        checkForUpdates();
-                        break;
-                }
-            }
-        });
+        // Note: toolbar actions are handled by the message listener above (line ~1368)
 
         // MANUAL USER EXTRACTION - Updated to handle Aeris ERP dashboard
         function manuallyExtractUserInfo() {
@@ -2671,64 +2664,7 @@
         setInterval(manuallyExtractUserInfo, 10000); // Every 10s
         setTimeout(manuallyExtractUserInfo, 1000);
         
-        // IMMEDIATE TEST - This should always show in console
-        
-        // Enhanced debugging for toolbar iframe loading
-        function debugToolbarFrame() {
-            console.log('=== TOOLBAR DEBUG: Starting comprehensive toolbar iframe debugging ===');
-            
-            const toolbarFrame = document.getElementById('toolbar-frame');
-            console.log('=== TOOLBAR DEBUG: iframe element:', toolbarFrame);
-            console.log('=== TOOLBAR DEBUG: iframe src:', toolbarFrame ? toolbarFrame.src : 'NO IFRAME');
-            console.log('=== TOOLBAR DEBUG: iframe contentWindow:', toolbarFrame ? toolbarFrame.contentWindow : 'NO IFRAME');
-            
-            if (toolbarFrame) {
-                console.log('=== TOOLBAR DEBUG: iframe readyState:', toolbarFrame.readyState);
-                console.log('=== TOOLBAR DEBUG: iframe complete:', toolbarFrame.complete);
-                
-                // Check if iframe has loaded
-                toolbarFrame.addEventListener('load', () => {
-                    console.log('=== TOOLBAR DEBUG: iframe load event fired ===');
-                    console.log('=== TOOLBAR DEBUG: contentWindow after load:', toolbarFrame.contentWindow);
-                    console.log('=== TOOLBAR DEBUG: contentDocument after load:', toolbarFrame.contentDocument);
-                    
-                    if (toolbarFrame.contentDocument) {
-                        console.log('=== TOOLBAR DEBUG: contentDocument body:', toolbarFrame.contentDocument.body);
-                        console.log('=== TOOLBAR DEBUG: contentDocument HTML:', toolbarFrame.contentDocument.documentElement.outerHTML.substring(0, 500));
-                    }
-                    
-                    // Try to send test message after load
-                    setTimeout(() => {
-                        console.log('=== TOOLBAR DEBUG: Sending test message after load ===');
-                        if (toolbarFrame.contentWindow) {
-                            toolbarFrame.contentWindow.postMessage({
-                                type: 'user-info',
-                                userName: 'Test User After Load',
-                                userRole: 'test role'
-                            }, '*');
-                        }
-                    }, 500);
-                });
-                
-                toolbarFrame.addEventListener('error', (error) => {
-                    console.log('=== TOOLBAR DEBUG: iframe error event:', error);
-                });
-                
-                // Check if already loaded
-                if (toolbarFrame.contentDocument && toolbarFrame.contentDocument.readyState === 'complete') {
-                    console.log('=== TOOLBAR DEBUG: iframe already loaded ===');
-                }
-            }
-        }
-        
-        // Run debugging immediately and after delays
-        debugToolbarFrame();
-        setTimeout(debugToolbarFrame, 1000);
-        setTimeout(debugToolbarFrame, 3000);
-        
-        // Remove test user info - let real extraction work
-        
-        // CRITICAL: Actually initialize the app
+        // Initialize the app
         initializeApp();
         
         // =============================================

@@ -1,13 +1,12 @@
-export interface EncryptedPin {
-  encrypted: string;
-  iv: string;
-  authTag: string;
+export interface HashedPin {
+  hash: string;
+  salt: string;
 }
 
 export interface Session {
   id: string;
   name: string;
-  pin: EncryptedPin;
+  pin: HashedPin;
   createdAt: string;
   lastAccessedAt: string;
   isLocked: boolean;

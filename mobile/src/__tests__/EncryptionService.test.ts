@@ -38,26 +38,30 @@ describe('EncryptionService', () => {
     expect(mockStorage['aeris_encryption_key']).toBe(firstKey);
   });
 
-  test('should encrypt and decrypt a PIN correctly', () => {
+  test('should hash a PIN and verify it correctly', () => {
     const pin = '1234';
-    const encrypted = EncryptionService.encryptPin(pin);
-    expect(encrypted).toHaveProperty('encrypted');
-    expect(encrypted).toHaveProperty('iv');
-    expect(encrypted).toHaveProperty('authTag');
+    const hashed = EncryptionService.hashPin(pin);
+    expect(hashed).toHaveProperty('hash');
+    expect(hashed).toHaveProperty('salt');
 
-    const decrypted = EncryptionService.decryptPin(encrypted);
-    expect(decrypted).toBe(pin);
+    expect(EncryptionService.verifyPin(pin, hashed)).toBe(true);
   });
 
-  test('should produce different ciphertexts for same PIN (random IV)', () => {
-    const e1 = EncryptionService.encryptPin('1234');
-    const e2 = EncryptionService.encryptPin('1234');
-    expect(e1.iv).not.toBe(e2.iv);
+  test('should reject wrong PIN', () => {
+    const hashed = EncryptionService.hashPin('1234');
+    expect(EncryptionService.verifyPin('0000', hashed)).toBe(false);
   });
 
-  test('should return null for tampered data', () => {
-    const encrypted = EncryptionService.encryptPin('5678');
-    encrypted.authTag = 'ffffffff';
-    expect(EncryptionService.decryptPin(encrypted)).toBeNull();
+  test('should produce different hashes for same PIN (random salt)', () => {
+    const h1 = EncryptionService.hashPin('1234');
+    const h2 = EncryptionService.hashPin('1234');
+    expect(h1.salt).not.toBe(h2.salt);
+    expect(h1.hash).not.toBe(h2.hash);
+  });
+
+  test('should reject verification with tampered hash', () => {
+    const hashed = EncryptionService.hashPin('5678');
+    hashed.hash = 'ff'.repeat(32);
+    expect(EncryptionService.verifyPin('5678', hashed)).toBe(false);
   });
 });

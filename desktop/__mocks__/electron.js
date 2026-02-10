@@ -127,7 +127,7 @@ const shell = {
 };
 
 const app = {
-  getVersion: jest.fn(() => '1.1.3'),
+  getVersion: jest.fn(() => '1.2.1'),
   getName: jest.fn(() => 'AERIS'),
   setName: jest.fn(),
   getPath: jest.fn((name) => `/mock/path/${name}`),

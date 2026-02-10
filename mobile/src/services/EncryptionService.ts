@@ -4,8 +4,9 @@ import {STORAGE_KEYS} from '../constants/config';
 
 // Uses crypto.getRandomValues (polyfilled by react-native-get-random-values)
 // for cryptographically secure random number generation.
-// PIN encryption uses XOR with a persistent key stored in Android Keystore / iOS Keychain.
-// The real security comes from EncryptedStorage being hardware-backed.
+// PINs are stored as one-way salted hashes (not reversible).
+// The real security comes from EncryptedStorage being hardware-backed
+// (Android Keystore / iOS Keychain).
 
 function secureRandomHex(byteCount: number): string {
   const bytes = new Uint8Array(byteCount);
@@ -29,58 +30,48 @@ class EncryptionService {
     this.key = stored;
   }
 
-  encryptPin(pin: string): {encrypted: string; iv: string; authTag: string} {
+  hashPin(pin: string): {hash: string; salt: string} {
     if (!this.key) throw new Error('EncryptionService not initialized');
-
-    // Generate cryptographically secure random IV (16 bytes = 32 hex chars)
-    const iv = secureRandomHex(16);
-
-    // XOR-based encryption (PIN is short, real security is from EncryptedStorage)
-    const pinBytes = pin.split('').map(c => c.charCodeAt(0));
-    const keyBytes = this.key.match(/.{2}/g)!.map(h => parseInt(h, 16));
-    const ivBytes = iv.match(/.{2}/g)!.map(h => parseInt(h, 16));
-
-    const encrypted = pinBytes
-      .map((b, i) => b ^ keyBytes[i % keyBytes.length] ^ ivBytes[i % ivBytes.length])
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-
-    // Simple HMAC-like tag for integrity
-    let tag = 0;
-    for (let i = 0; i < pinBytes.length; i++) {
-      tag = (tag * 31 + pinBytes[i] + keyBytes[i % keyBytes.length]) & 0xffffffff;
-    }
-    const authTag = tag.toString(16).padStart(8, '0');
-
-    return {encrypted, iv, authTag};
+    const salt = secureRandomHex(16);
+    const hash = this.computeHash(pin, salt);
+    return {hash, salt};
   }
 
-  decryptPin(data: {encrypted: string; iv: string; authTag: string}): string | null {
+  verifyPin(pin: string, data: {hash: string; salt: string}): boolean {
     if (!this.key) throw new Error('EncryptionService not initialized');
-
-    try {
-      const encBytes = data.encrypted.match(/.{2}/g)!.map(h => parseInt(h, 16));
-      const keyBytes = this.key.match(/.{2}/g)!.map(h => parseInt(h, 16));
-      const ivBytes = data.iv.match(/.{2}/g)!.map(h => parseInt(h, 16));
-
-      const decrypted = encBytes
-        .map((b, i) => b ^ keyBytes[i % keyBytes.length] ^ ivBytes[i % ivBytes.length])
-        .map(b => String.fromCharCode(b))
-        .join('');
-
-      // Verify integrity tag
-      const pinBytes = decrypted.split('').map(c => c.charCodeAt(0));
-      let tag = 0;
-      for (let i = 0; i < pinBytes.length; i++) {
-        tag = (tag * 31 + pinBytes[i] + keyBytes[i % keyBytes.length]) & 0xffffffff;
-      }
-      const expectedTag = tag.toString(16).padStart(8, '0');
-
-      if (expectedTag !== data.authTag) return null;
-      return decrypted;
-    } catch {
-      return null;
+    const computed = this.computeHash(pin, data.salt);
+    // Constant-time comparison to prevent timing attacks
+    if (computed.length !== data.hash.length) return false;
+    let diff = 0;
+    for (let i = 0; i < computed.length; i++) {
+      diff |= computed.charCodeAt(i) ^ data.hash.charCodeAt(i);
     }
+    return diff === 0;
+  }
+
+  private computeHash(pin: string, salt: string): string {
+    const input = `${salt}:${pin}:${this.key}`;
+
+    // 256-bit state using 8 x 32-bit words, initialized with SHA-256 constants
+    const state = new Uint32Array([
+      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]);
+
+    // Multiple rounds of mixing for key stretching
+    for (let round = 0; round < 10000; round++) {
+      for (let i = 0; i < input.length; i++) {
+        const idx = (i + round) % 8;
+        state[idx] = (state[idx] ^ (input.charCodeAt(i) + round)) >>> 0;
+        state[idx] = Math.imul(state[idx], 0x01000193) >>> 0;
+        state[(idx + 1) % 8] = (state[(idx + 1) % 8] ^ (state[idx] >>> 13)) >>> 0;
+        state[(idx + 3) % 8] = (state[(idx + 3) % 8] + state[idx]) >>> 0;
+      }
+    }
+
+    return Array.from(state)
+      .map(v => v.toString(16).padStart(8, '0'))
+      .join('');
   }
 }
 

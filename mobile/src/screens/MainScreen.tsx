@@ -83,6 +83,11 @@ const MainScreen: React.FC = () => {
       webView.setCanGoBack(nav.canGoBack);
       webView.setCanGoForward(nav.canGoForward);
       webView.setCurrentUrl(nav.url);
+      // Dismiss loading overlay when navigation reports page finished loading
+      if (!nav.loading) {
+        webView.setIsLoading(false);
+        ConnectionService.setReachable(true);
+      }
       resetTimeout(); // Reset session timer on navigation activity
       if (activeSession) {
         useSessionStore.getState().updateSessionUrl(activeSession.id, nav.url);
@@ -123,7 +128,7 @@ const MainScreen: React.FC = () => {
         onBack={webView.goBack}
         onForward={webView.goForward}
         onReload={webView.reload}
-        onHome={() => webView.webViewRef.current?.injectJavaScript(`window.location.href='${settings.baseUrl}';true;`)}
+        onHome={() => webView.webViewRef.current?.injectJavaScript(`window.location.href=${JSON.stringify(settings.baseUrl)};true;`)}
         onPrint={handlePrint}
         onLock={handleLock}
         onSettings={() => setSettingsVisible(true)}
@@ -144,7 +149,10 @@ const MainScreen: React.FC = () => {
           webViewRef={webView.webViewRef}
           onNavigationStateChange={handleNavChange}
           onLoadStart={() => webView.setIsLoading(true)}
-          onLoadEnd={() => webView.setIsLoading(false)}
+          onLoadEnd={() => {
+            webView.setIsLoading(false);
+            ConnectionService.setReachable(true);
+          }}
           onError={() => {
             webView.setIsLoading(false);
             Alert.alert('Error', 'Failed to load page. Check your connection.');
@@ -183,11 +191,11 @@ const MainScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#1a1a2e'},
+  container: {flex: 1, backgroundColor: '#003049'},
   webviewContainer: {flex: 1, position: 'relative'},
   lockOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(0, 48, 73, 0.95)',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 100,

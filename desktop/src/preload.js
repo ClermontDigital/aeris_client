@@ -16,8 +16,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showAlertDialog: (options) => ipcRenderer.invoke('show-alert-dialog', options),
   
   // Focus restoration listener
-  onDialogClosed: (callback) => ipcRenderer.on('dialog-closed', callback),
-  removeDialogClosedListener: (callback) => ipcRenderer.removeListener('dialog-closed', callback),
+  onDialogClosed: (callback) => ipcRenderer.on('dialog-closed', (_event, ...args) => callback(...args)),
+  removeDialogClosedListener: () => ipcRenderer.removeAllListeners('dialog-closed'),
   
   // Settings window
   openSettings: () => ipcRenderer.invoke('open-settings'),
@@ -27,9 +27,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   navigateToUrl: (url) => ipcRenderer.invoke('navigate-to-url', url),
   
   // Update listeners for toolbar
-  onNavigationUpdate: (callback) => ipcRenderer.on('navigation-update', callback),
-  onConnectionStatus: (callback) => ipcRenderer.on('connection-status', callback),
-  onNavigateToUrl: (callback) => ipcRenderer.on('navigate-to-url', callback),
+  onNavigationUpdate: (callback) => ipcRenderer.on('navigation-update', (_event, ...args) => callback(...args)),
+  onConnectionStatus: (callback) => ipcRenderer.on('connection-status', (_event, ...args) => callback(...args)),
+  onNavigateToUrl: (callback) => ipcRenderer.on('navigate-to-url', (_event, ...args) => callback(...args)),
   
   // Update checking functions
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
@@ -50,17 +50,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateSessionActivity: () => ipcRenderer.invoke('update-session-activity'),
   
   // Session event listeners
-  onSessionLocked: (callback) => ipcRenderer.on('session-locked', callback),
-  onSessionSwitched: (callback) => ipcRenderer.on('session-switched', callback),
-  onSessionUnlocked: (callback) => ipcRenderer.on('session-unlocked', callback),
-  onSessionSwitcherOpened: (callback) => ipcRenderer.on('session-switcher-opened', callback),
-  onSessionSwitcherClosed: (callback) => ipcRenderer.on('session-switcher-closed', callback),
-  
-  // Generic event listener for all session events
-  on: (eventName, callback) => ipcRenderer.on(eventName, callback),
-  
+  onSessionLocked: (callback) => ipcRenderer.on('session-locked', (_event, ...args) => callback(...args)),
+  onSessionSwitched: (callback) => ipcRenderer.on('session-switched', (_event, ...args) => callback(...args)),
+  onSessionUnlocked: (callback) => ipcRenderer.on('session-unlocked', (_event, ...args) => callback(...args)),
+  onSessionSwitcherOpened: (callback) => ipcRenderer.on('session-switcher-opened', (_event, ...args) => callback(...args)),
+  onSessionSwitcherClosed: (callback) => ipcRenderer.on('session-switcher-closed', (_event, ...args) => callback(...args)),
+  onShowSessionOverlay: (callback) => ipcRenderer.on('show-session-overlay', (_event, ...args) => callback(...args)),
+  onHideSessionOverlay: (callback) => ipcRenderer.on('hide-session-overlay', (_event, ...args) => callback(...args)),
+  onPrintRequest: (callback) => ipcRenderer.on('print-request', (_event, ...args) => callback(...args)),
+  onPrintSilentRequest: (callback) => ipcRenderer.on('print-silent-request', (_event, ...args) => callback(...args)),
+
   // Settings event listener
-  onSettingsUpdated: (callback) => ipcRenderer.on('settings-updated', callback),
+  onSettingsUpdated: (callback) => ipcRenderer.on('settings-updated', (_event, ...args) => callback(...args)),
   
   // App restart function
   restartApp: () => ipcRenderer.invoke('restart-app'),
@@ -72,5 +73,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('session-switcher-opened');
     ipcRenderer.removeAllListeners('session-switcher-closed');
     ipcRenderer.removeAllListeners('settings-updated');
+    ipcRenderer.removeAllListeners('show-session-overlay');
+    ipcRenderer.removeAllListeners('hide-session-overlay');
+    ipcRenderer.removeAllListeners('print-request');
+    ipcRenderer.removeAllListeners('print-silent-request');
   }
 }); 

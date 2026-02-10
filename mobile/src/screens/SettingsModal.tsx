@@ -31,9 +31,30 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
     setEnableSessions(settings.enableSessionManagement);
   }, [settings, visible]);
 
+  const ensureProtocol = (url: string): string => {
+    const trimmed = url.trim();
+    if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+      return `http://${trimmed}`;
+    }
+    return trimmed;
+  };
+
   const handleSave = async () => {
+    const fullUrl = ensureProtocol(baseUrl);
+    try {
+      const parsed = new URL(fullUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        Alert.alert('Invalid URL', 'Server URL must use http:// or https:// protocol.');
+        return;
+      }
+    } catch {
+      Alert.alert('Invalid URL', 'Please enter a valid server URL (e.g. http://aeris.local:8000).');
+      return;
+    }
+
+    setBaseUrl(fullUrl);
     await saveSettings({
-      baseUrl,
+      baseUrl: fullUrl,
       sessionTimeout,
       enableSessionManagement: enableSessions,
     });
@@ -41,7 +62,9 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
   };
 
   const handleTest = async () => {
-    const ok = await testConnection(baseUrl);
+    const fullUrl = ensureProtocol(baseUrl);
+    setBaseUrl(fullUrl);
+    const ok = await testConnection(fullUrl);
     Alert.alert(ok ? 'Success' : 'Failed', ok ? 'Server is reachable.' : 'Cannot reach server.');
   };
 
@@ -99,24 +122,24 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
 const styles = StyleSheet.create({
   modal: {justifyContent: 'center', margin: 40},
   content: {backgroundColor: '#fff', borderRadius: 12, padding: 24},
-  title: {fontSize: 22, fontWeight: '700', color: '#2c3e50', marginBottom: 20},
+  title: {fontSize: 22, fontWeight: '700', color: '#003049', marginBottom: 20},
   label: {fontSize: 14, color: '#555', marginTop: 12, marginBottom: 4},
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#e3e3e3',
     borderRadius: 8,
     padding: 10,
     fontSize: 15,
     flex: 1,
   },
   urlRow: {flexDirection: 'row', gap: 8, alignItems: 'center'},
-  testBtn: {backgroundColor: '#3498db', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8},
+  testBtn: {backgroundColor: '#667eea', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8},
   testText: {color: '#fff', fontWeight: '600'},
   switchRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16},
   buttons: {flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 24},
   cancelBtn: {paddingHorizontal: 16, paddingVertical: 10},
-  cancelText: {color: '#e74c3c', fontSize: 16},
-  saveBtn: {backgroundColor: '#27ae60', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8},
+  cancelText: {color: '#dc2626', fontSize: 16},
+  saveBtn: {backgroundColor: '#48bb78', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8},
   saveText: {color: '#fff', fontSize: 16, fontWeight: '600'},
 });
 
