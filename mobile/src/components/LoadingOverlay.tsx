@@ -10,7 +10,7 @@ const LoadingOverlay: React.FC<Props> = ({visible}) => {
 
   return (
     <View style={styles.overlay}>
-      <ActivityIndicator size="large" color="#2c3e50" />
+      <ActivityIndicator size="large" color="#667eea" />
     </View>
   );
 };

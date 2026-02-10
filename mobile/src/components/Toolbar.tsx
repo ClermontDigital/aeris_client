@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, TouchableOpacity, Text, StyleSheet} from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 interface ToolbarProps {
   canGoBack: boolean;
@@ -33,10 +34,10 @@ const Toolbar: React.FC<ToolbarProps> = ({
   return (
     <View style={styles.container}>
       <View style={styles.navGroup}>
-        <ToolButton label="<" onPress={onBack} disabled={!canGoBack} />
-        <ToolButton label=">" onPress={onForward} disabled={!canGoForward} />
-        <ToolButton label="R" onPress={onReload} />
-        <ToolButton label="H" onPress={onHome} />
+        <ToolButton icon="chevron-back" onPress={onBack} disabled={!canGoBack} />
+        <ToolButton icon="chevron-forward" onPress={onForward} disabled={!canGoForward} />
+        <ToolButton icon="reload" onPress={onReload} />
+        <ToolButton icon="home" onPress={onHome} />
       </View>
 
       {showSessionButton && activeSessionName && (
@@ -46,16 +47,16 @@ const Toolbar: React.FC<ToolbarProps> = ({
       )}
 
       <View style={styles.actionGroup}>
-        <ToolButton label="P" onPress={onPrint} />
-        {showSessionButton && <ToolButton label="L" onPress={onLock} />}
-        <ToolButton label="S" onPress={onSettings} />
+        <ToolButton icon="print" onPress={onPrint} />
+        {showSessionButton && <ToolButton icon="lock-closed" onPress={onLock} />}
+        <ToolButton icon="settings" onPress={onSettings} />
       </View>
     </View>
   );
 };
 
-const ToolButton: React.FC<{label: string; onPress: () => void; disabled?: boolean}> = ({
-  label,
+const ToolButton: React.FC<{icon: string; onPress: () => void; disabled?: boolean}> = ({
+  icon,
   onPress,
   disabled,
 }) => (
@@ -63,7 +64,11 @@ const ToolButton: React.FC<{label: string; onPress: () => void; disabled?: boole
     style={[styles.button, disabled && styles.buttonDisabled]}
     onPress={onPress}
     disabled={disabled}>
-    <Text style={[styles.buttonText, disabled && styles.buttonTextDisabled]}>{label}</Text>
+    <Icon
+      name={icon}
+      size={20}
+      color={disabled ? 'rgba(255, 255, 255, 0.3)' : '#e2e8f0'}
+    />
   </TouchableOpacity>
 );
 
@@ -72,7 +77,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#2c3e50',
+    backgroundColor: '#003049',
     paddingHorizontal: 8,
     paddingVertical: 4,
     height: 44,
@@ -83,15 +88,15 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 4,
-    backgroundColor: '#34495e',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonDisabled: {opacity: 0.4},
-  buttonText: {color: '#ecf0f1', fontSize: 16, fontWeight: '600'},
-  buttonTextDisabled: {color: '#7f8c8d'},
   sessionBadge: {
-    backgroundColor: '#27ae60',
+    backgroundColor: '#667eea',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,

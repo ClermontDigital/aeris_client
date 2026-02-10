@@ -12,6 +12,9 @@
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
 		81AB9BB82411601600AC10FF /* PrintModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* PrintModule.m */; };
 		81AB9BB92411601600AC10FF /* PrintModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81AB9BB62411601600AC10FF /* PrintModule.swift */; };
+		A1B2C3D51A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D41A68108700A75B9A /* Images.xcassets */; };
+		E28724C443B9946A42D1BE44 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D1044DC11DA2663D5470D9DE /* PrivacyInfo.xcprivacy */; };
+		F0A678B9A9A5A23F411FE853 /* libPods-Aeris.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E65790459E140A6E889A60F /* libPods-Aeris.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,9 +24,14 @@
 		13B07FB11A68108700A75B9A /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Aeris/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		13B07FB21A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Aeris/Info.plist; sourceTree = "<group>"; };
 		13B07FB71A68108700A75B9A /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = main.m; path = Aeris/main.m; sourceTree = "<group>"; };
+		20F83663F4ABC3BB4A220F58 /* Pods-Aeris.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Aeris.release.xcconfig"; path = "Target Support Files/Pods-Aeris/Pods-Aeris.release.xcconfig"; sourceTree = "<group>"; };
+		3E65790459E140A6E889A60F /* libPods-Aeris.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Aeris.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		81AB9BB52411601600AC10FF /* Aeris-Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "Aeris-Bridging-Header.h"; path = "Aeris/Aeris-Bridging-Header.h"; sourceTree = "<group>"; };
 		81AB9BB62411601600AC10FF /* PrintModule.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = PrintModule.swift; path = Aeris/PrintModule.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* PrintModule.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = PrintModule.m; path = Aeris/PrintModule.m; sourceTree = "<group>"; };
-		81AB9BB52411601600AC10FF /* Aeris-Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "Aeris-Bridging-Header.h"; path = "Aeris/Aeris-Bridging-Header.h"; sourceTree = "<group>"; };
+		A1B2C3D41A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Aeris/Images.xcassets; sourceTree = "<group>"; };
+		AB0EF0D5799E8C4C6E42E768 /* Pods-Aeris.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Aeris.debug.xcconfig"; path = "Target Support Files/Pods-Aeris/Pods-Aeris.debug.xcconfig"; sourceTree = "<group>"; };
+		D1044DC11DA2663D5470D9DE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Aeris/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -31,17 +39,45 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F0A678B9A9A5A23F411FE853 /* libPods-Aeris.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		13B07FAE1A68108700A75B9A /* Aeris */ = {
+			isa = PBXGroup;
+			children = (
+				13B07FAF1A68108700A75B9A /* AppDelegate.h */,
+				13B07FB01A68108700A75B9A /* AppDelegate.mm */,
+				A1B2C3D41A68108700A75B9A /* Images.xcassets */,
+				13B07FB11A68108700A75B9A /* LaunchScreen.storyboard */,
+				13B07FB21A68108700A75B9A /* Info.plist */,
+				13B07FB71A68108700A75B9A /* main.m */,
+				81AB9BB52411601600AC10FF /* Aeris-Bridging-Header.h */,
+				81AB9BB62411601600AC10FF /* PrintModule.swift */,
+				81AB9BB72411601600AC10FF /* PrintModule.m */,
+				D1044DC11DA2663D5470D9DE /* PrivacyInfo.xcprivacy */,
+			);
+			name = Aeris;
+			sourceTree = "<group>";
+		};
+		65A62801EE5F792C15211FA6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				3E65790459E140A6E889A60F /* libPods-Aeris.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
 				13B07FAE1A68108700A75B9A /* Aeris */,
 				83CBBA001A601CBA00E9B192 /* Products */,
+				A4FFAE81DC502231472D6C16 /* Pods */,
+				65A62801EE5F792C15211FA6 /* Frameworks */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -56,19 +92,13 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		13B07FAE1A68108700A75B9A /* Aeris */ = {
+		A4FFAE81DC502231472D6C16 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				13B07FAF1A68108700A75B9A /* AppDelegate.h */,
-				13B07FB01A68108700A75B9A /* AppDelegate.mm */,
-				13B07FB11A68108700A75B9A /* LaunchScreen.storyboard */,
-				13B07FB21A68108700A75B9A /* Info.plist */,
-				13B07FB71A68108700A75B9A /* main.m */,
-				81AB9BB52411601600AC10FF /* Aeris-Bridging-Header.h */,
-				81AB9BB62411601600AC10FF /* PrintModule.swift */,
-				81AB9BB72411601600AC10FF /* PrintModule.m */,
+				AB0EF0D5799E8C4C6E42E768 /* Pods-Aeris.debug.xcconfig */,
+				20F83663F4ABC3BB4A220F58 /* Pods-Aeris.release.xcconfig */,
 			);
-			name = Aeris;
+			path = Pods;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -78,10 +108,13 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Aeris" */;
 			buildPhases = (
+				3B10810013F9E2DBB1BBFFF4 /* [CP] Check Pods Manifest.lock */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
+				296EB5A2D0E6699ED6C70F87 /* [CP] Embed Pods Frameworks */,
+				5CC86D33663A14AF0658E492 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -98,7 +131,7 @@
 		83CBB9F71A601CBA00E9B192 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 1210;
+				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1120;
@@ -128,7 +161,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D51A68108700A75B9A /* Images.xcassets in Resources */,
 				13B07FBF1A68108700A75B9A /* LaunchScreen.storyboard in Resources */,
+				E28724C443B9946A42D1BE44 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,6 +172,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -146,10 +182,67 @@
 			);
 			name = "Bundle React Native code and images";
 			outputPaths = (
+				"$(DERIVED_FILE_DIR)/main.jsbundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -e\n\nWITH_ENVIRONMENT=\"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\nREACT_NATIVE_XCODE=\"$REACT_NATIVE_PATH/scripts/react-native-xcode.sh\"\n\n/bin/sh -c \"$WITH_ENVIRONMENT $REACT_NATIVE_XCODE\"\n";
+		};
+		296EB5A2D0E6699ED6C70F87 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Aeris/Pods-Aeris-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Aeris/Pods-Aeris-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Aeris/Pods-Aeris-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		3B10810013F9E2DBB1BBFFF4 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-Aeris-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		5CC86D33663A14AF0658E492 /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Aeris/Pods-Aeris-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Aeris/Pods-Aeris-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Aeris/Pods-Aeris-resources.sh\"\n";
+			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -170,10 +263,14 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = AB0EF0D5799E8C4C6E42E768 /* Pods-Aeris.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6SWY68AFK6;
 				INFOPLIST_FILE = Aeris/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 13.4;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -188,6 +285,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.aeris.pos;
 				PRODUCT_NAME = Aeris;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OBJC_BRIDGING_HEADER = "Aeris/Aeris-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -196,10 +294,14 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 20F83663F4ABC3BB4A220F58 /* Pods-Aeris.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6SWY68AFK6;
 				INFOPLIST_FILE = Aeris/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 13.4;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -214,6 +316,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.aeris.pos;
 				PRODUCT_NAME = Aeris;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OBJC_BRIDGING_HEADER = "Aeris/Aeris-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -253,7 +356,8 @@
 				COPY_PHASE_STRIP = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = i386;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -272,6 +376,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 13.4;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CFLAGS = "$(inherited)";
 				OTHER_CPLUSPLUSFLAGS = (
 					"$(OTHER_CFLAGS)",
 					"-DFOLLY_NO_CONFIG",
@@ -280,7 +385,13 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				USE_HERMES = true;
 			};
 			name = Debug;
 		};
@@ -317,7 +428,8 @@
 				COPY_PHASE_STRIP = YES;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = i386;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -328,6 +440,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 13.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
+				OTHER_CFLAGS = "$(inherited)";
 				OTHER_CPLUSPLUSFLAGS = (
 					"$(OTHER_CFLAGS)",
 					"-DFOLLY_NO_CONFIG",
@@ -336,7 +449,13 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -363,7 +482,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
 }

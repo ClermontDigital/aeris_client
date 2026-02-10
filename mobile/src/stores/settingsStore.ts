@@ -1,6 +1,6 @@
 import {create} from 'zustand';
 import StorageService from '../services/StorageService';
-import {STORAGE_KEYS, DEFAULT_CONFIG} from '../constants/config';
+import {STORAGE_KEYS, DEFAULT_CONFIG, normalizeBaseUrl, resolveFetchUrl} from '../constants/config';
 import type {Settings} from '../types/settings.types';
 
 interface SettingsState {
@@ -31,19 +31,33 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   saveSettings: async (update: Partial<Settings>) => {
     const current = get().settings;
-    const updated = {...current, ...update};
-    set({settings: updated});
-    await StorageService.setItem(STORAGE_KEYS.SETTINGS, updated);
+    const merged = {...current, ...update};
+    // Normalize the base URL to prevent trailing-slash issues in path construction
+    if (merged.baseUrl) {
+      merged.baseUrl = normalizeBaseUrl(merged.baseUrl);
+    }
+    set({settings: merged});
+    await StorageService.setItem(STORAGE_KEYS.SETTINGS, merged);
   },
 
   testConnection: async (url?: string) => {
     try {
       const testUrl = url || get().settings.baseUrl;
+      // Validate URL scheme before testing
+      const parsed = new URL(testUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return false;
+      }
+      const fetchUrl = resolveFetchUrl(testUrl);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
-      const resp = await fetch(testUrl, {method: 'HEAD', signal: controller.signal});
+      await fetch(fetchUrl, {
+        method: 'GET',
+        signal: controller.signal,
+      });
       clearTimeout(timeout);
-      return resp.ok || resp.status < 500;
+      // If fetch completes without throwing, the server is reachable
+      return true;
     } catch {
       return false;
     }

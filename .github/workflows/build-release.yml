@@ -299,7 +299,7 @@ jobs:
     - name: Get version
       id: version
       run: |
-        VERSION=$(cat VERSION)
+        VERSION=$(node -p "require('./desktop/package.json').version")
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "tag_name=v$VERSION" >> $GITHUB_OUTPUT
 

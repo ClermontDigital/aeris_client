@@ -17,7 +17,7 @@ let sessionSwitcherWindow;
 
 // Default configuration
 const defaultConfig = {
-  baseUrl: 'http://aeris.local',
+  baseUrl: 'http://aeris.local:8000',
   autoStart: false,
   enableSessionManagement: true,
   sessionTimeout: 30, // minutes
@@ -385,11 +385,23 @@ ipcMain.handle('get-settings', () => {
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
+  // Validate baseUrl scheme before saving
+  if (settings.baseUrl) {
+    try {
+      const parsed = new URL(settings.baseUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { success: false, error: 'Only http:// and https:// URLs are allowed' };
+      }
+    } catch {
+      return { success: false, error: 'Invalid URL format' };
+    }
+  }
+
   const oldSettings = {
     baseUrl: store.get('baseUrl', defaultConfig.baseUrl),
     enableSessionManagement: store.get('enableSessionManagement', defaultConfig.enableSessionManagement)
   };
-  
+
   store.set('baseUrl', settings.baseUrl);
   store.set('autoStart', settings.autoStart);
   store.set('enableSessionManagement', settings.enableSessionManagement);
@@ -431,13 +443,24 @@ ipcMain.handle('restart-app', () => {
 
 ipcMain.handle('test-connection', async (event, url) => {
   try {
+    // Validate URL scheme to prevent SSRF with file://, javascript:, etc.
+    if (!url || typeof url !== 'string') {
+      throw new Error('Invalid URL provided');
+    }
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Only http:// and https:// URLs are allowed');
+    }
+
     const testWindow = new BrowserWindow({
       show: false,
       webPreferences: {
-        nodeIntegration: false
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true
       }
     });
-    
+
     await testWindow.loadURL(url);
     testWindow.close();
     return { success: true };
@@ -556,6 +579,15 @@ ipcMain.handle('navigate-to-url', async (event, url) => {
   try {
     if (!mainWindow) {
       throw new Error('Main window not available');
+    }
+
+    // Validate URL scheme for security
+    if (!url || typeof url !== 'string') {
+      throw new Error('Invalid URL provided');
+    }
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Only http:// and https:// URLs are allowed');
     }
 
     // Send navigation request to app wrapper to handle iframe navigation
@@ -753,6 +785,13 @@ ipcMain.handle('get-active-session', async () => {
 
 ipcMain.handle('update-session-url', async (event, sessionId, url) => {
   try {
+    // Validate URL scheme before storing
+    if (url && typeof url === 'string') {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('Only http:// and https:// URLs are allowed');
+      }
+    }
     sessionManager.updateSessionUrl(sessionId, url);
     return { success: true };
   } catch (error) {
@@ -837,25 +876,16 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-  // Clear web session data before quit to prevent CSRF token issues
+  // Clear transient web storage on quit, but preserve cookies so that
+  // Laravel session and "remember me" tokens survive app restarts.
+  // CSRF tokens are regenerated per-session by Laravel automatically.
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.session.clearStorageData({
-      storages: ['cookies', 'localstorage', 'sessionstorage', 'indexeddb', 'websql']
+      storages: ['sessionstorage']
     });
   }
-  
+
   // Ensure cleanup happens before quit
   sessionManager.cleanup();
 });
 
-app.on('web-contents-created', (event, contents) => {
-  contents.on('new-window', (event, navigationUrl) => {
-    event.preventDefault();
-    // Validate URL scheme for security
-    if (navigationUrl.startsWith('https://') || navigationUrl.startsWith('http://')) {
-      shell.openExternal(navigationUrl);
-    } else {
-      console.warn('Blocked new-window request to invalid scheme:', navigationUrl);
-    }
-  });
-});

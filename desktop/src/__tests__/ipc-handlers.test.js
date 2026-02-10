@@ -347,7 +347,7 @@ describe('IPCHandlers', () => {
       const result = await ipcHandlers.checkForUpdates();
 
       expect(result.success).toBe(true);
-      expect(result.version).toBe('1.1.3');
+      expect(result.version).toBe('1.2.1');
       expect(result.updateAvailable).toBe(false);
     });
 
