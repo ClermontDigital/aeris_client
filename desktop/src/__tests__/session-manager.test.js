@@ -96,15 +96,14 @@ describe('SessionManager', () => {
   });
 
   describe('PIN Encryption and Validation', () => {
-    test('should encrypt PIN before storing', () => {
+    test('should hash PIN before storing', () => {
       const sessionId = sessionManager.createSession('Alice', '1234');
       const session = sessionManager.sessions.get(sessionId);
 
       expect(session.pin).toBeDefined();
-      expect(session.pin.encrypted).toBeDefined();
-      expect(session.pin.iv).toBeDefined();
-      expect(session.pin.authTag).toBeDefined();
-      expect(session.pin.encrypted).not.toBe('1234');
+      expect(session.pin.hash).toBeDefined();
+      expect(session.pin.salt).toBeDefined();
+      expect(session.pin.hash).not.toBe('1234');
     });
 
     test('should validate correct PIN', () => {
@@ -378,15 +377,14 @@ describe('SessionManager', () => {
 
     test('should update lastAccessedAt on switch', () => {
       const sessionId = sessionManager.createSession('Alice', '1234');
-      const initialTime = sessionManager.sessions.get(sessionId).lastAccessedAt;
+      const session = sessionManager.sessions.get(sessionId);
+      const pastTime = new Date(Date.now() - 10000);
+      session.lastAccessedAt = pastTime;
 
-      // Wait a bit
-      setTimeout(() => {
-        sessionManager.switchToSession(sessionId, '1234');
-        const updatedTime = sessionManager.sessions.get(sessionId).lastAccessedAt;
+      sessionManager.switchToSession(sessionId, '1234');
+      const updatedTime = sessionManager.sessions.get(sessionId).lastAccessedAt;
 
-        expect(updatedTime.getTime()).toBeGreaterThan(initialTime.getTime());
-      }, 100);
+      expect(updatedTime.getTime()).toBeGreaterThan(pastTime.getTime());
     });
   });
 
@@ -455,13 +453,17 @@ describe('SessionManager', () => {
       const id2 = sessionManager.createSession('Bob', '5678');
       const id3 = sessionManager.createSession('Charlie', '9012');
 
-      // Update Alice's access time to be most recent
-      setTimeout(() => {
-        sessionManager.updateSessionActivity(id1);
+      // Backdate all sessions
+      const now = Date.now();
+      sessionManager.sessions.get(id1).lastAccessedAt = new Date(now - 30000);
+      sessionManager.sessions.get(id2).lastAccessedAt = new Date(now - 20000);
+      sessionManager.sessions.get(id3).lastAccessedAt = new Date(now - 10000);
 
-        const sessions = sessionManager.getAllSessions();
-        expect(sessions[0].name).toBe('Alice');
-      }, 100);
+      // Update Alice's access time to be most recent
+      sessionManager.updateSessionActivity(id1);
+
+      const sessions = sessionManager.getAllSessions();
+      expect(sessions[0].name).toBe('Alice');
     });
   });
 
@@ -486,14 +488,14 @@ describe('SessionManager', () => {
 
     test('should update lastAccessedAt when updating state', () => {
       const sessionId = sessionManager.createSession('Alice', '1234');
-      const initialTime = sessionManager.sessions.get(sessionId).lastAccessedAt;
+      const session = sessionManager.sessions.get(sessionId);
+      const pastTime = new Date(Date.now() - 10000);
+      session.lastAccessedAt = pastTime;
 
-      setTimeout(() => {
-        sessionManager.updateSessionState(sessionId, { data: 'test' });
-        const updatedTime = sessionManager.sessions.get(sessionId).lastAccessedAt;
+      sessionManager.updateSessionState(sessionId, { data: 'test' });
+      const updatedTime = sessionManager.sessions.get(sessionId).lastAccessedAt;
 
-        expect(updatedTime.getTime()).toBeGreaterThan(initialTime.getTime());
-      }, 100);
+      expect(updatedTime.getTime()).toBeGreaterThan(pastTime.getTime());
     });
   });
 });

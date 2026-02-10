@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 import BackgroundTimer from 'react-native-background-timer';
 import EncryptionService from './EncryptionService';
 import StorageService from './StorageService';
@@ -5,13 +6,18 @@ import {STORAGE_KEYS, DEFAULT_CONFIG} from '../constants/config';
 import type {Session, SessionPublic, PinAttemptData} from '../types/session.types';
 
 function generateId(): string {
-  const chars = 'abcdef0123456789';
-  let id = '';
-  for (let i = 0; i < 32; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-    if ([8, 12, 16, 20].includes(i)) id += '-';
-  }
-  return id;
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const hex = Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-');
 }
 
 class SessionManager {
@@ -20,6 +26,7 @@ class SessionManager {
   private sessionTimers: Map<string, number> = new Map();
   private pinAttempts: Map<string, PinAttemptData> = new Map();
   private sessionTimeout: number = DEFAULT_CONFIG.sessionTimeout;
+  private persistPromise: Promise<void> = Promise.resolve();
   private onSessionLocked: ((session: SessionPublic) => void) | null = null;
 
   setOnSessionLocked(cb: (session: SessionPublic) => void): void {
@@ -31,12 +38,26 @@ class SessionManager {
     await this.restoreSessions();
   }
 
-  private persistSessions(): void {
-    const data = Array.from(this.sessions.values());
-    Promise.all([
-      StorageService.setItem(STORAGE_KEYS.SESSIONS, data),
-      StorageService.setItem(STORAGE_KEYS.ACTIVE_SESSION, this.activeSessionId),
-    ]).catch(err => console.error('Failed to persist sessions:', err));
+  private async persistSessions(): Promise<void> {
+    this.persistPromise = this.persistPromise.then(async () => {
+      const data = Array.from(this.sessions.values());
+      try {
+        await Promise.all([
+          StorageService.setItem(STORAGE_KEYS.SESSIONS, data),
+          StorageService.setItem(STORAGE_KEYS.ACTIVE_SESSION, this.activeSessionId),
+        ]);
+      } catch (err) {
+        console.error('Failed to persist sessions:', err);
+      }
+    });
+    return this.persistPromise;
+  }
+
+  private persistPinAttempts(): void {
+    const data = Array.from(this.pinAttempts.entries());
+    StorageService.setItem(STORAGE_KEYS.PIN_ATTEMPTS, data).catch(err =>
+      console.error('Failed to persist pin attempts:', err),
+    );
   }
 
   private async restoreSessions(): Promise<void> {
@@ -47,13 +68,25 @@ class SessionManager {
       }
     }
     this.activeSessionId = await StorageService.getItem<string>(STORAGE_KEYS.ACTIVE_SESSION);
+
+    const pinData = await StorageService.getItem<[string, PinAttemptData][]>(STORAGE_KEYS.PIN_ATTEMPTS);
+    if (Array.isArray(pinData)) {
+      for (const [id, attempt] of pinData) {
+        if (attempt.lockedUntil && attempt.lockedUntil > Date.now()) {
+          this.pinAttempts.set(id, attempt);
+        }
+      }
+    }
   }
 
-  createSession(name: string, pin: string): string {
+  async createSession(name: string, pin: string): Promise<string> {
     if (!name || name.trim().length === 0) {
       throw new Error('Session name is required');
     }
-    if (!pin || pin.length !== 4) {
+    if (name.trim().length > 50) {
+      throw new Error('Session name must be 50 characters or fewer');
+    }
+    if (!pin || !/^\d{4}$/.test(pin)) {
       throw new Error('PIN must be exactly 4 digits');
     }
 
@@ -68,13 +101,13 @@ class SessionManager {
     }
 
     const sessionId = generateId();
-    const encryptedPin = EncryptionService.encryptPin(pin);
+    const hashedPin = EncryptionService.hashPin(pin);
     const now = new Date().toISOString();
 
     const session: Session = {
       id: sessionId,
       name: name.trim(),
-      pin: encryptedPin,
+      pin: hashedPin,
       createdAt: now,
       lastAccessedAt: now,
       isLocked: false,
@@ -85,12 +118,12 @@ class SessionManager {
     this.sessions.set(sessionId, session);
     this.activeSessionId = sessionId;
     this.resetSessionTimer(sessionId);
-    this.persistSessions();
+    await this.persistSessions();
 
     return sessionId;
   }
 
-  deleteSession(sessionId: string): boolean {
+  async deleteSession(sessionId: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error('Session not found');
 
@@ -100,7 +133,7 @@ class SessionManager {
     }
 
     this.sessions.delete(sessionId);
-    this.persistSessions();
+    await this.persistSessions();
     return true;
   }
 
@@ -114,8 +147,7 @@ class SessionManager {
       throw new Error(`Session locked due to too many failed attempts. Try again in ${remaining} minutes.`);
     }
 
-    const decryptedPin = EncryptionService.decryptPin(session.pin);
-    const isValid = decryptedPin === pin;
+    const isValid = EncryptionService.verifyPin(pin, session.pin);
 
     if (!isValid) {
       if (!attemptData) {
@@ -124,17 +156,20 @@ class SessionManager {
         attemptData.attempts++;
         if (attemptData.attempts >= DEFAULT_CONFIG.maxPinAttempts) {
           attemptData.lockedUntil = Date.now() + DEFAULT_CONFIG.pinLockoutDuration;
+          this.persistPinAttempts();
           throw new Error('Too many failed attempts. Session locked for 5 minutes.');
         }
       }
+      this.persistPinAttempts();
     } else {
       this.pinAttempts.delete(sessionId);
+      this.persistPinAttempts();
     }
 
     return isValid;
   }
 
-  unlockSession(sessionId: string, pin: string): SessionPublic {
+  async unlockSession(sessionId: string, pin: string): Promise<SessionPublic> {
     if (!this.validatePin(sessionId, pin)) {
       throw new Error('Invalid PIN');
     }
@@ -144,18 +179,18 @@ class SessionManager {
     session.lastAccessedAt = new Date().toISOString();
     this.activeSessionId = sessionId;
     this.resetSessionTimer(sessionId);
-    this.persistSessions();
+    await this.persistSessions();
 
     return this.getSession(sessionId)!;
   }
 
-  lockSession(sessionId: string): SessionPublic {
+  async lockSession(sessionId: string): Promise<SessionPublic> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error('Session not found');
 
     session.isLocked = true;
     this.clearSessionTimer(sessionId);
-    this.persistSessions();
+    await this.persistSessions();
 
     const pub = this.getSession(sessionId)!;
     this.onSessionLocked?.(pub);
@@ -202,21 +237,32 @@ class SessionManager {
     }
   }
 
-  updateSessionState(sessionId: string, state: Record<string, unknown>): void {
+  async updateSessionState(sessionId: string, state: Record<string, unknown>): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.state = {...session.state, ...state};
       session.lastAccessedAt = new Date().toISOString();
-      this.persistSessions();
+      await this.persistSessions();
     }
   }
 
-  updateSessionUrl(sessionId: string, url: string): void {
+  async updateSessionUrl(sessionId: string, url: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (session) {
+      // Validate URL scheme before storing
+      if (url) {
+        try {
+          const parsed = new URL(url);
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return; // Silently reject non-HTTP URLs
+          }
+        } catch {
+          return; // Silently reject malformed URLs
+        }
+      }
       session.currentUrl = url;
       session.lastAccessedAt = new Date().toISOString();
-      this.persistSessions();
+      await this.persistSessions();
     }
   }
 
@@ -247,7 +293,7 @@ class SessionManager {
     return this.activeSessionId;
   }
 
-  switchToSession(sessionId: string, pin?: string): SessionPublic {
+  async switchToSession(sessionId: string, pin?: string): Promise<SessionPublic> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error('Session not found');
 
@@ -259,7 +305,7 @@ class SessionManager {
     this.activeSessionId = sessionId;
     session.lastAccessedAt = new Date().toISOString();
     this.resetSessionTimer(sessionId);
-    this.persistSessions();
+    await this.persistSessions();
 
     return this.getSession(sessionId)!;
   }
@@ -293,6 +339,7 @@ class SessionManager {
     Promise.all([
       StorageService.removeItem(STORAGE_KEYS.SESSIONS),
       StorageService.removeItem(STORAGE_KEYS.ACTIVE_SESSION),
+      StorageService.removeItem(STORAGE_KEYS.PIN_ATTEMPTS),
     ]).catch(err => console.error('Failed to clear session storage:', err));
   }
 }

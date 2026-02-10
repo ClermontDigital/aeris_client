@@ -90,24 +90,38 @@ describe('Preload Script', () => {
     expect(mockIpcRenderer.invoke).toHaveBeenCalledWith('create-session', 'Alice', '1234');
   });
 
-  test('onSettingsUpdated should register event listener', () => {
+  test('onSettingsUpdated should register event listener with wrapper that strips event', () => {
     require('../preload');
 
     const exposedAPI = mockContextBridge.exposeInMainWorld.mock.calls[0][1];
     const callback = jest.fn();
     exposedAPI.onSettingsUpdated(callback);
 
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('settings-updated', callback);
+    // Verify it registers with the correct channel and a wrapper function
+    expect(mockIpcRenderer.on).toHaveBeenCalledWith('settings-updated', expect.any(Function));
+
+    // Verify the wrapper strips the event and forwards args to the callback
+    const wrapper = mockIpcRenderer.on.mock.calls.find(c => c[0] === 'settings-updated')[1];
+    const fakeEvent = { sender: {} };
+    wrapper(fakeEvent, { baseUrl: 'http://test.local' });
+    expect(callback).toHaveBeenCalledWith({ baseUrl: 'http://test.local' });
   });
 
-  test('onSessionLocked should register event listener', () => {
+  test('onSessionLocked should register event listener with wrapper that strips event', () => {
     require('../preload');
 
     const exposedAPI = mockContextBridge.exposeInMainWorld.mock.calls[0][1];
     const callback = jest.fn();
     exposedAPI.onSessionLocked(callback);
 
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('session-locked', callback);
+    // Verify it registers with the correct channel and a wrapper function
+    expect(mockIpcRenderer.on).toHaveBeenCalledWith('session-locked', expect.any(Function));
+
+    // Verify the wrapper strips the event and forwards args to the callback
+    const wrapper = mockIpcRenderer.on.mock.calls.find(c => c[0] === 'session-locked')[1];
+    const fakeEvent = { sender: {} };
+    wrapper(fakeEvent, 'session-123');
+    expect(callback).toHaveBeenCalledWith('session-123');
   });
 
   test('removeSessionListeners should remove all session-related listeners', () => {
@@ -218,49 +232,45 @@ describe('Preload Script', () => {
     expect(mockIpcRenderer.invoke).toHaveBeenCalledWith('test-connection', 'http://test.local');
   });
 
-  test('event listeners should be correctly bound', () => {
+  test('event listeners should be correctly bound with wrappers that strip event', () => {
     require('../preload');
 
     const exposedAPI = mockContextBridge.exposeInMainWorld.mock.calls[0][1];
     const callback = jest.fn();
 
+    // All on-style listeners should register a wrapper function (not the raw callback)
     exposedAPI.onDialogClosed(callback);
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('dialog-closed', callback);
+    expect(mockIpcRenderer.on).toHaveBeenCalledWith('dialog-closed', expect.any(Function));
 
     exposedAPI.onNavigationUpdate(callback);
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('navigation-update', callback);
+    expect(mockIpcRenderer.on).toHaveBeenCalledWith('navigation-update', expect.any(Function));
 
     exposedAPI.onConnectionStatus(callback);
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('connection-status', callback);
+    expect(mockIpcRenderer.on).toHaveBeenCalledWith('connection-status', expect.any(Function));
 
     exposedAPI.onNavigateToUrl(callback);
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('navigate-to-url', callback);
+    expect(mockIpcRenderer.on).toHaveBeenCalledWith('navigate-to-url', expect.any(Function));
 
     exposedAPI.onSessionSwitched(callback);
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('session-switched', callback);
+    expect(mockIpcRenderer.on).toHaveBeenCalledWith('session-switched', expect.any(Function));
 
     exposedAPI.onSessionUnlocked(callback);
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('session-unlocked', callback);
+    expect(mockIpcRenderer.on).toHaveBeenCalledWith('session-unlocked', expect.any(Function));
+
+    // Verify a wrapper correctly strips event and forwards data
+    const wrapper = mockIpcRenderer.on.mock.calls.find(c => c[0] === 'dialog-closed')[1];
+    const fakeEvent = { sender: {} };
+    wrapper(fakeEvent, { confirmed: true });
+    expect(callback).toHaveBeenCalledWith({ confirmed: true });
   });
 
-  test('generic event listener should work', () => {
+  test('removeDialogClosedListener should remove all dialog-closed listeners', () => {
     require('../preload');
 
     const exposedAPI = mockContextBridge.exposeInMainWorld.mock.calls[0][1];
-    const callback = jest.fn();
 
-    exposedAPI.on('custom-event', callback);
-    expect(mockIpcRenderer.on).toHaveBeenCalledWith('custom-event', callback);
-  });
-
-  test('removeDialogClosedListener should remove listener', () => {
-    require('../preload');
-
-    const exposedAPI = mockContextBridge.exposeInMainWorld.mock.calls[0][1];
-    const callback = jest.fn();
-
-    exposedAPI.removeDialogClosedListener(callback);
-    expect(mockIpcRenderer.removeListener).toHaveBeenCalledWith('dialog-closed', callback);
+    exposedAPI.removeDialogClosedListener();
+    expect(mockIpcRenderer.removeAllListeners).toHaveBeenCalledWith('dialog-closed');
   });
 
   test('session switcher methods should invoke correct channels', () => {

@@ -26,5 +26,13 @@ target 'Aeris' do
       config[:reactNativePath],
       :mac_catalyst_enabled => false
     )
+
+    # Suppress deprecation warnings from React Native internals on newer Xcode
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES' if target.name.start_with?('React-')
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.4'
+      end
+    end
   end
 end

@@ -9,12 +9,12 @@ interface SessionState {
 
   init: () => Promise<void>;
   refreshSessions: () => void;
-  createSession: (name: string, pin: string) => string;
-  deleteSession: (sessionId: string) => void;
-  switchToSession: (sessionId: string, pin?: string) => SessionPublic;
-  lockSession: (sessionId: string) => void;
-  unlockSession: (sessionId: string, pin: string) => SessionPublic;
-  updateSessionUrl: (sessionId: string, url: string) => void;
+  createSession: (name: string, pin: string) => Promise<string>;
+  deleteSession: (sessionId: string) => Promise<void>;
+  switchToSession: (sessionId: string, pin?: string) => Promise<SessionPublic>;
+  lockSession: (sessionId: string) => Promise<void>;
+  unlockSession: (sessionId: string, pin: string) => Promise<SessionPublic>;
+  updateSessionUrl: (sessionId: string, url: string) => Promise<void>;
   cleanup: () => void;
 }
 
@@ -45,8 +45,8 @@ export const useSessionStore = create<SessionState>((set) => ({
     });
   },
 
-  createSession: (name: string, pin: string) => {
-    const id = SessionManager.createSession(name, pin);
+  createSession: async (name: string, pin: string) => {
+    const id = await SessionManager.createSession(name, pin);
     set({
       sessions: SessionManager.getAllSessions(),
       activeSession: SessionManager.getActiveSession(),
@@ -54,33 +54,16 @@ export const useSessionStore = create<SessionState>((set) => ({
     return id;
   },
 
-  deleteSession: (sessionId: string) => {
-    SessionManager.deleteSession(sessionId);
+  deleteSession: async (sessionId: string) => {
+    await SessionManager.deleteSession(sessionId);
     set({
       sessions: SessionManager.getAllSessions(),
       activeSession: SessionManager.getActiveSession(),
     });
   },
 
-  switchToSession: (sessionId: string, pin?: string) => {
-    const session = SessionManager.switchToSession(sessionId, pin);
-    set({
-      sessions: SessionManager.getAllSessions(),
-      activeSession: SessionManager.getActiveSession(),
-    });
-    return session;
-  },
-
-  lockSession: (sessionId: string) => {
-    SessionManager.lockSession(sessionId);
-    set({
-      sessions: SessionManager.getAllSessions(),
-      activeSession: SessionManager.getActiveSession(),
-    });
-  },
-
-  unlockSession: (sessionId: string, pin: string) => {
-    const session = SessionManager.unlockSession(sessionId, pin);
+  switchToSession: async (sessionId: string, pin?: string) => {
+    const session = await SessionManager.switchToSession(sessionId, pin);
     set({
       sessions: SessionManager.getAllSessions(),
       activeSession: SessionManager.getActiveSession(),
@@ -88,8 +71,25 @@ export const useSessionStore = create<SessionState>((set) => ({
     return session;
   },
 
-  updateSessionUrl: (sessionId: string, url: string) => {
-    SessionManager.updateSessionUrl(sessionId, url);
+  lockSession: async (sessionId: string) => {
+    await SessionManager.lockSession(sessionId);
+    set({
+      sessions: SessionManager.getAllSessions(),
+      activeSession: SessionManager.getActiveSession(),
+    });
+  },
+
+  unlockSession: async (sessionId: string, pin: string) => {
+    const session = await SessionManager.unlockSession(sessionId, pin);
+    set({
+      sessions: SessionManager.getAllSessions(),
+      activeSession: SessionManager.getActiveSession(),
+    });
+    return session;
+  },
+
+  updateSessionUrl: async (sessionId: string, url: string) => {
+    await SessionManager.updateSessionUrl(sessionId, url);
   },
 
   cleanup: () => {

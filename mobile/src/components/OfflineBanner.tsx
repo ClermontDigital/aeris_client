@@ -26,15 +26,15 @@ const OfflineBanner: React.FC<Props> = ({isConnected, isServerReachable, onRetry
 
 const styles = StyleSheet.create({
   banner: {
-    backgroundColor: '#e74c3c',
+    backgroundColor: '#dc2626',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
     gap: 16,
   },
-  text: {color: '#fff', fontSize: 14, fontWeight: '500'},
-  retry: {color: '#fff', fontSize: 14, fontWeight: '700', textDecorationLine: 'underline'},
+  text: {color: '#fdf0d5', fontSize: 14, fontWeight: '500'},
+  retry: {color: '#fdf0d5', fontSize: 14, fontWeight: '700', textDecorationLine: 'underline'},
 });
 
 export default OfflineBanner;

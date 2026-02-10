@@ -24,6 +24,18 @@ class IPCHandlers {
   }
 
   async saveSettings(event, settings) {
+    // Validate URL scheme before saving
+    if (settings.baseUrl) {
+      try {
+        const parsed = new URL(settings.baseUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          return { success: false, error: 'Only http/https URLs are allowed' };
+        }
+      } catch {
+        return { success: false, error: 'Invalid URL format' };
+      }
+    }
+
     const oldSettings = {
       baseUrl: this.store.get('baseUrl', this.defaultConfig.baseUrl),
       enableSessionManagement: this.store.get('enableSessionManagement', this.defaultConfig.enableSessionManagement)
@@ -68,12 +80,25 @@ class IPCHandlers {
   }
 
   async testConnection(event, url) {
-    const { BrowserWindow } = require('electron');
+    // Validate URL scheme
     try {
-      const testWindow = new BrowserWindow({
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return { success: false, error: 'Only http/https URLs are allowed' };
+      }
+    } catch {
+      return { success: false, error: 'Invalid URL format' };
+    }
+
+    const { BrowserWindow } = require('electron');
+    let testWindow;
+    try {
+      testWindow = new BrowserWindow({
         show: false,
         webPreferences: {
-          nodeIntegration: false
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true
         }
       });
 
@@ -81,6 +106,9 @@ class IPCHandlers {
       testWindow.close();
       return { success: true };
     } catch (error) {
+      if (testWindow && !testWindow.isDestroyed()) {
+        testWindow.close();
+      }
       return { success: false, error: error.message };
     }
   }
@@ -189,6 +217,16 @@ class IPCHandlers {
   }
 
   async navigateToUrl(event, url) {
+    // Validate URL scheme
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return { success: false, error: 'Only http/https URLs are allowed' };
+      }
+    } catch {
+      return { success: false, error: 'Invalid URL format' };
+    }
+
     try {
       const mainWindow = this.getMainWindow();
       if (!mainWindow) {
@@ -336,6 +374,18 @@ class IPCHandlers {
   }
 
   async updateSessionUrl(event, sessionId, url) {
+    // Validate URL scheme
+    if (url) {
+      try {
+        const parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          return { success: false, error: 'Only http/https URLs are allowed' };
+        }
+      } catch {
+        return { success: false, error: 'Invalid URL format' };
+      }
+    }
+
     try {
       this.sessionManager.updateSessionUrl(sessionId, url);
       return { success: true };

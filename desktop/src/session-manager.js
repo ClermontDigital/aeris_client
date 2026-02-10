@@ -8,7 +8,6 @@ class SessionManager extends EventEmitter {
         this.activeSessionId = null;
         this.maxSessions = 5;
         this.sessionTimeout = 30; // minutes
-        this.encryptionKey = this.generateEncryptionKey();
         this.sessionTimers = new Map();
         this.pinAttempts = new Map(); // Track PIN attempts per session
         this.maxPinAttempts = 3;
@@ -17,35 +16,16 @@ class SessionManager extends EventEmitter {
         this.restoreSessions();
     }
 
-    generateEncryptionKey() {
-        // Generate a random key for this app session
-        return crypto.randomBytes(32);
+    hashPin(pin) {
+        const salt = crypto.randomBytes(16).toString('hex');
+        const hash = crypto.scryptSync(pin.toString(), salt, 64).toString('hex');
+        return { hash, salt };
     }
 
-    encryptPin(pin) {
-        const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
-        let encrypted = cipher.update(pin.toString(), 'utf8', 'hex');
-        encrypted += cipher.final('hex');
-        const authTag = cipher.getAuthTag();
-        return {
-            encrypted,
-            iv: iv.toString('hex'),
-            authTag: authTag.toString('hex')
-        };
-    }
-
-    decryptPin(encryptedData) {
-        try {
-            const iv = Buffer.from(encryptedData.iv, 'hex');
-            const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, iv);
-            decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
-            let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
-            decrypted += decipher.final('utf8');
-            return decrypted;
-        } catch (error) {
-            return null;
-        }
+    verifyPin(pin, hashedData) {
+        const hash = crypto.scryptSync(pin.toString(), hashedData.salt, 64);
+        const storedHash = Buffer.from(hashedData.hash, 'hex');
+        return crypto.timingSafeEqual(hash, storedHash);
     }
 
     generateSessionId() {
@@ -57,7 +37,11 @@ class SessionManager extends EventEmitter {
             throw new Error('Session name is required');
         }
 
-        if (!pin || pin.toString().length !== 4) {
+        if (name.trim().length > 50) {
+            throw new Error('Session name must be 50 characters or fewer');
+        }
+
+        if (!pin || !/^\d{4}$/.test(pin.toString())) {
             throw new Error('PIN must be exactly 4 digits');
         }
 
@@ -73,12 +57,12 @@ class SessionManager extends EventEmitter {
         }
 
         const sessionId = this.generateSessionId();
-        const encryptedPin = this.encryptPin(pin);
-        
+        const hashedPin = this.hashPin(pin);
+
         const session = {
             id: sessionId,
             name: name.trim(),
-            pin: encryptedPin,
+            pin: hashedPin,
             createdAt: new Date(),
             lastAccessedAt: new Date(),
             isLocked: false,
@@ -132,8 +116,7 @@ class SessionManager extends EventEmitter {
             throw new Error(`Session locked due to too many failed attempts. Try again in ${remainingTime} minutes.`);
         }
 
-        const decryptedPin = this.decryptPin(session.pin);
-        const isValid = decryptedPin === pin.toString();
+        const isValid = this.verifyPin(pin, session.pin);
         
         if (!isValid) {
             // Track failed attempt
@@ -248,6 +231,17 @@ class SessionManager extends EventEmitter {
     updateSessionUrl(sessionId, url) {
         const session = this.sessions.get(sessionId);
         if (session) {
+            // Validate URL scheme before storing
+            if (url && typeof url === 'string') {
+                try {
+                    const parsed = new URL(url);
+                    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                        return; // Silently reject non-HTTP URLs
+                    }
+                } catch {
+                    return; // Silently reject malformed URLs
+                }
+            }
             session.currentUrl = url;
             session.lastAccessedAt = new Date();
             this.persistSessions();

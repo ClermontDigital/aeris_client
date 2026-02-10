@@ -49,39 +49,39 @@ describe('sessionStore', () => {
     expect(state.isInitialized).toBe(true);
   });
 
-  test('should create a session and update store', () => {
-    const id = useSessionStore.getState().createSession('Test', '1234');
+  test('should create a session and update store', async () => {
+    const id = await useSessionStore.getState().createSession('Test', '1234');
     const state = useSessionStore.getState();
     expect(state.sessions.length).toBe(1);
     expect(state.sessions[0].name).toBe('Test');
     expect(state.activeSession?.id).toBe(id);
   });
 
-  test('should delete a session', () => {
-    const id = useSessionStore.getState().createSession('Test', '1234');
-    useSessionStore.getState().deleteSession(id);
+  test('should delete a session', async () => {
+    const id = await useSessionStore.getState().createSession('Test', '1234');
+    await useSessionStore.getState().deleteSession(id);
     expect(useSessionStore.getState().sessions.length).toBe(0);
   });
 
-  test('should lock and unlock a session', () => {
-    const id = useSessionStore.getState().createSession('Test', '1234');
-    useSessionStore.getState().lockSession(id);
+  test('should lock and unlock a session', async () => {
+    const id = await useSessionStore.getState().createSession('Test', '1234');
+    await useSessionStore.getState().lockSession(id);
     expect(useSessionStore.getState().activeSession?.isLocked).toBe(true);
 
-    useSessionStore.getState().unlockSession(id, '1234');
+    await useSessionStore.getState().unlockSession(id, '1234');
     expect(useSessionStore.getState().activeSession?.isLocked).toBe(false);
   });
 
-  test('should switch between sessions', () => {
-    const id1 = useSessionStore.getState().createSession('A', '1234');
-    const id2 = useSessionStore.getState().createSession('B', '5678');
-    useSessionStore.getState().switchToSession(id1);
+  test('should switch between sessions', async () => {
+    const id1 = await useSessionStore.getState().createSession('A', '1234');
+    await useSessionStore.getState().createSession('B', '5678');
+    await useSessionStore.getState().switchToSession(id1);
     expect(useSessionStore.getState().activeSession?.name).toBe('A');
   });
 
-  test('should cleanup all sessions', () => {
-    useSessionStore.getState().createSession('A', '1234');
-    useSessionStore.getState().createSession('B', '5678');
+  test('should cleanup all sessions', async () => {
+    await useSessionStore.getState().createSession('A', '1234');
+    await useSessionStore.getState().createSession('B', '5678');
     useSessionStore.getState().cleanup();
     expect(useSessionStore.getState().sessions).toEqual([]);
     expect(useSessionStore.getState().activeSession).toBeNull();

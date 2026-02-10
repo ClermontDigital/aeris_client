@@ -1,4 +1,5 @@
 import NetInfo, {NetInfoState} from '@react-native-community/netinfo';
+import {resolveFetchUrl} from '../constants/config';
 
 export interface ConnectionStatus {
   isConnected: boolean;
@@ -35,19 +36,33 @@ class ConnectionService {
 
   async checkServer(): Promise<boolean> {
     try {
+      // Validate URL scheme before connecting
+      const parsed = new URL(this.serverUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        this._isServerReachable = false;
+        this.notify();
+        return false;
+      }
+      const fetchUrl = resolveFetchUrl(this.serverUrl);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
-      const resp = await fetch(this.serverUrl, {
-        method: 'HEAD',
+      await fetch(fetchUrl, {
+        method: 'GET',
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      this._isServerReachable = resp.ok || resp.status < 500;
+      // If fetch completes without throwing, server is reachable
+      this._isServerReachable = true;
     } catch {
       this._isServerReachable = false;
     }
     this.notify();
     return this._isServerReachable;
+  }
+
+  setReachable(reachable: boolean): void {
+    this._isServerReachable = reachable;
+    this.notify();
   }
 
   getStatus(): ConnectionStatus {
