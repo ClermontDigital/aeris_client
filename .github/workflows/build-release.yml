@@ -71,18 +71,30 @@ jobs:
         CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       run: npm run build:mac
 
+    - name: Verify notarization secrets
+      env:
+        APPLE_ID: '${{ secrets.APPLE_ID }}'
+        APPLE_ID_PASS: '${{ secrets.APPLE_ID_PASS }}'
+        APPLE_TEAM_ID: '${{ secrets.APPLE_TEAM_ID }}'
+      run: |
+        echo "APPLE_ID length: ${#APPLE_ID}"
+        echo "APPLE_ID_PASS length: ${#APPLE_ID_PASS}"
+        echo "APPLE_TEAM_ID length: ${#APPLE_TEAM_ID}"
+
     - name: Notarize macOS DMGs
       env:
-        APPLE_ID: ${{ secrets.APPLE_ID }}
-        APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
-        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        APPLE_ID: '${{ secrets.APPLE_ID }}'
+        APPLE_ID_PASS: '${{ secrets.APPLE_ID_PASS }}'
+        APPLE_TEAM_ID: '${{ secrets.APPLE_TEAM_ID }}'
       run: |
+        xcrun notarytool store-credentials "notary-profile" \
+          --apple-id "$APPLE_ID" \
+          --password "$APPLE_ID_PASS" \
+          --team-id "$APPLE_TEAM_ID"
         for dmg in dist/*.dmg; do
           echo "Notarizing $dmg..."
           xcrun notarytool submit "$dmg" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_ID_PASS" \
-            --team-id "$APPLE_TEAM_ID" \
+            --keychain-profile "notary-profile" \
             --wait --timeout 10m || echo "Notarization failed for $dmg, continuing..."
           xcrun stapler staple "$dmg" || echo "Stapling failed for $dmg, continuing..."
         done
