@@ -53,6 +53,9 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "6SWY68AFK6"
+      },
       "target": [
         {
           "target": "dmg",
@@ -99,7 +102,6 @@
       "allowToChangeInstallationDirectory": true,
       "createStartMenuShortcut": true,
       "createDesktopShortcut": true
-    },
-    "afterSign": "build/notarize.js"
+    }
   }
 }
