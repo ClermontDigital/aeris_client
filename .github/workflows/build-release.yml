@@ -207,7 +207,7 @@ jobs:
           - `Aeris Setup ${{ steps.version.outputs.version }}.exe` - Windows installer
           - `Aeris-${{ steps.version.outputs.version }}-x64.dmg` - macOS Intel
           - `Aeris-${{ steps.version.outputs.version }}-arm64.dmg` - macOS Apple Silicon
-          - `Aeris-${{ steps.version.outputs.version }}-x64.AppImage` - Linux AppImage
+          - `Aeris-${{ steps.version.outputs.version }}-x86_64.AppImage` - Linux AppImage
           - `Aeris-${{ steps.version.outputs.version }}-amd64.deb` - Linux Debian/Ubuntu
 
           ### Installation
