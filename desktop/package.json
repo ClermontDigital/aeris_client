@@ -3,8 +3,12 @@
   "productName": "AERIS",
   "version": "1.3.0",
   "description": "Aeris ERP Point of Sale Application",
+  "homepage": "https://github.com/ClermontDigital/aeris_client",
   "main": "src/main.js",
-  "author": "Aeris",
+  "author": {
+    "name": "Aeris",
+    "email": "dev@clermontdigital.com.au"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
