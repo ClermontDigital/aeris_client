@@ -69,7 +69,7 @@
     },
     "linux": {
       "icon": "src/assets/icons/icon.png",
-      "category": "Office",
+      "category": "Office;Finance",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "target": [
         {
