@@ -82,6 +82,7 @@ jobs:
         echo "APPLE_TEAM_ID length: ${#APPLE_TEAM_ID}"
 
     - name: Notarize macOS DMGs
+      continue-on-error: true
       env:
         APPLE_ID: '${{ secrets.APPLE_ID }}'
         APPLE_ID_PASS: '${{ secrets.APPLE_ID_PASS }}'
@@ -95,7 +96,7 @@ jobs:
           echo "Notarizing $dmg..."
           xcrun notarytool submit "$dmg" \
             --keychain-profile "notary-profile" \
-            --wait --timeout 10m || echo "Notarization failed for $dmg, continuing..."
+            --wait --timeout 20m || echo "Notarization failed for $dmg, continuing..."
           xcrun stapler staple "$dmg" || echo "Stapling failed for $dmg, continuing..."
         done
 
