@@ -132,6 +132,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Install Linux build dependencies
+      run: sudo apt-get update && sudo apt-get install -y libarchive-tools
+
     - name: Build for Linux
       env:
         CI: false
@@ -205,7 +208,7 @@ jobs:
           - `Aeris-${{ steps.version.outputs.version }}-x64.dmg` - macOS Intel
           - `Aeris-${{ steps.version.outputs.version }}-arm64.dmg` - macOS Apple Silicon
           - `Aeris-${{ steps.version.outputs.version }}-x64.AppImage` - Linux AppImage
-          - `Aeris-${{ steps.version.outputs.version }}-x64.deb` - Linux Debian/Ubuntu
+          - `Aeris-${{ steps.version.outputs.version }}-amd64.deb` - Linux Debian/Ubuntu
 
           ### Installation
           1. **Windows**: Run the installer and follow the wizard
