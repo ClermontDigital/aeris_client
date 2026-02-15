@@ -112,8 +112,43 @@ jobs:
         path: desktop/dist/*.exe
         retention-days: 30
 
+  build-desktop-linux:
+    needs: test-desktop
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: desktop/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build for Linux
+      env:
+        CI: false
+        GITHUB_ACTIONS: false
+      run: npm run build:linux
+
+    - name: Upload Linux artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: aeris-linux
+        path: |
+          desktop/dist/*.AppImage
+          desktop/dist/*.deb
+        retention-days: 30
+
   release:
-    needs: [build-desktop-mac, build-desktop-win]
+    needs: [build-desktop-mac, build-desktop-win, build-desktop-linux]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/release' && github.event_name == 'push'
 
@@ -140,6 +175,12 @@ jobs:
         name: aeris-windows
         path: ./release-assets/
 
+    - name: Download Linux artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: aeris-linux
+        path: ./release-assets/
+
     - name: Display downloaded artifacts
       run: ls -la ./release-assets/
 
@@ -163,10 +204,14 @@ jobs:
           - `Aeris Setup ${{ steps.version.outputs.version }}.exe` - Windows installer
           - `Aeris-${{ steps.version.outputs.version }}-x64.dmg` - macOS Intel
           - `Aeris-${{ steps.version.outputs.version }}-arm64.dmg` - macOS Apple Silicon
+          - `Aeris-${{ steps.version.outputs.version }}-x64.AppImage` - Linux AppImage
+          - `Aeris-${{ steps.version.outputs.version }}-x64.deb` - Linux Debian/Ubuntu
 
           ### Installation
           1. **Windows**: Run the installer and follow the wizard
           2. **macOS**: Open the DMG and drag Aeris to Applications folder
+          3. **Linux (AppImage)**: `chmod +x Aeris-*.AppImage && ./Aeris-*.AppImage`
+          4. **Linux (Debian/Ubuntu)**: `sudo dpkg -i Aeris-*.deb`
 
           ---
           *Built automatically from release branch*
@@ -189,7 +234,7 @@ jobs:
           done
 
   notify:
-    needs: [build-desktop-mac, build-desktop-win, release]
+    needs: [build-desktop-mac, build-desktop-win, build-desktop-linux, release]
     runs-on: ubuntu-latest
     if: always() && github.ref == 'refs/heads/release' && github.event_name == 'push'
 
@@ -198,6 +243,7 @@ jobs:
       if: |
         needs.build-desktop-mac.result == 'success' &&
         needs.build-desktop-win.result == 'success' &&
+        needs.build-desktop-linux.result == 'success' &&
         needs.release.result == 'success'
       run: echo "Release build completed successfully for all platforms!"
 
@@ -205,6 +251,7 @@ jobs:
       if: |
         needs.build-desktop-mac.result == 'failure' ||
         needs.build-desktop-win.result == 'failure' ||
+        needs.build-desktop-linux.result == 'failure' ||
         needs.release.result == 'failure'
       run: |
         echo "Release build failed! Check workflow logs."
