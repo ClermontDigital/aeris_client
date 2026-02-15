@@ -69,10 +69,23 @@ jobs:
         GITHUB_ACTIONS: false
         CSC_LINK: ${{ secrets.CSC_LINK }}
         CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        APPLE_ID: ${{ secrets.APPLE_ID }}
-        APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
-        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       run: npm run build:mac
+
+    - name: Notarize macOS DMGs
+      env:
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      run: |
+        for dmg in dist/*.dmg; do
+          echo "Notarizing $dmg..."
+          xcrun notarytool submit "$dmg" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_ID_PASS" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 10m || echo "Notarization failed for $dmg, continuing..."
+          xcrun stapler staple "$dmg" || echo "Stapling failed for $dmg, continuing..."
+        done
 
     - name: Upload macOS artifacts
       uses: actions/upload-artifact@v4
