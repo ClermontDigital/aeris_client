@@ -1,12 +1,11 @@
-import RNPrint from 'react-native-print';
-import Share from 'react-native-share';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import {Alert} from 'react-native';
-import {Buffer} from 'buffer';
 
 class PrintService {
   async printHtml(html: string): Promise<void> {
     try {
-      await RNPrint.print({html});
+      await Print.printAsync({html});
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Print failed';
       if (msg.includes('cancel')) return;
@@ -54,14 +53,14 @@ class PrintService {
 
   private async shareHtml(html: string): Promise<void> {
     try {
-      await Share.open({
-        title: 'Aeris POS',
-        message: 'Shared from Aeris POS',
-        url: `data:text/html;base64,${Buffer.from(html, 'utf-8').toString('base64')}`,
-        type: 'text/html',
+      // Generate a PDF from the HTML and share it — better UX for POS receipts
+      const {uri} = await Print.printToFileAsync({html});
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Share Receipt',
       });
     } catch {
-      // User cancelled share
+      // User cancelled share or sharing not available
     }
   }
 }
