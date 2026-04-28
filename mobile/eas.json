@@ -1,0 +1,35 @@
+{
+  "cli": {
+    "version": ">= 3.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": { "simulator": true, "image": "sdk-55" },
+      "env": { "EXPO_PUBLIC_API_URL": "http://localhost:8822" }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": { "simulator": false, "image": "sdk-55" },
+      "env": { "EXPO_PUBLIC_API_URL": "http://aeris.local:8000" }
+    },
+    "production": {
+      "autoIncrement": true,
+      "ios": {
+        "image": "sdk-55"
+      },
+      "env": { "EXPO_PUBLIC_API_URL": "https://api.aeris.team" }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "shared@clermontdigital.com.au",
+        "ascAppId": "6762179693",
+        "appleTeamId": "6SWY68AFK6"
+      }
+    }
+  }
+}

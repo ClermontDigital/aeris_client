@@ -1,82 +1,75 @@
 # Aeris ERP Client
 
-A cross-platform desktop application for accessing the Aeris ERP Point of Sale system, built with Electron.
+Cross-platform client applications for the Aeris ERP system — desktop (Electron) and mobile (React Native / Expo).
 
-## Features
+## Platforms
 
-- **Multi-User Session Management**: PIN-protected user sessions with auto-lock timeout
-- **Seamless Integration**: Loads your Aeris ERP web application in a native desktop environment
+### Desktop (Electron)
+- **Windows** and **macOS** (Intel/ARM64)
+- Multi-user session management with PIN-protected switching
+- Native printing and full-screen POS mode
+- Auto-start, keyboard shortcuts, native menus
+
+### Mobile (Expo / React Native)
+- **iOS** (TestFlight / App Store) and **Android**
+- Native login, dashboard with sales charts, product search
+- Camera barcode scanner for POS operations
+- Touch-optimized quick sale flow with cart and checkout
+- Transaction history with native receipt viewer and print/share
+- Full ERP access via WebView tab for advanced features
+- Offline product catalog and sale queuing
+- Connects to on-prem ERP via the Aeris Marketplace relay (secure cloud proxy)
+
+## Features (Both Platforms)
+
 - **Configurable Server**: Connect to any Aeris ERP server (default: aeris.local, IP configurable)
 - **Dual Operating Modes**: Single-user or multi-user session management
-- **Secure**: AES-256-GCM encryption for PIN storage, context isolation, sandboxed renderer
+- **Secure**: Encrypted PIN storage, hardware-backed key storage (Keychain/Keystore on mobile)
 - **Offline Handling**: Graceful error handling when the server is unavailable
-- **Auto-Start Option**: Configure the app to start automatically with your computer
-- **Cross-Platform**: Works on Windows and macOS (Intel/ARM64)
-- **Full-Screen Ready**: Optimized for point-of-sale operations
-- **Native Menus**: Keyboard shortcuts and native menu integration
-- **Print Support**: Full printing functionality with network printer support
-- **Clean Interface**: Simple, focused design for ERP operations
+- **Print Support**: Full printing with network printer support
+- **Clean Interface**: Focused design for ERP operations
 
-## Installation
+## Quick Start
 
 ### Prerequisites
 
-- Node.js (version 16 or higher)
-- npm or yarn
+- Node.js 20+
+- npm
 
-### Setup
-
-1. Clone or download this repository
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Add your application icons:
-   - Place `icon.png` (512x512px) in `src/assets/icons/`
-   - Place `icon.ico` (Windows format) in `src/assets/icons/`
-   - Place `icon.icns` (macOS format) in `src/assets/icons/`
-
-## Development
-
-### Running in Development Mode
+### Desktop
 
 ```bash
-npm run dev
+cd desktop
+npm install
+npm run dev          # Development mode
+npm test             # Run tests (121 tests, 92.4% coverage)
+npm run build:mac    # Build macOS .dmg
+npm run build:win    # Build Windows .exe
 ```
 
-### Testing
+### Mobile
 
-Run automated tests:
 ```bash
-npm test                # Run all tests
-npm run test:coverage   # Run with coverage report
-npm run test:watch      # Run in watch mode
+cd mobile
+npm install
+npx expo start                    # Start dev server
+npm test                          # Run tests
+eas build --platform ios --profile production --auto-submit   # Build + TestFlight
 ```
 
-**Test Coverage:**
-- 92.4% overall code coverage
-- 121 passing tests (100% pass rate)
-- See [Automated Testing Guide](docs/TESTING_AUTOMATED.md) for details
+**EAS Build requires `sdk-55` image** (Xcode 26.2) — see `eas.json`.
 
 ### Building for Production
 
-Build for current platform:
+**Desktop**: Built apps in `desktop/dist/`
 ```bash
-npm run build
+cd desktop && npm run build
 ```
 
-Build for Windows:
+**Mobile**: Builds via EAS (Expo cloud), auto-submits to TestFlight/Play Store
 ```bash
-npm run build:win
+cd mobile && eas build --platform ios --profile production --auto-submit
 ```
-
-Build for macOS:
-```bash
-npm run build:mac
-```
-
-Built applications will be available in the `dist/` directory.
 
 ## Configuration
 
@@ -124,42 +117,47 @@ Available settings:
 2. Verify all dependencies are installed: `npm install`
 3. Try running in development mode: `npm run dev`
 
+## Project Structure
+
+```
+aeris_client/
+├── desktop/              # Electron desktop app
+│   ├── src/              # Main process, preload, session manager, HTML templates
+│   ├── __tests__/        # Desktop tests (121 tests, 92.4% coverage)
+│   └── package.json
+├── mobile/               # Expo / React Native mobile app
+│   ├── src/
+│   │   ├── screens/      # Native screens (Login, Dashboard, QuickSale, Cart, etc.)
+│   │   ├── navigation/   # React Navigation (tabs + stacks)
+│   │   ├── services/     # ApiClient, StorageService, EncryptionService, etc.
+│   │   ├── stores/       # Zustand stores (auth, cart, products, settings, sessions)
+│   │   ├── components/   # Shared components (Toolbar, WebView, PinPad, etc.)
+│   │   ├── types/        # TypeScript types (API, navigation, settings, sessions)
+│   │   └── constants/    # Theme, API endpoints, config
+│   ├── plugins/          # Expo config plugins (Folly coroutines fix)
+│   ├── assets/images/    # App icon, splash screen, adaptive icon
+│   ├── app.json          # Expo config (bundle ID: com.aeris.erp)
+│   ├── eas.json          # EAS Build profiles + TestFlight submission
+│   └── package.json
+└── .github/workflows/    # CI/CD (path-based: desktop or mobile builds)
+```
+
+## CI/CD
+
+GitHub Actions workflow on the `release` branch with **path-based change detection**:
+- **Desktop changes** (`desktop/`): tests → builds macOS/Windows/Linux → GitHub Release
+- **Mobile changes** (`mobile/`): tests → EAS Build → auto-submit to TestFlight
+- Changes to both trigger both pipelines in parallel
+
+Required GitHub secrets: `EXPO_TOKEN`, `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASS`, `APPLE_TEAM_ID`
+
 ## Documentation
 
-- **[Development Guide](docs/CLAUDE.md)** - Project overview, architecture, and development commands
-- **[Testing Guide](docs/TESTING.md)** - Comprehensive manual test procedures
-- **[Automated Testing](docs/TESTING_AUTOMATED.md)** - Automated test suite guide (121 tests, 92.4% coverage)
-- **[TDD Review](docs/TDD_REVIEW.md)** - Test-driven development analysis and recommendations
-- **[CI/CD Pipeline](docs/CICD.md)** - Continuous integration and deployment documentation
-
-## Technical Details
-
-### Architecture
-
-- **Main Process**: `src/main.js` - Manages application lifecycle, windows, and IPC handlers
-- **Session Manager**: `src/session-manager.js` - Multi-user session management with encryption
-- **Renderer Process**: Loads the Aeris ERP web application in isolated context
-- **Preload Script**: `src/preload.js` - Secure IPC communication bridge
-- **Settings Storage**: Persistent configuration using electron-store
-
-### Security
-
-- Context isolation enabled
-- Node integration disabled in renderer
-- AES-256-GCM encryption for PIN storage
-- PIN attempt limiting (3 attempts, 5-minute lockout)
-- External links open in default browser
-- Navigation restricted to configured server domain
-- Secure URL validation for all external links
-
-## Icon Requirements
-
-Place these files in `src/assets/icons/`:
-
-1. **icon.png** - 512x512px PNG format (main icon)
-2. **icon.ico** - Windows ICO format with multiple sizes (16x16, 32x32, 48x48, 256x256)
-3. **icon.icns** - macOS ICNS format
+- **[Development Guide](docs/CLAUDE.md)** - Desktop architecture, commands, and patterns
+- **[Testing Guide](docs/TESTING.md)** - Manual test procedures
+- **[Automated Testing](docs/TESTING_AUTOMATED.md)** - Test suite guide
+- **[CI/CD Pipeline](docs/CICD.md)** - CI/CD documentation
 
 ## License
 
-MIT License - see LICENSE file for details 
+MIT License - see LICENSE file for details

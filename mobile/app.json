@@ -1,4 +1,98 @@
 {
-  "name": "Aeris",
-  "displayName": "Aeris POS"
+  "expo": {
+    "name": "AERIS",
+    "slug": "aeris",
+    "version": "1.3.0",
+    "orientation": "default",
+    "icon": "./assets/images/app-icon.png",
+    "scheme": "aeris",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#003049"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aeris.erp",
+      "icon": "./assets/images/app-icon.png",
+      "requireFullScreen": false,
+      "infoPlist": {
+        "CFBundleDisplayName": "AERIS",
+        "UIStatusBarHidden": true,
+        "UIViewControllerBasedStatusBarAppearance": false,
+        "UIRequiresPersistentWiFi": true,
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoadsInWebContent": true,
+          "NSExceptionDomains": {
+            "aeris.local": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": true
+            },
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        },
+        "NSCameraUsageDescription": "AERIS needs camera access to scan barcodes",
+        "NSFaceIDUsageDescription": "AERIS uses Face ID for session authentication"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#003049"
+      },
+      "package": "com.aeris.erp",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      "./plugins/withFollyCoroutinesFix",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1",
+            "ccacheEnabled": true,
+            "newArchEnabled": true
+          },
+          "android": {
+            "newArchEnabled": true
+          }
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "AERIS needs camera access to scan barcodes"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "AERIS uses Face ID for session authentication"
+        }
+      ],
+      "expo-secure-store",
+      "expo-font",
+      "expo-sharing",
+      "expo-splash-screen"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d3ce5116-b28a-4fb8-bac6-6ea080d273df"
+      }
+    },
+    "owner": "clermont-digital",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
+  }
 }

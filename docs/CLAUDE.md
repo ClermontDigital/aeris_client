@@ -4,31 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Aeris is a cross-platform Electron desktop application that provides a native wrapper for the Aeris ERP Point of Sale system. The app connects to an Aeris ERP server (default: `aeris.local`, configurable to IP addresses) and provides a secure, feature-rich desktop experience.
+Aeris Client is a multi-platform application suite for the Aeris ERP system:
+- **Desktop** (`desktop/`): Electron app for Windows/macOS — WebView wrapper with session management, printing
+- **Mobile** (`mobile/`): Expo SDK 55 / React Native app for iOS/Android — native POS screens + WebView for advanced ERP features
+
+The apps connect to an Aeris ERP server (default: `aeris.local`, configurable). The mobile app can also connect via the Aeris Marketplace relay for secure access to on-prem deployments.
 
 ## Development Commands
 
-### Basic Development
+### Desktop (`cd desktop`)
 - `npm run dev` - Start development mode with DevTools
 - `npm start` - Start production mode
-- `npm install` - Install dependencies
+- `npm test` - Run all tests (121 tests, 92.4% coverage)
+- `npm run build:mac` - Build macOS .dmg
+- `npm run build:win` - Build Windows .exe
 
-### Building & Distribution
-- `npm run build` - Build for current platform
-- `npm run build:mac` - Build macOS version (generates .dmg)
-- `npm run build:win` - Build Windows version (generates .exe)
-- `npm run dist` - Build without publishing
+### Mobile (`cd mobile`)
+- `npx expo start` - Start Expo dev server
+- `npm test` - Run all tests (45 tests)
+- `eas build --platform ios --profile development` - Dev build (simulator)
+- `eas build --platform ios --profile production --auto-submit` - Production build → TestFlight
 
-### Testing
-- `npm test` - Run all tests
-- `npm run test:watch` - Run tests in watch mode
-- `npm run test:coverage` - Run tests with coverage report
-- `npm run test:verbose` - Run tests with verbose output
-
-**Test Coverage:**
-- 121 tests across 3 test suites
-- 92.4% overall code coverage
-- 100% pass rate
+**Important**: EAS builds must use `"image": "sdk-55"` in `eas.json` (Xcode 26.2 / Swift 6.2). Other Xcode versions fail.
 
 ### CI/CD
 
@@ -36,32 +33,49 @@ Aeris is a cross-platform Electron desktop application that provides a native wr
 - **Main Branch**: Development and testing (no CI/CD automation)
 - **Release Branch**: Deployment trigger (full CI/CD pipeline)
 
-The project uses GitHub Actions for automated building and releases:
-- Triggers **ONLY** on `release` branch pushes and pull requests
-- Does **NOT** run on `main` branch
-- **Test Phase**: Runs full test suite with coverage before building
-- **Build Phase**: Only runs if all tests pass
-- Builds for both macOS (Intel/ARM64) and Windows
-- Automatically creates GitHub releases with version from package.json
-- Uploads coverage reports as artifacts (7-day retention)
-- Supports macOS notarization (requires APPLE_ID, APPLE_ID_PASS, APPLE_TEAM_ID env vars)
+The workflow uses **path-based change detection** (`dorny/paths-filter`):
+- `desktop/` changes → desktop test + build (macOS/Windows/Linux) → GitHub Release
+- `mobile/` changes → mobile test + EAS Build → auto-submit to TestFlight
+- Both can run in parallel if both directories change
 
 **Deployment Workflow**:
 1. Work on `main` branch (development)
-2. Run tests locally with `npm test`
+2. Run tests locally (`cd desktop && npm test` / `cd mobile && npm test`)
 3. Merge `main` → `release` to trigger deployment
-4. CI/CD pipeline runs automatically on `release`
-5. GitHub release created with installers
+4. CI/CD runs automatically — desktop to GitHub Releases, mobile to TestFlight
+
+**Required GitHub Secrets**: `EXPO_TOKEN`, `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASS`, `APPLE_TEAM_ID`
 
 ## Architecture
 
-### Core Files Structure
+### Desktop Core Files
 ```
-src/
+desktop/src/
 ├── main.js           # Main Electron process - window management, IPC handlers
 ├── preload.js        # Secure bridge between main and renderer processes
 ├── session-manager.js # Multi-user session management with encryption
 └── assets/icons/     # Application icons (icon.png, icon.ico, icon.icns)
+```
+
+### Mobile Core Files
+```
+mobile/src/
+├── App.tsx                  # Entry point — NavigationContainer, auth gating, init
+├── navigation/              # React Navigation (RootNavigator, AppTabs, stacks)
+├── screens/                 # LoginScreen, DashboardScreen, QuickSaleScreen, CartScreen,
+│                            # CheckoutScreen, BarcodeScannerScreen, TransactionListScreen,
+│                            # ReceiptViewerScreen, ERPScreen (WebView)
+├── services/
+│   ├── ApiClient.ts         # Dual-mode HTTP client (direct ERP or marketplace relay)
+│   ├── StorageService.ts    # Tiered storage: expo-secure-store + encrypted AsyncStorage
+│   ├── EncryptionService.ts # Iterated SHA-256 key stretching, expo-crypto
+│   ├── SessionManager.ts    # PIN-protected sessions with lockout
+│   ├── ConnectionService.ts # Network monitoring
+│   └── PrintService.ts      # expo-print + expo-sharing
+├── stores/                  # Zustand: authStore, cartStore, productCacheStore, settingsStore, sessionStore
+├── types/                   # api.types, navigation.types, settings.types, session.types
+├── constants/               # theme (brand colors), api (endpoints + relay actions), config
+└── components/              # Toolbar, WebViewContainer, PinPad, etc.
 ```
 
 ### Key Architecture Patterns
