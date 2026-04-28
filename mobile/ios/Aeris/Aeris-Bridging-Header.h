@@ -1,7 +1,3 @@
 //
-//  Aeris-Bridging-Header.h
-//  Bridging header for Swift/ObjC interop in React Native
+// Use this file to import your target's public headers that you would like to expose to Swift.
 //
-
-#import <React/RCTBridgeModule.h>
-#import <React/RCTEventEmitter.h>

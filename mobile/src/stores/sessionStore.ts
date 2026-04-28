@@ -25,6 +25,9 @@ export const useSessionStore = create<SessionState>((set) => ({
 
   init: async () => {
     await SessionManager.init();
+    // Run AFTER init so the session map is populated from storage; otherwise
+    // cleanup runs against an empty map and is a silent no-op.
+    SessionManager.cleanupOldSessions();
     SessionManager.setOnSessionLocked(() => {
       set({
         sessions: SessionManager.getAllSessions(),

@@ -1,0 +1,6 @@
+# Expo managed native directories
+ios/
+android/
+
+# Expo cache
+.expo/

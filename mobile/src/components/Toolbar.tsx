@@ -1,6 +1,6 @@
 import React from 'react';
 import {View, TouchableOpacity, Text, StyleSheet} from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
+import {Ionicons} from '@expo/vector-icons';
 
 interface ToolbarProps {
   canGoBack: boolean;
@@ -64,8 +64,8 @@ const ToolButton: React.FC<{icon: string; onPress: () => void; disabled?: boolea
     style={[styles.button, disabled && styles.buttonDisabled]}
     onPress={onPress}
     disabled={disabled}>
-    <Icon
-      name={icon}
+    <Ionicons
+      name={icon as keyof typeof Ionicons.glyphMap}
       size={20}
       color={disabled ? 'rgba(255, 255, 255, 0.3)' : '#e2e8f0'}
     />
