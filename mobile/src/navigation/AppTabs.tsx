@@ -64,6 +64,7 @@ const AppTabs: React.FC = () => (
       name="ERP"
       component={ERPScreen}
       options={{
+        tabBarLabel: 'Aeris',
         tabBarIcon: ({color, size}) => (
           <Ionicons name="globe" size={size} color={color} />
         ),
