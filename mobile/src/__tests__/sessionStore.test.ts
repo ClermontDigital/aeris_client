@@ -1,43 +1,43 @@
-const mockStorage: Record<string, string> = {};
+const mockSecureStore: Record<string, string> = {};
+jest.mock('expo-secure-store', () => ({
+  setItemAsync: jest.fn((key: string, value: string) => {
+    mockSecureStore[key] = value;
+    return Promise.resolve();
+  }),
+  getItemAsync: jest.fn((key: string) => Promise.resolve(mockSecureStore[key] || null)),
+  deleteItemAsync: jest.fn((key: string) => {
+    delete mockSecureStore[key];
+    return Promise.resolve();
+  }),
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 1,
+}));
 
-jest.mock('react-native-get-random-values', () => {});
-
-jest.mock('react-native-encrypted-storage', () => ({
+const mockAsyncStorage: Record<string, string> = {};
+jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
     setItem: jest.fn((key: string, value: string) => {
-      mockStorage[key] = value;
+      mockAsyncStorage[key] = value;
       return Promise.resolve();
     }),
-    getItem: jest.fn((key: string) => Promise.resolve(mockStorage[key] || null)),
+    getItem: jest.fn((key: string) => Promise.resolve(mockAsyncStorage[key] || null)),
     removeItem: jest.fn((key: string) => {
-      delete mockStorage[key];
+      delete mockAsyncStorage[key];
       return Promise.resolve();
     }),
-    clear: jest.fn(() => {
-      Object.keys(mockStorage).forEach(k => delete mockStorage[k]);
+    multiRemove: jest.fn((keys: string[]) => {
+      keys.forEach(k => delete mockAsyncStorage[k]);
       return Promise.resolve();
     }),
   },
 }));
 
-jest.mock('react-native-background-timer', () => ({
-  setTimeout: jest.fn((cb: Function, ms: number) => global.setTimeout(cb, ms)),
-  clearTimeout: jest.fn((id: number) => global.clearTimeout(id)),
-}));
-
-const nodeCrypto = require('crypto');
-if (typeof global.crypto === 'undefined') {
-  (global as any).crypto = {
-    getRandomValues: (arr: Uint8Array) => nodeCrypto.randomFillSync(arr),
-  };
-}
-
 import {useSessionStore} from '../stores/sessionStore';
 
 describe('sessionStore', () => {
   beforeEach(async () => {
-    Object.keys(mockStorage).forEach(k => delete mockStorage[k]);
+    Object.keys(mockSecureStore).forEach(k => delete mockSecureStore[k]);
+    Object.keys(mockAsyncStorage).forEach(k => delete mockAsyncStorage[k]);
     useSessionStore.getState().cleanup();
     await useSessionStore.getState().init();
   });

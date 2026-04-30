@@ -1,5 +1,3 @@
-import 'react-native-get-random-values';
-import BackgroundTimer from 'react-native-background-timer';
 import EncryptionService from './EncryptionService';
 import StorageService from './StorageService';
 import {STORAGE_KEYS, DEFAULT_CONFIG} from '../constants/config';
@@ -23,7 +21,7 @@ function generateId(): string {
 class SessionManager {
   private sessions: Map<string, Session> = new Map();
   private activeSessionId: string | null = null;
-  private sessionTimers: Map<string, number> = new Map();
+  private sessionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private pinAttempts: Map<string, PinAttemptData> = new Map();
   private sessionTimeout: number = DEFAULT_CONFIG.sessionTimeout;
   private persistPromise: Promise<void> = Promise.resolve();
@@ -86,8 +84,8 @@ class SessionManager {
     if (name.trim().length > 50) {
       throw new Error('Session name must be 50 characters or fewer');
     }
-    if (!pin || !/^\d{4}$/.test(pin)) {
-      throw new Error('PIN must be exactly 4 digits');
+    if (!pin || !/^\d{4,8}$/.test(pin)) {
+      throw new Error('PIN must be 4-8 digits');
     }
 
     for (const session of this.sessions.values()) {
@@ -101,7 +99,7 @@ class SessionManager {
     }
 
     const sessionId = generateId();
-    const hashedPin = EncryptionService.hashPin(pin);
+    const hashedPin = await EncryptionService.hashPin(pin);
     const now = new Date().toISOString();
 
     const session: Session = {
@@ -137,7 +135,7 @@ class SessionManager {
     return true;
   }
 
-  validatePin(sessionId: string, pin: string): boolean {
+  async validatePin(sessionId: string, pin: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error('Session not found');
 
@@ -147,7 +145,7 @@ class SessionManager {
       throw new Error(`Session locked due to too many failed attempts. Try again in ${remaining} minutes.`);
     }
 
-    const isValid = EncryptionService.verifyPin(pin, session.pin);
+    const isValid = await EncryptionService.verifyPin(pin, session.pin);
 
     if (!isValid) {
       if (!attemptData) {
@@ -170,7 +168,7 @@ class SessionManager {
   }
 
   async unlockSession(sessionId: string, pin: string): Promise<SessionPublic> {
-    if (!this.validatePin(sessionId, pin)) {
+    if (!(await this.validatePin(sessionId, pin))) {
       throw new Error('Invalid PIN');
     }
 
@@ -214,17 +212,17 @@ class SessionManager {
     const session = this.sessions.get(sessionId);
     if (!session || session.isLocked) return;
 
-    const timer = BackgroundTimer.setTimeout(() => {
+    const timer = setTimeout(() => {
       this.lockSession(sessionId);
     }, this.sessionTimeout * 60 * 1000);
 
-    this.sessionTimers.set(sessionId, timer as unknown as number);
+    this.sessionTimers.set(sessionId, timer);
   }
 
   private clearSessionTimer(sessionId: string): void {
     const timer = this.sessionTimers.get(sessionId);
     if (timer !== undefined) {
-      BackgroundTimer.clearTimeout(timer);
+      clearTimeout(timer);
       this.sessionTimers.delete(sessionId);
     }
   }
@@ -330,7 +328,7 @@ class SessionManager {
 
   cleanup(): void {
     for (const timer of this.sessionTimers.values()) {
-      BackgroundTimer.clearTimeout(timer);
+      clearTimeout(timer);
     }
     this.sessionTimers.clear();
     this.pinAttempts.clear();
