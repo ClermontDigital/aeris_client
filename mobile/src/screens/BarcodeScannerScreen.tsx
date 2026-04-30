@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import {CameraView, useCameraPermissions} from 'expo-camera';
+import {useIsFocused} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useCartStore} from '../stores/cartStore';
@@ -19,6 +20,7 @@ import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 const formatCents = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
 const BarcodeScannerScreen: React.FC = () => {
+  const isFocused = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
   const [torchOn, setTorchOn] = useState(false);
   const [scannedProduct, setScannedProduct] = useState<
@@ -141,22 +143,24 @@ const BarcodeScannerScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <CameraView
-        style={styles.camera}
-        facing="back"
-        enableTorch={torchOn}
-        barcodeScannerSettings={{
-          barcodeTypes: [
-            'ean13',
-            'ean8',
-            'upc_a',
-            'upc_e',
-            'code128',
-            'code39',
-          ],
-        }}
-        onBarcodeScanned={scanLock ? undefined : handleBarcodeScanned}
-      />
+      {isFocused ? (
+        <CameraView
+          style={styles.camera}
+          facing="back"
+          enableTorch={torchOn}
+          barcodeScannerSettings={{
+            barcodeTypes: [
+              'ean13',
+              'ean8',
+              'upc_a',
+              'upc_e',
+              'code128',
+              'code39',
+            ],
+          }}
+          onBarcodeScanned={scanLock ? undefined : handleBarcodeScanned}
+        />
+      ) : null}
 
       {/* Top overlay */}
       <View style={styles.topOverlay}>
