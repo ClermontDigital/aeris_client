@@ -1,5 +1,11 @@
 import type {ConnectionMode} from '../types/api.types';
 
+// Auto-lock the auth session after the app has been in the background for
+// this long. The user is taken back to the LoginScreen and must re-auth.
+// POS devices on a shared/store-floor are the target use case — leaving the
+// app open and walking away should not leave a session live indefinitely.
+export const BACKGROUND_LOCK_MS = 60 * 1000; // 1 minute
+
 export const DEFAULT_CONFIG = {
   baseUrl: 'http://localhost:8822',
   relayUrl: 'https://api.aeris.team',
