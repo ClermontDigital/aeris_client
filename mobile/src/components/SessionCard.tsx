@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
+import {COLORS, FONT_SIZE, SPACING, BORDER_RADIUS} from '../constants/theme';
 import type {SessionPublic} from '../types/session.types';
 
 interface SessionCardProps {
@@ -30,22 +31,22 @@ const SessionCard: React.FC<SessionCardProps> = ({session, isActive, onPress, on
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 16,
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
     marginVertical: 4,
-    marginHorizontal: 8,
+    marginHorizontal: SPACING.sm,
     borderWidth: 2,
-    borderColor: '#ddd',
+    borderColor: COLORS.surfaceBorder,
     minWidth: 200,
   },
-  cardActive: {borderColor: '#27ae60'},
+  cardActive: {borderColor: COLORS.crimson},
   header: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
-  name: {fontSize: 16, fontWeight: '600', color: '#2c3e50'},
-  lockIcon: {fontSize: 12, color: '#e74c3c', fontWeight: '600'},
-  lastAccessed: {fontSize: 12, color: '#7f8c8d', marginTop: 4},
-  deleteBtn: {marginTop: 8, alignSelf: 'flex-end'},
-  deleteText: {color: '#e74c3c', fontSize: 13},
+  name: {fontSize: FONT_SIZE.lg, fontWeight: '600', color: COLORS.text},
+  lockIcon: {fontSize: FONT_SIZE.xs + 2, color: COLORS.crimson, fontWeight: '600'},
+  lastAccessed: {fontSize: FONT_SIZE.xs + 2, color: COLORS.textMuted, marginTop: 4},
+  deleteBtn: {marginTop: SPACING.sm, alignSelf: 'flex-end'},
+  deleteText: {color: COLORS.danger, fontSize: FONT_SIZE.sm + 1},
 });
 
 export default SessionCard;
