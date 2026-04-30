@@ -6,7 +6,7 @@ import {Linking} from 'react-native';
 
 interface WebViewContainerProps {
   url: string;
-  webViewRef: React.RefObject<WebView>;
+  webViewRef: React.RefObject<WebView | null>;
   onNavigationStateChange: (nav: WebViewNavigation) => void;
   onLoadStart: () => void;
   onLoadEnd: () => void;

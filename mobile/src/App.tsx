@@ -1,12 +1,15 @@
 import React, {useEffect} from 'react';
-import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, LogBox} from 'react-native';
-
-LogBox.ignoreLogs(['new NativeEventEmitter']);
+import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
-import KeepAwake from 'react-native-keep-awake';
-import {Immersive} from 'react-native-immersive';
+import {NavigationContainer} from '@react-navigation/native';
+import {activateKeepAwakeAsync} from 'expo-keep-awake';
+import * as NavigationBar from 'expo-navigation-bar';
 import {useSettingsStore} from './stores/settingsStore';
-import MainScreen from './screens/MainScreen';
+import {useAuthStore} from './stores/authStore';
+import {useProductCacheStore} from './stores/productCacheStore';
+import ApiClient from './services/ApiClient';
+import RootNavigator from './navigation/RootNavigator';
+import {COLORS} from './constants/theme';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -55,22 +58,74 @@ const errorStyles = StyleSheet.create({
 
 const App: React.FC = () => {
   const initSettings = useSettingsStore(s => s.init);
+  const settings = useSettingsStore(s => s.settings);
+  const restoreSession = useAuthStore(s => s.restoreSession);
+  const clearLocalSession = useAuthStore(s => s.clearLocalSession);
+  const restoreCache = useProductCacheStore(s => s.restoreCache);
 
   useEffect(() => {
-    KeepAwake.activate();
+    activateKeepAwakeAsync();
     initSettings();
+    restoreSession();
+    restoreCache();
+
+    // Wire 401s in ApiClient back into the auth store so a stale token
+    // takes the user to the login screen instead of leaving them logged-in
+    // but unable to make any calls.
+    ApiClient.setOnUnauthorized(() => {
+      clearLocalSession();
+    });
 
     if (Platform.OS === 'android') {
       StatusBar.setHidden(true);
-      Immersive.on();
+      NavigationBar.setVisibilityAsync('hidden');
     }
-  }, [initSettings]);
+
+    return () => {
+      ApiClient.setOnUnauthorized(null);
+    };
+  }, [initSettings, restoreSession, restoreCache, clearLocalSession]);
+
+  // Configure ApiClient whenever connection-relevant settings change
+  useEffect(() => {
+    ApiClient.configure({
+      baseUrl: settings?.baseUrl,
+      relayUrl: settings?.relayUrl,
+      mode: settings?.connectionMode,
+      workspaceCode: settings?.workspaceCode,
+    });
+  }, [
+    settings?.baseUrl,
+    settings?.relayUrl,
+    settings?.connectionMode,
+    settings?.workspaceCode,
+  ]);
 
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
         <StatusBar hidden />
-        <MainScreen />
+        <NavigationContainer
+          theme={{
+            dark: true,
+            colors: {
+              primary: COLORS.accent,
+              background: COLORS.background,
+              card: COLORS.primary,
+              text: COLORS.text,
+              border: COLORS.border,
+              notification: COLORS.accent,
+            },
+            fonts: {
+              regular: { fontFamily: 'System', fontWeight: '400' },
+              medium: { fontFamily: 'System', fontWeight: '500' },
+              bold: { fontFamily: 'System', fontWeight: '700' },
+              heavy: { fontFamily: 'System', fontWeight: '800' },
+            },
+          }}
+        >
+          <RootNavigator />
+        </NavigationContainer>
       </SafeAreaProvider>
     </ErrorBoundary>
   );
