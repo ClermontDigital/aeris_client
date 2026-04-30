@@ -171,7 +171,7 @@ const BarcodeScannerScreen: React.FC = () => {
           <Ionicons
             name={torchOn ? 'flash' : 'flash-off'}
             size={22}
-            color={COLORS.textLight}
+            color={COLORS.cream}
           />
         </TouchableOpacity>
       </View>
@@ -230,7 +230,7 @@ const BarcodeScannerScreen: React.FC = () => {
         <TouchableOpacity
           style={styles.manualToggle}
           onPress={() => setManualEntry(prev => !prev)}>
-          <Ionicons name="keypad-outline" size={16} color={COLORS.textMuted} />
+          <Ionicons name="keypad-outline" size={16} color={COLORS.cream} />
           <Text style={styles.manualToggleText}>
             {manualEntry ? 'Hide manual entry' : 'Enter barcode manually'}
           </Text>
@@ -292,10 +292,12 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.md,
-    backgroundColor: COLORS.modalBg,
+    backgroundColor: COLORS.modalBg, // navy 92%
   },
+  // Cream on navy — was COLORS.text (now navy in cream theme), which made
+  // the title invisible against the navy modalBg backdrop.
   topTitle: {
-    color: COLORS.text,
+    color: COLORS.cream,
     fontSize: FONT_SIZE.xl,
     fontWeight: '600',
   },
@@ -309,19 +311,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Semi-transparent navy backdrop so any text rendered directly in the
+  // bottom area (manual-entry toggle, errors) stays legible against an
+  // arbitrary camera scene. The result cards inside still pop forward as
+  // bright cream surfaces.
   bottomArea: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.xl,
+    backgroundColor: 'rgba(0, 48, 73, 0.85)',
   },
   resultCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.cream,
     borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
     padding: SPACING.md,
     marginBottom: SPACING.sm,
   },
@@ -371,17 +377,23 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },
+  // Outline-on-cream so the button reads as a button against the cream
+  // result card (the previous near-white surfaceHover bg was effectively
+  // invisible, ~1.05 contrast on cream).
   dismissButton: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: BORDER_RADIUS.md,
-    backgroundColor: COLORS.surfaceHover,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: COLORS.text, // navy outline
     alignItems: 'center',
     justifyContent: 'center',
   },
   dismissText: {
-    color: COLORS.textMuted,
+    color: COLORS.text,
     fontSize: FONT_SIZE.md,
+    fontWeight: '500',
   },
   notFoundText: {
     color: COLORS.warning,
@@ -396,8 +408,9 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     paddingVertical: SPACING.sm,
   },
+  // Cream on navy backdrop. textMuted (slate-navy) was unreadable here.
   manualToggleText: {
-    color: COLORS.textMuted,
+    color: COLORS.cream,
     fontSize: FONT_SIZE.sm,
   },
   manualInputRow: {
