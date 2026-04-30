@@ -1,19 +1,32 @@
-const mockStorage: Record<string, string> = {};
+const mockSecureStore: Record<string, string> = {};
+jest.mock('expo-secure-store', () => ({
+  setItemAsync: jest.fn((key: string, value: string) => {
+    mockSecureStore[key] = value;
+    return Promise.resolve();
+  }),
+  getItemAsync: jest.fn((key: string) => Promise.resolve(mockSecureStore[key] || null)),
+  deleteItemAsync: jest.fn((key: string) => {
+    delete mockSecureStore[key];
+    return Promise.resolve();
+  }),
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 1,
+}));
 
-jest.mock('react-native-encrypted-storage', () => ({
+const mockAsyncStorage: Record<string, string> = {};
+jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: {
     setItem: jest.fn((key: string, value: string) => {
-      mockStorage[key] = value;
+      mockAsyncStorage[key] = value;
       return Promise.resolve();
     }),
-    getItem: jest.fn((key: string) => Promise.resolve(mockStorage[key] || null)),
+    getItem: jest.fn((key: string) => Promise.resolve(mockAsyncStorage[key] || null)),
     removeItem: jest.fn((key: string) => {
-      delete mockStorage[key];
+      delete mockAsyncStorage[key];
       return Promise.resolve();
     }),
-    clear: jest.fn(() => {
-      Object.keys(mockStorage).forEach(k => delete mockStorage[k]);
+    multiRemove: jest.fn((keys: string[]) => {
+      keys.forEach(k => delete mockAsyncStorage[k]);
       return Promise.resolve();
     }),
   },
@@ -23,7 +36,8 @@ import {useSettingsStore} from '../stores/settingsStore';
 
 describe('settingsStore', () => {
   beforeEach(async () => {
-    Object.keys(mockStorage).forEach(k => delete mockStorage[k]);
+    Object.keys(mockSecureStore).forEach(k => delete mockSecureStore[k]);
+    Object.keys(mockAsyncStorage).forEach(k => delete mockAsyncStorage[k]);
     useSettingsStore.setState({
       settings: {baseUrl: 'http://aeris.local:8000', sessionTimeout: 30, enableSessionManagement: false, autoStart: false},
       isLoading: false,
@@ -43,7 +57,7 @@ describe('settingsStore', () => {
     await useSettingsStore.getState().saveSettings({baseUrl: 'http://10.0.0.140:8000'});
     expect(useSettingsStore.getState().settings.baseUrl).toBe('http://10.0.0.140:8000');
     // Should persist
-    expect(mockStorage['aeris_settings']).toContain('10.0.0.140');
+    expect(mockAsyncStorage['aeris_settings']).toContain('10.0.0.140');
   });
 
   test('should merge partial settings', async () => {
@@ -63,5 +77,10 @@ describe('settingsStore', () => {
     global.fetch = jest.fn(() => Promise.resolve({ok: true, status: 200})) as any;
     const result = await useSettingsStore.getState().testConnection();
     expect(result).toBe(true);
+  });
+
+  test('lowercases and trims workspaceCode on save', async () => {
+    await useSettingsStore.getState().saveSettings({workspaceCode: '  ACME-Prod  '});
+    expect(useSettingsStore.getState().settings.workspaceCode).toBe('acme-prod');
   });
 });
