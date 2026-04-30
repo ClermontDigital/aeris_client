@@ -123,6 +123,20 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
     onClose();
   };
 
+  const handleLogout = () => {
+    Alert.alert('Log out', 'Are you sure you want to log out?', [
+      {text: 'Cancel', style: 'cancel'},
+      {
+        text: 'Log out',
+        style: 'destructive',
+        onPress: async () => {
+          onClose();
+          await useAuthStore.getState().logout();
+        },
+      },
+    ]);
+  };
+
   const handleTest = async () => {
     if (mode === 'relay') {
       const trimmedRelay = relayUrl.trim();
@@ -235,6 +249,16 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
               <Text style={styles.saveText}>Save</Text>
             </TouchableOpacity>
           </View>
+
+          {isAuthenticated ? (
+            <View style={styles.logoutSection}>
+              <TouchableOpacity
+                style={styles.logoutBtn}
+                onPress={handleLogout}>
+                <Text style={styles.logoutText}>Log out</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
@@ -279,6 +303,19 @@ const styles = StyleSheet.create({
   cancelText: {color: '#dc2626', fontSize: 16},
   saveBtn: {backgroundColor: '#48bb78', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8},
   saveText: {color: '#fff', fontSize: 16, fontWeight: '600'},
+  logoutSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e3e3e3',
+  },
+  logoutBtn: {
+    backgroundColor: '#dc2626',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  logoutText: {color: '#fff', fontSize: 16, fontWeight: '600'},
 });
 
 export default SettingsModal;

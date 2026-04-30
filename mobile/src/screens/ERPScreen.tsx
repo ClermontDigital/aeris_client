@@ -6,6 +6,7 @@ import Toolbar from '../components/Toolbar';
 import WebViewContainer from '../components/WebViewContainer';
 import LoadingOverlay from '../components/LoadingOverlay';
 import OfflineBanner from '../components/OfflineBanner';
+import SettingsModal from './SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useAuthStore} from '../stores/authStore';
 import {useWebView} from '../hooks/useWebView';
@@ -21,6 +22,7 @@ const ERPScreen: React.FC = () => {
   const networkStatus = useNetworkStatus(baseUrl);
 
   const [backPressCount, setBackPressCount] = useState(0);
+  const [settingsVisible, setSettingsVisible] = useState(false);
 
   // Hardware back button (Android)
   useEffect(() => {
@@ -77,7 +79,7 @@ const ERPScreen: React.FC = () => {
         onHome={handleHome}
         onPrint={handlePrint}
         onLock={() => {}}
-        onSettings={() => {}}
+        onSettings={() => setSettingsVisible(true)}
         showSessionButton={false}
       />
 
@@ -107,6 +109,11 @@ const ERPScreen: React.FC = () => {
         />
         <LoadingOverlay visible={webView.isLoading} />
       </View>
+
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+      />
     </SafeAreaView>
   );
 };
