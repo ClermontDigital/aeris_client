@@ -71,7 +71,7 @@ const ERPScreen: React.FC = () => {
   }, [webView.currentUrl, baseUrl]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <Toolbar
         canGoBack={webView.canGoBack}
         canGoForward={webView.canGoForward}

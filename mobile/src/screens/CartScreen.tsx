@@ -11,6 +11,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import type {CartItem} from '../types/api.types';
@@ -55,6 +56,18 @@ export default function CartScreen() {
 
   const handleCheckout = useCallback(() => {
     navigation.navigate('Checkout');
+  }, [navigation]);
+
+  const handleBackToProducts = useCallback(() => {
+    // Pop back if we have history (came from ProductGrid → Cart navigate),
+    // otherwise jump to ProductGrid directly. Both land on the same screen
+    // either way; popping preserves any existing scroll/search state on
+    // ProductGrid.
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('ProductGrid');
+    }
   }, [navigation]);
 
   const handleSwipeDelete = useCallback(
@@ -122,9 +135,17 @@ export default function CartScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleBackToProducts}
+          accessibilityRole="button"
+          accessibilityLabel="Back to products">
+          <Ionicons name="chevron-back" size={20} color={COLORS.text} />
+          <Text style={styles.backText}>Products</Text>
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Cart</Text>
         <Text style={styles.headerCount}>
           {itemCount} {itemCount === 1 ? 'item' : 'items'}
@@ -221,17 +242,30 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    gap: SPACING.md,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.xs,
+    paddingRight: SPACING.sm,
+    marginLeft: -SPACING.xs, // visual alignment to the screen edge
+  },
+  backText: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '500',
   },
   headerTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
+    flex: 1,
   },
   headerCount: {
     color: COLORS.textMuted,

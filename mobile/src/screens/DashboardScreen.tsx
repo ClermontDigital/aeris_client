@@ -57,7 +57,7 @@ const DashboardScreen: React.FC = () => {
 
   if (isLoading && !summary) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={COLORS.accent} />
           <Text style={styles.loadingText}>Loading dashboard...</Text>
@@ -68,7 +68,7 @@ const DashboardScreen: React.FC = () => {
 
   if (error && !summary) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.centered}>
           <View style={styles.errorCard}>
             <Text style={styles.errorText}>{error}</Text>
@@ -84,7 +84,7 @@ const DashboardScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
