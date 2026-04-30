@@ -80,12 +80,15 @@ export default function QuickSaleScreen() {
     // Fallback to API search
     setIsSearching(true);
     try {
-      const response = await ApiClient.searchProducts(
-        searchQuery,
-        1,
-        50,
-        selectedCategory ?? undefined,
-      );
+      const trimmed = searchQuery.trim();
+      const response = trimmed
+        ? await ApiClient.searchProducts(
+            trimmed,
+            1,
+            50,
+            selectedCategory ?? undefined,
+          )
+        : await ApiClient.listProducts(1, 50, selectedCategory ?? undefined);
       setDisplayProducts(response.data);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load products';

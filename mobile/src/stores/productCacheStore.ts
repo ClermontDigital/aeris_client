@@ -35,7 +35,7 @@ export const useProductCacheStore = create<ProductCacheState>((set, get) => ({
       let hasMore = true;
 
       while (hasMore) {
-        const result = await ApiClient.searchProducts('', page, 50);
+        const result = await ApiClient.listProducts(page, 50);
         allProducts = [...allProducts, ...result.data];
         hasMore = page < result.meta.last_page;
         page++;

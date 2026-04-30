@@ -8,6 +8,8 @@ import type {
   ProductDetail,
   Sale,
   SaleDetail,
+  SaleItem,
+  SalePayment,
   DailySummary,
   PaymentMethod,
   ReceiptData,
@@ -254,6 +256,27 @@ export class ApiClient {
     );
   }
 
+  async listProducts(
+    page = 1,
+    perPage = 50,
+    categoryId?: number,
+  ): Promise<PaginatedResponse<Product>> {
+    if (this.mode === 'relay') {
+      return this.relayRpc<PaginatedResponse<Product>>(
+        RELAY_ACTIONS.PRODUCTS_LIST,
+        {page, per_page: perPage, category_id: categoryId},
+      );
+    }
+    const params = new URLSearchParams({
+      page: String(page),
+      per_page: String(perPage),
+    });
+    if (categoryId) params.set('category_id', String(categoryId));
+    return this.get<PaginatedResponse<Product>>(
+      `${API_ENDPOINTS.POS_PRODUCTS}?${params}`,
+    );
+  }
+
   async getProductByBarcode(barcode: string): Promise<ProductDetail | null> {
     try {
       if (this.mode === 'relay') {
@@ -289,11 +312,19 @@ export class ApiClient {
   }
 
   async getCategories(): Promise<Category[]> {
-    return this.get<Category[]>(API_ENDPOINTS.PRODUCTS_CATEGORIES);
+    const result =
+      this.mode === 'relay'
+        ? await this.relayRpc<unknown>(RELAY_ACTIONS.PRODUCTS_CATEGORIES, {})
+        : await this.get<unknown>(API_ENDPOINTS.PRODUCTS_CATEGORIES);
+    return unwrapList<Category>(result);
   }
 
   async getPaymentMethods(): Promise<PaymentMethod[]> {
-    return this.get<PaymentMethod[]>(API_ENDPOINTS.POS_PAYMENT_METHODS);
+    const result =
+      this.mode === 'relay'
+        ? await this.relayRpc<unknown>(RELAY_ACTIONS.POS_PAYMENT_METHODS, {})
+        : await this.get<unknown>(API_ENDPOINTS.POS_PAYMENT_METHODS);
+    return unwrapList<PaymentMethod>(result);
   }
 
   // --- Inventory ---
@@ -371,34 +402,43 @@ export class ApiClient {
     date_from?: string;
     date_to?: string;
   }): Promise<PaginatedResponse<Sale>> {
+    let raw: PaginatedResponse<unknown>;
     if (this.mode === 'relay') {
-      return this.relayRpc<PaginatedResponse<Sale>>(
+      raw = await this.relayRpc<PaginatedResponse<unknown>>(
         RELAY_ACTIONS.TRANSACTIONS_LIST,
         params || {},
       );
+    } else {
+      const urlParams = new URLSearchParams();
+      if (params?.page) urlParams.set('page', String(params.page));
+      if (params?.per_page) urlParams.set('per_page', String(params.per_page));
+      if (params?.date_from) urlParams.set('date_from', params.date_from);
+      if (params?.date_to) urlParams.set('date_to', params.date_to);
+      const qs = urlParams.toString();
+      raw = await this.get<PaginatedResponse<unknown>>(
+        `${API_ENDPOINTS.SALES_LIST}${qs ? `?${qs}` : ''}`,
+      );
     }
-    const urlParams = new URLSearchParams();
-    if (params?.page) urlParams.set('page', String(params.page));
-    if (params?.per_page) urlParams.set('per_page', String(params.per_page));
-    if (params?.date_from) urlParams.set('date_from', params.date_from);
-    if (params?.date_to) urlParams.set('date_to', params.date_to);
-    const qs = urlParams.toString();
-    return this.get<PaginatedResponse<Sale>>(
-      `${API_ENDPOINTS.SALES_LIST}${qs ? `?${qs}` : ''}`,
-    );
+    return {
+      ...raw,
+      data: (raw.data || []).map(normalizeSale),
+    };
   }
 
   async getTransactionDetail(saleId: number): Promise<SaleDetail | null> {
     try {
+      let raw: unknown;
       if (this.mode === 'relay') {
-        return await this.relayRpc<SaleDetail>(
+        raw = await this.relayRpc<unknown>(
           RELAY_ACTIONS.TRANSACTIONS_DETAIL,
           {sale_id: saleId},
         );
+      } else {
+        raw = await this.get<unknown>(
+          `${API_ENDPOINTS.SALES_LIST}/${saleId}`,
+        );
       }
-      return await this.get<SaleDetail>(
-        `${API_ENDPOINTS.SALES_LIST}/${saleId}`,
-      );
+      return normalizeSaleDetail(raw);
     } catch (e) {
       if (isNotFound(e, this.mode)) return null;
       throw e;
@@ -620,6 +660,130 @@ function emptyPage<T>(page: number, perPage: number): PaginatedResponse<T> {
   return {
     data: [],
     meta: {current_page: page, last_page: 1, per_page: perPage, total: 0},
+  };
+}
+
+// Aeris2 may emit either dollars (`total_amount`) or cents (`total_cents`);
+// prefer cents when present, else the first present-and-valid dollar key.
+// Variadic dollarKeys: the previous shape used `pickCents(...) || pickCents(...)`
+// chains at call sites which treated a legitimate $0 (refund / promo line) as
+// "missing" and fell through to a wrong key. First-valid-wins preserves zero.
+function pickCents(
+  source: Record<string, unknown>,
+  centsKey: string,
+  ...dollarKeys: string[]
+): number {
+  const cents = source[centsKey];
+  if (typeof cents === 'number' && Number.isFinite(cents)) {
+    return Math.round(cents);
+  }
+  for (const key of dollarKeys) {
+    const dollars = source[key];
+    if (typeof dollars === 'number' && Number.isFinite(dollars)) {
+      return Math.round(dollars * 100);
+    }
+    if (typeof dollars === 'string' && dollars.trim() !== '') {
+      const parsed = parseFloat(dollars);
+      if (Number.isFinite(parsed)) return Math.round(parsed * 100);
+    }
+  }
+  return 0;
+}
+
+// Aeris2's controllers wrap list responses in `{data: [...]}` (Laravel
+// convention). The relay envelope unwrap propagates the body as-is when no
+// inner status is present, so mobile sees the wrapper. Unwrap defensively —
+// accept either bare arrays (future / direct controllers) or the wrapper.
+function unwrapList<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (result && typeof result === 'object' && 'data' in result) {
+    const data = (result as {data: unknown}).data;
+    if (Array.isArray(data)) return data as T[];
+  }
+  return [];
+}
+
+function asNumber(v: unknown, fallback = 0): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const parsed = parseFloat(v);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function asString(v: unknown, fallback = ''): string {
+  return typeof v === 'string' ? v : fallback;
+}
+
+export function normalizeSale(input: unknown): Sale {
+  const raw = (input || {}) as Record<string, unknown>;
+  const customer = raw.customer as Record<string, unknown> | undefined;
+  const items = Array.isArray(raw.items) ? (raw.items as unknown[]) : [];
+  const customerName =
+    typeof raw.customer_name === 'string'
+      ? raw.customer_name
+      : customer && typeof customer.name === 'string'
+      ? (customer.name as string)
+      : null;
+  const status = (raw.status ?? raw.sale_status) as Sale['status'] | undefined;
+  const itemsCount =
+    typeof raw.items_count === 'number'
+      ? raw.items_count
+      : typeof raw.total_quantity === 'number'
+      ? raw.total_quantity
+      : items.length;
+  return {
+    id: asNumber(raw.id),
+    sale_number: asString(raw.sale_number),
+    total_cents: pickCents(raw, 'total_cents', 'total_amount'),
+    tax_cents: pickCents(raw, 'tax_cents', 'tax_amount'),
+    subtotal_cents: pickCents(raw, 'subtotal_cents', 'subtotal'),
+    discount_cents: pickCents(raw, 'discount_cents', 'discount_amount'),
+    status: (status as Sale['status']) ?? 'completed',
+    items_count: itemsCount,
+    customer_name: customerName,
+    created_at: asString(raw.created_at),
+  };
+}
+
+function normalizeSaleItem(input: unknown): SaleItem {
+  const raw = (input || {}) as Record<string, unknown>;
+  return {
+    product_id: asNumber(raw.product_id),
+    product_name: asString(raw.product_name),
+    sku: asString(raw.sku),
+    quantity: asNumber(raw.quantity),
+    unit_price_cents: pickCents(raw, 'unit_price_cents', 'unit_price'),
+    line_total_cents: pickCents(raw, 'line_total_cents', 'line_total', 'total', 'price'),
+    discount_cents: pickCents(raw, 'discount_cents', 'discount_amount'),
+  };
+}
+
+function normalizeSalePayment(input: unknown): SalePayment {
+  const raw = (input || {}) as Record<string, unknown>;
+  return {
+    method: asString(raw.method),
+    amount_cents: pickCents(raw, 'amount_cents', 'amount'),
+    reference: typeof raw.reference === 'string' ? raw.reference : null,
+  };
+}
+
+export function normalizeSaleDetail(input: unknown): SaleDetail {
+  const base = normalizeSale(input);
+  const raw = (input || {}) as Record<string, unknown>;
+  const items = Array.isArray(raw.items)
+    ? (raw.items as unknown[]).map(normalizeSaleItem)
+    : [];
+  const payments = Array.isArray(raw.payments)
+    ? (raw.payments as unknown[]).map(normalizeSalePayment)
+    : [];
+  const customer = (raw.customer ?? null) as SaleDetail['customer'];
+  return {
+    ...base,
+    items,
+    payments,
+    customer,
   };
 }
 
