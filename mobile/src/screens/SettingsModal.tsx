@@ -14,6 +14,7 @@ import {
 import Modal from 'react-native-modal';
 import {useSettings} from '../hooks/useSettings';
 import {useAuthStore} from '../stores/authStore';
+import {COLORS} from '../constants/theme';
 import type {ConnectionMode} from '../types/api.types';
 
 interface Props {
@@ -267,55 +268,56 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
 
 const styles = StyleSheet.create({
   modal: {justifyContent: 'center', margin: 40},
-  content: {backgroundColor: '#fff', borderRadius: 12, padding: 24},
-  title: {fontSize: 22, fontWeight: '700', color: '#003049', marginBottom: 20},
-  label: {fontSize: 14, color: '#555', marginTop: 12, marginBottom: 4},
+  content: {backgroundColor: COLORS.surface, borderRadius: 12, padding: 24},
+  title: {fontSize: 22, fontWeight: '700', color: COLORS.navy, marginBottom: 20},
+  label: {fontSize: 14, color: COLORS.textMuted, marginTop: 12, marginBottom: 4},
   input: {
     borderWidth: 1,
-    borderColor: '#e3e3e3',
+    borderColor: COLORS.inputBorder,
     borderRadius: 8,
     padding: 10,
     fontSize: 15,
     flex: 1,
+    color: COLORS.text,
   },
   urlRow: {flexDirection: 'row', gap: 8, alignItems: 'center'},
-  testBtn: {backgroundColor: '#667eea', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8},
-  testText: {color: '#fff', fontWeight: '600'},
+  testBtn: {backgroundColor: COLORS.navy, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8},
+  testText: {color: COLORS.cream, fontWeight: '600'},
   modeRow: {flexDirection: 'row', gap: 8, marginTop: 4},
   modeBtn: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e3e3e3',
+    borderColor: COLORS.inputBorder,
     alignItems: 'center',
-    backgroundColor: '#f7f7f7',
+    backgroundColor: COLORS.background, // cream
   },
   modeBtnActive: {
-    backgroundColor: '#003049',
-    borderColor: '#003049',
+    backgroundColor: COLORS.navy,
+    borderColor: COLORS.navy,
   },
-  modeText: {color: '#555', fontWeight: '600'},
-  modeTextActive: {color: '#fff'},
+  modeText: {color: COLORS.textMuted, fontWeight: '600'},
+  modeTextActive: {color: COLORS.cream},
   switchRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16},
   buttons: {flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 24},
   cancelBtn: {paddingHorizontal: 16, paddingVertical: 10},
-  cancelText: {color: '#dc2626', fontSize: 16},
-  saveBtn: {backgroundColor: '#48bb78', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8},
-  saveText: {color: '#fff', fontSize: 16, fontWeight: '600'},
+  cancelText: {color: COLORS.textMuted, fontSize: 16},
+  saveBtn: {backgroundColor: COLORS.crimson, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8},
+  saveText: {color: COLORS.white, fontSize: 16, fontWeight: '600'},
   logoutSection: {
     marginTop: 20,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e3e3e3',
+    borderTopColor: COLORS.inputBorder,
   },
   logoutBtn: {
-    backgroundColor: '#dc2626',
+    backgroundColor: COLORS.danger,
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
-  logoutText: {color: '#fff', fontSize: 16, fontWeight: '600'},
+  logoutText: {color: COLORS.white, fontSize: 16, fontWeight: '600'},
 });
 
 export default SettingsModal;

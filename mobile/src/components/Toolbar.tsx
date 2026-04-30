@@ -1,6 +1,7 @@
 import React from 'react';
 import {View, TouchableOpacity, Text, StyleSheet} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
+import {COLORS, FONT_SIZE, BORDER_RADIUS, SPACING} from '../constants/theme';
 
 interface ToolbarProps {
   canGoBack: boolean;
@@ -67,7 +68,7 @@ const ToolButton: React.FC<{icon: string; onPress: () => void; disabled?: boolea
     <Ionicons
       name={icon as keyof typeof Ionicons.glyphMap}
       size={20}
-      color={disabled ? 'rgba(255, 255, 255, 0.3)' : '#e2e8f0'}
+      color={disabled ? 'rgba(255, 255, 255, 0.3)' : COLORS.cream}
     />
   </TouchableOpacity>
 );
@@ -77,31 +78,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#003049',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: COLORS.toolbarBg,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
     height: 44,
   },
-  navGroup: {flexDirection: 'row', gap: 4},
-  actionGroup: {flexDirection: 'row', gap: 4},
+  navGroup: {flexDirection: 'row', gap: SPACING.xs},
+  actionGroup: {flexDirection: 'row', gap: SPACING.xs},
   button: {
     width: 36,
     height: 36,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: BORDER_RADIUS.md, // matches web "rounded-lg" pill language
+    backgroundColor: COLORS.toolbarBtn,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderColor: COLORS.toolbarBtnBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonDisabled: {opacity: 0.4},
   sessionBadge: {
-    backgroundColor: '#667eea',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    backgroundColor: COLORS.crimson, // brand active state (was purple #667eea)
+    paddingHorizontal: SPACING.md - 4,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: BORDER_RADIUS.lg,
   },
-  sessionText: {color: '#fff', fontSize: 13, fontWeight: '600'},
+  sessionText: {color: COLORS.white, fontSize: FONT_SIZE.sm + 1, fontWeight: '600'},
 });
 
 export default Toolbar;
