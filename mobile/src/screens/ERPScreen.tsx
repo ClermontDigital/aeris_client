@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {View, StyleSheet, BackHandler, Alert, Platform} from 'react-native';
+import {View, Text, StyleSheet, BackHandler, Alert, Platform} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {WebViewNavigation} from 'react-native-webview';
 import Toolbar from '../components/Toolbar';
@@ -13,16 +13,18 @@ import {useWebView} from '../hooks/useWebView';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import ConnectionService from '../services/ConnectionService';
 import PrintService from '../services/PrintService';
-import {COLORS} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE} from '../constants/theme';
 
 const ERPScreen: React.FC = () => {
   const baseUrl = useSettingsStore(s => s.settings.baseUrl);
+  const connectionMode = useSettingsStore(s => s.settings.connectionMode);
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const webView = useWebView();
   const networkStatus = useNetworkStatus(baseUrl);
 
   const [backPressCount, setBackPressCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const isRelayMode = connectionMode === 'relay';
 
   // Hardware back button (Android)
   useEffect(() => {
@@ -83,32 +85,47 @@ const ERPScreen: React.FC = () => {
         showSessionButton={false}
       />
 
-      <OfflineBanner
-        isConnected={networkStatus.isConnected}
-        isServerReachable={networkStatus.isServerReachable}
-        onRetry={() => ConnectionService.checkServer()}
-      />
-
-      <View style={styles.webviewContainer}>
-        <WebViewContainer
-          url={baseUrl}
-          webViewRef={webView.webViewRef}
-          onNavigationStateChange={handleNavChange}
-          onLoadStart={() => webView.setIsLoading(true)}
-          onLoadEnd={() => {
-            webView.setIsLoading(false);
-            ConnectionService.setReachable(true);
-          }}
-          onError={() => {
-            webView.setIsLoading(false);
-            Alert.alert(
-              'Error',
-              'Failed to load page. Check your connection.',
-            );
-          }}
+      {!isRelayMode && (
+        <OfflineBanner
+          isConnected={networkStatus.isConnected}
+          isServerReachable={networkStatus.isServerReachable}
+          onRetry={() => ConnectionService.checkServer()}
         />
-        <LoadingOverlay visible={webView.isLoading} />
-      </View>
+      )}
+
+      {isRelayMode ? (
+        // ERP web shell talks to the deployment directly; in relay mode the
+        // architecture forbids that, so route the user to the native tabs.
+        <View style={styles.relayPlaceholder}>
+          <Text style={styles.placeholderTitle}>ERP web view unavailable</Text>
+          <Text style={styles.placeholderBody}>
+            The full ERP shell is only available in direct (LAN) mode. While
+            you are connected through the Aeris relay, please use the POS,
+            Scanner, and Transactions tabs for day-to-day work.
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.webviewContainer}>
+          <WebViewContainer
+            url={baseUrl}
+            webViewRef={webView.webViewRef}
+            onNavigationStateChange={handleNavChange}
+            onLoadStart={() => webView.setIsLoading(true)}
+            onLoadEnd={() => {
+              webView.setIsLoading(false);
+              ConnectionService.setReachable(true);
+            }}
+            onError={() => {
+              webView.setIsLoading(false);
+              Alert.alert(
+                'Error',
+                'Failed to load page. Check your connection.',
+              );
+            }}
+          />
+          <LoadingOverlay visible={webView.isLoading} />
+        </View>
+      )}
 
       <SettingsModal
         visible={settingsVisible}
@@ -126,6 +143,26 @@ const styles = StyleSheet.create({
   webviewContainer: {
     flex: 1,
     position: 'relative',
+  },
+  relayPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.xl,
+    backgroundColor: COLORS.background,
+  },
+  placeholderTitle: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.xl,
+    fontWeight: '700',
+    marginBottom: SPACING.md,
+    textAlign: 'center',
+  },
+  placeholderBody: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.md,
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });
 
