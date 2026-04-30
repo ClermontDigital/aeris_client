@@ -138,7 +138,7 @@ export default function CheckoutScreen() {
   // Success view
   if (saleResult) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <ScrollView contentContainerStyle={styles.successContainer}>
           <View style={styles.successCard}>
             <Text style={styles.successIcon}>&#10003;</Text>
@@ -174,7 +174,7 @@ export default function CheckoutScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Order Summary */}
         <View style={styles.summaryHeader}>

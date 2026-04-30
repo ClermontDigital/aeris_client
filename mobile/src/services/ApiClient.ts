@@ -6,6 +6,7 @@ import type {
   ConnectionMode,
   Product,
   ProductDetail,
+  ProductVariant,
   Sale,
   SaleDetail,
   SaleItem,
@@ -239,21 +240,27 @@ export class ApiClient {
       return emptyPage<Product>(page, perPage);
     }
 
+    let raw: PaginatedResponse<unknown>;
     if (this.mode === 'relay') {
-      return this.relayRpc<PaginatedResponse<Product>>(
+      raw = await this.relayRpc<PaginatedResponse<unknown>>(
         RELAY_ACTIONS.PRODUCTS_SEARCH,
         {query: trimmed, page, per_page: perPage, category_id: categoryId},
       );
+    } else {
+      const params = new URLSearchParams({
+        q: trimmed,
+        page: String(page),
+        per_page: String(perPage),
+      });
+      if (categoryId) params.set('category_id', String(categoryId));
+      raw = await this.get<PaginatedResponse<unknown>>(
+        `${API_ENDPOINTS.PRODUCTS_SEARCH}?${params}`,
+      );
     }
-    const params = new URLSearchParams({
-      q: trimmed,
-      page: String(page),
-      per_page: String(perPage),
-    });
-    if (categoryId) params.set('category_id', String(categoryId));
-    return this.get<PaginatedResponse<Product>>(
-      `${API_ENDPOINTS.PRODUCTS_SEARCH}?${params}`,
-    );
+    return {
+      ...raw,
+      data: (raw.data || []).map(normalizeProduct),
+    };
   }
 
   async listProducts(
@@ -261,33 +268,42 @@ export class ApiClient {
     perPage = 50,
     categoryId?: number,
   ): Promise<PaginatedResponse<Product>> {
+    let raw: PaginatedResponse<unknown>;
     if (this.mode === 'relay') {
-      return this.relayRpc<PaginatedResponse<Product>>(
+      raw = await this.relayRpc<PaginatedResponse<unknown>>(
         RELAY_ACTIONS.PRODUCTS_LIST,
         {page, per_page: perPage, category_id: categoryId},
       );
+    } else {
+      const params = new URLSearchParams({
+        page: String(page),
+        per_page: String(perPage),
+      });
+      if (categoryId) params.set('category_id', String(categoryId));
+      raw = await this.get<PaginatedResponse<unknown>>(
+        `${API_ENDPOINTS.POS_PRODUCTS}?${params}`,
+      );
     }
-    const params = new URLSearchParams({
-      page: String(page),
-      per_page: String(perPage),
-    });
-    if (categoryId) params.set('category_id', String(categoryId));
-    return this.get<PaginatedResponse<Product>>(
-      `${API_ENDPOINTS.POS_PRODUCTS}?${params}`,
-    );
+    return {
+      ...raw,
+      data: (raw.data || []).map(normalizeProduct),
+    };
   }
 
   async getProductByBarcode(barcode: string): Promise<ProductDetail | null> {
     try {
+      let raw: unknown;
       if (this.mode === 'relay') {
-        return await this.relayRpc<ProductDetail>(
+        raw = await this.relayRpc<unknown>(
           RELAY_ACTIONS.PRODUCTS_BARCODE,
           {barcode},
         );
+      } else {
+        raw = await this.get<unknown>(
+          `${API_ENDPOINTS.PRODUCTS_BARCODE}/${encodeURIComponent(barcode)}`,
+        );
       }
-      return await this.get<ProductDetail>(
-        `${API_ENDPOINTS.PRODUCTS_BARCODE}/${encodeURIComponent(barcode)}`,
-      );
+      return raw == null ? null : normalizeProductDetail(raw);
     } catch (e) {
       if (isNotFound(e, this.mode)) return null;
       throw e;
@@ -296,15 +312,18 @@ export class ApiClient {
 
   async getProductDetail(productId: number): Promise<ProductDetail | null> {
     try {
+      let raw: unknown;
       if (this.mode === 'relay') {
-        return await this.relayRpc<ProductDetail>(
+        raw = await this.relayRpc<unknown>(
           RELAY_ACTIONS.PRODUCTS_DETAIL,
           {product_id: productId},
         );
+      } else {
+        raw = await this.get<unknown>(
+          `${API_ENDPOINTS.POS_PRODUCTS}/${productId}`,
+        );
       }
-      return await this.get<ProductDetail>(
-        `${API_ENDPOINTS.POS_PRODUCTS}/${productId}`,
-      );
+      return raw == null ? null : normalizeProductDetail(raw);
     } catch (e) {
       if (isNotFound(e, this.mode)) return null;
       throw e;
@@ -668,14 +687,22 @@ function emptyPage<T>(page: number, perPage: number): PaginatedResponse<T> {
 // Variadic dollarKeys: the previous shape used `pickCents(...) || pickCents(...)`
 // chains at call sites which treated a legitimate $0 (refund / promo line) as
 // "missing" and fell through to a wrong key. First-valid-wins preserves zero.
-function pickCents(
+//
+// pickCents defaults missing to 0; pickCentsOrNull defaults missing to null
+// (used for permission-gated fields like cost_cents where absent ≠ free).
+// Both delegate to findCents so the parsing logic stays in one place.
+function findCents(
   source: Record<string, unknown>,
   centsKey: string,
   ...dollarKeys: string[]
-): number {
+): number | undefined {
   const cents = source[centsKey];
   if (typeof cents === 'number' && Number.isFinite(cents)) {
     return Math.round(cents);
+  }
+  if (typeof cents === 'string' && cents.trim() !== '') {
+    const parsed = parseFloat(cents);
+    if (Number.isFinite(parsed)) return Math.round(parsed);
   }
   for (const key of dollarKeys) {
     const dollars = source[key];
@@ -687,7 +714,15 @@ function pickCents(
       if (Number.isFinite(parsed)) return Math.round(parsed * 100);
     }
   }
-  return 0;
+  return undefined;
+}
+
+function pickCents(
+  source: Record<string, unknown>,
+  centsKey: string,
+  ...dollarKeys: string[]
+): number {
+  return findCents(source, centsKey, ...dollarKeys) ?? 0;
 }
 
 // Aeris2's controllers wrap list responses in `{data: [...]}` (Laravel
@@ -784,6 +819,81 @@ export function normalizeSaleDetail(input: unknown): SaleDetail {
     items,
     payments,
     customer,
+  };
+}
+
+function pickCentsOrNull(
+  source: Record<string, unknown>,
+  centsKey: string,
+  ...dollarKeys: string[]
+): number | null {
+  return findCents(source, centsKey, ...dollarKeys) ?? null;
+}
+
+export function normalizeProductVariant(input: unknown): ProductVariant {
+  const raw = (input || {}) as Record<string, unknown>;
+  return {
+    id: asNumber(raw.id),
+    name: asString(raw.name),
+    sku: asString(raw.sku),
+    price_cents: pickCents(raw, 'price_cents', 'price'),
+    stock_on_hand: asNumber(raw.stock_on_hand ?? raw.stock_quantity, 0),
+  };
+}
+
+export function normalizeProduct(input: unknown): Product {
+  const raw = (input || {}) as Record<string, unknown>;
+  const category = (raw.category && typeof raw.category === 'object'
+    ? (raw.category as Record<string, unknown>)
+    : null);
+  const categoryId =
+    raw.category_id !== undefined && raw.category_id !== null
+      ? asNumber(raw.category_id)
+      : category && category.id !== undefined && category.id !== null
+      ? asNumber(category.id)
+      : null;
+  const categoryName =
+    typeof raw.category_name === 'string'
+      ? raw.category_name
+      : category && typeof category.name === 'string'
+      ? (category.name as string)
+      : null;
+  // is_active defaults to true so unknown-shape items remain sellable.
+  const isActive =
+    raw.is_active === undefined ? true : Boolean(raw.is_active);
+  return {
+    id: asNumber(raw.id),
+    name: asString(raw.name),
+    sku: asString(raw.sku),
+    barcode: typeof raw.barcode === 'string' ? raw.barcode : null,
+    price_cents: pickCents(raw, 'price_cents', 'price'),
+    tax_rate: asNumber(raw.tax_rate, 0),
+    stock_on_hand: asNumber(raw.stock_on_hand ?? raw.stock_quantity, 0),
+    category_id: categoryId,
+    category_name: categoryName,
+    image_url: typeof raw.image_url === 'string' ? raw.image_url : null,
+    is_active: isActive,
+  };
+}
+
+export function normalizeProductDetail(input: unknown): ProductDetail {
+  const base = normalizeProduct(input);
+  const raw = (input || {}) as Record<string, unknown>;
+  const variants = Array.isArray(raw.variants)
+    ? (raw.variants as unknown[]).map(normalizeProductVariant)
+    : [];
+  // Pass stock_levels through when the deployment provides them.
+  // Dropping to [] silently broke multi-location stock UI that surfaces
+  // this field on ProductDetail.
+  const stockLevels = Array.isArray(raw.stock_levels)
+    ? (raw.stock_levels as ProductDetail['stock_levels'])
+    : [];
+  return {
+    ...base,
+    description: typeof raw.description === 'string' ? raw.description : null,
+    cost_cents: pickCentsOrNull(raw, 'cost_cents', 'cost_price'),
+    stock_levels: stockLevels,
+    variants,
   };
 }
 

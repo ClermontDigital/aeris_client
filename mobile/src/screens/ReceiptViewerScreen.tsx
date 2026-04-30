@@ -77,7 +77,7 @@ export default function ReceiptViewerScreen() {
   // Loading state
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.centerContent}>
           <ActivityIndicator color={COLORS.accent} size="large" />
           <Text style={styles.loadingText}>Loading receipt...</Text>
@@ -89,7 +89,7 @@ export default function ReceiptViewerScreen() {
   // Error state
   if (error || !receipt) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.centerContent}>
           <Text style={styles.errorTitle}>Failed to Load Receipt</Text>
           <Text style={styles.errorMessage}>{error || 'Receipt not found'}</Text>
@@ -107,7 +107,7 @@ export default function ReceiptViewerScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Receipt Card */}
         <View style={styles.receiptCard}>
