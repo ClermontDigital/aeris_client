@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
   },
   completeSaleButton: {
-    backgroundColor: COLORS.success,
+    backgroundColor: COLORS.crimson, // brand primary CTA (was COLORS.success — green looked like Stripe)
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     alignItems: 'center',
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   completeSaleText: {
-    color: COLORS.black,
+    color: COLORS.white,
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
   },

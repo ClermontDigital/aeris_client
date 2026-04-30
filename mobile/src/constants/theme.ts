@@ -1,53 +1,72 @@
-// Aeris brand colors — matches desktop Electron app
+// Aeris brand tokens — match Aeris2 web (tailwind.config.js: aeris-navy /
+// aeris-cream / aeris-crimson) and the Electron desktop app (navy chrome,
+// cream content). Token NAMES are preserved from the prior dark-glass theme
+// so every existing screen using COLORS.background / COLORS.surface / etc.
+// auto-cascades onto the new palette without per-screen edits.
+const NAVY = '#003049';
+const NAVY_LIGHT = '#1d3a52';
+const CREAM = '#fdf0d5';
+const CREAM_LIGHT = '#fff9ec'; // slightly lighter for elevated cards on cream
+const CRIMSON = '#c1121f';
+const CRIMSON_DARK = '#900';
+
 export const COLORS = {
-  // Primary palette
-  primary: '#003049',        // Dark navy — toolbar, main background
-  primaryLight: '#004a6e',   // Lighter navy variant
-  accent: '#667eea',         // Purple — primary buttons, focus states, loading
-  accentHover: '#5a67d8',    // Purple hover state
-  crimson: '#c1121f',        // Red accent — active states, session borders, PIN focus
-  crimsonDark: '#900',       // Red hover
+  // --- Brand ---
+  navy: NAVY,
+  navyLight: NAVY_LIGHT,
+  cream: CREAM,
+  creamLight: CREAM_LIGHT,
+  crimson: CRIMSON,
+  crimsonDark: CRIMSON_DARK,
 
-  // Backgrounds
-  background: '#003049',     // Main app background
-  surface: 'rgba(255, 255, 255, 0.1)',      // Card/surface on dark bg (glassmorphism)
-  surfaceHover: 'rgba(255, 255, 255, 0.15)', // Surface hover state
-  surfaceBorder: 'rgba(255, 255, 255, 0.2)', // Surface borders
-  surfaceBorderHover: 'rgba(255, 255, 255, 0.4)',
-  modalBg: 'rgba(0, 48, 73, 0.95)',         // Modal overlay (backdrop blur)
-  overlayBg: 'rgba(0, 0, 0, 0.8)',          // Dark overlay
+  // --- Primary / accent (semantic aliases) ---
+  primary: NAVY,            // navy chrome (toolbar, tab bar, modal scrim)
+  primaryLight: NAVY_LIGHT,
+  accent: CRIMSON,          // primary action color (was purple #667eea — retired)
+  accentHover: CRIMSON_DARK,
 
-  // Text
-  text: '#fdf0d5',           // Cream — primary text on dark backgrounds
-  textLight: '#e2e8f0',      // Light gray — secondary text
-  textMuted: '#94a3b8',      // Medium slate — tertiary text
-  textDim: '#64748b',        // Dimmed text
+  // --- Backgrounds: flipped from navy → cream to match web/desktop ---
+  background: CREAM,                              // main app body
+  surface: '#ffffff',                             // elevated card on cream
+  surfaceHover: CREAM_LIGHT,                      // card hover
+  surfaceBorder: 'rgba(0, 48, 73, 0.1)',          // navy 10%
+  surfaceBorderHover: 'rgba(0, 48, 73, 0.2)',     // navy 20%
+  modalBg: 'rgba(0, 48, 73, 0.92)',               // navy scrim under modals
+  overlayBg: 'rgba(0, 48, 73, 0.85)',             // navy overlay (loading)
 
-  // Status
-  success: '#4ade80',        // Green — connected, success
-  successDark: '#48bb78',    // Darker green — test button
-  danger: '#dc2626',         // Red — error, disconnect, danger buttons
-  dangerLight: '#ef4444',    // Lighter red — status dot
-  warning: '#f59e0b',        // Amber — update notifications, locked
+  // --- Text: navy on cream now (was cream on navy) ---
+  text: NAVY,
+  textLight: NAVY_LIGHT,
+  textMuted: '#5b7a8e',     // muted navy/slate for secondary text
+  textDim: '#94a3b8',
+  // Inverse text (for use on navy chrome / crimson buttons)
+  textOnDark: CREAM,
 
-  // Neutrals
+  // --- Status ---
+  success: '#16a34a',       // slightly darker green: legible on cream
+  successDark: '#15803d',
+  danger: CRIMSON,          // align "danger" with brand crimson
+  dangerLight: '#dc2626',
+  warning: '#f59e0b',
+
+  // --- Neutrals ---
   white: '#ffffff',
   black: '#000000',
-  border: 'rgba(255, 255, 255, 0.25)',  // Toolbar button borders
+  border: 'rgba(0, 48, 73, 0.15)',
   transparent: 'transparent',
 
-  // Toolbar specific
-  toolbarBg: '#003049',
-  toolbarBtn: 'rgba(255, 255, 255, 0.15)',
-  toolbarBtnHover: 'rgba(255, 255, 255, 0.25)',
-  toolbarBtnBorder: 'rgba(255, 255, 255, 0.25)',
+  // --- Toolbar (NAVY chrome — kept dark to match desktop's top bar) ---
+  toolbarBg: NAVY,
+  toolbarBtn: 'rgba(255, 255, 255, 0.12)',
+  toolbarBtnHover: 'rgba(255, 255, 255, 0.2)',
+  toolbarBtnBorder: 'rgba(255, 255, 255, 0.2)',
 
-  // Input specific
-  inputBg: 'rgba(255, 255, 255, 0.1)',
-  inputBorder: 'rgba(255, 255, 255, 0.2)',
-  inputFocusBorder: '#c1121f',
-  inputFocusBg: 'rgba(255, 255, 255, 0.15)',
-  inputPlaceholder: 'rgba(253, 240, 213, 0.5)',
+  // --- Inputs (white field on cream) ---
+  inputBg: '#ffffff',
+  inputBorder: 'rgba(0, 48, 73, 0.2)',
+  inputFocusBorder: CRIMSON,
+  inputFocusBg: '#ffffff',
+  inputPlaceholder: 'rgba(0, 48, 73, 0.4)',
 } as const;
 
 export const SPACING = {
