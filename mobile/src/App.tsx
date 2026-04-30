@@ -1,5 +1,6 @@
 import React, {useEffect} from 'react';
-import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import {AppState, StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import type {AppStateStatus} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {NavigationContainer} from '@react-navigation/native';
 import {activateKeepAwakeAsync} from 'expo-keep-awake';
@@ -61,6 +62,8 @@ const App: React.FC = () => {
   const settings = useSettingsStore(s => s.settings);
   const restoreSession = useAuthStore(s => s.restoreSession);
   const clearLocalSession = useAuthStore(s => s.clearLocalSession);
+  const markBackgrounded = useAuthStore(s => s.markBackgrounded);
+  const evaluateBackgroundLock = useAuthStore(s => s.evaluateBackgroundLock);
   const restoreCache = useProductCacheStore(s => s.restoreCache);
 
   useEffect(() => {
@@ -85,6 +88,26 @@ const App: React.FC = () => {
       ApiClient.setOnUnauthorized(null);
     };
   }, [initSettings, restoreSession, restoreCache, clearLocalSession]);
+
+  // Auto-lock the auth session when the app has been in the background for
+  // more than BACKGROUND_LOCK_MS. iOS does not let an app terminate itself,
+  // so the equivalent UX is: stamp Date.now() on background, on resume drop
+  // the session if the gap exceeds the threshold and route the user back to
+  // LoginScreen. Cold-boot path (iOS killed the suspended app) is also
+  // covered inside restoreSession() reading the same persisted stamp.
+  useEffect(() => {
+    const handleAppStateChange = (state: AppStateStatus) => {
+      if (state === 'background') {
+        markBackgrounded();
+      } else if (state === 'active') {
+        evaluateBackgroundLock();
+      }
+      // 'inactive' is a transient iOS state (e.g. control-center pull-down)
+      // and does not constitute backgrounding. Ignore it.
+    };
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, [markBackgrounded, evaluateBackgroundLock]);
 
   // Configure ApiClient whenever connection-relevant settings change
   useEffect(() => {
