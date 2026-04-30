@@ -1,11 +1,14 @@
 import {create} from 'zustand';
 import ApiClient, {RelayError} from '../services/ApiClient';
 import {SecureStorage} from '../services/StorageService';
+import {BACKGROUND_LOCK_MS} from '../constants/config';
 import type {User} from '../types/api.types';
 
 const AUTH_TOKEN_KEY = 'aeris_auth_token';
 const AUTH_USER_KEY = 'aeris_auth_user';
 const AUTH_EXPIRES_KEY = 'aeris_auth_expires_at';
+const AUTH_BACKGROUNDED_AT_KEY = 'aeris_auth_backgrounded_at';
+const AUTO_LOCK_MESSAGE = 'Auto-locked due to inactivity. Please log in again.';
 
 interface AuthState {
   user: User | null;
@@ -19,6 +22,8 @@ interface AuthState {
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   clearLocalSession: () => Promise<void>;
+  markBackgrounded: () => Promise<void>;
+  evaluateBackgroundLock: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -29,7 +34,19 @@ function isExpired(expiresAt: string | null): boolean {
   return ts <= Date.now();
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+// Read + clear the background-stamp. Returns true if the stamp existed and
+// represents a window longer than BACKGROUND_LOCK_MS — i.e. the session
+// should be locked on resume / cold-boot.
+async function readAndClearBackgroundLock(): Promise<boolean> {
+  const stamp = await SecureStorage.getItem(AUTH_BACKGROUNDED_AT_KEY);
+  if (!stamp) return false;
+  await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
+  const ts = parseInt(stamp, 10);
+  if (Number.isNaN(ts)) return false;
+  return Date.now() - ts > BACKGROUND_LOCK_MS;
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   expiresAt: null,
@@ -91,6 +108,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     await SecureStorage.removeItem(AUTH_TOKEN_KEY);
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+    await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
     set({
       user: null,
       token: null,
@@ -108,6 +126,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     await SecureStorage.removeItem(AUTH_TOKEN_KEY);
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+    await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
     set({
       user: null,
       token: null,
@@ -115,6 +134,29 @@ export const useAuthStore = create<AuthState>((set) => ({
       isAuthenticated: false,
       error: 'Your session has expired. Please log in again.',
     });
+  },
+
+  // Stamp the background-entered timestamp so a subsequent resume / cold-boot
+  // can decide whether to auto-lock. No-op if not authenticated (nothing to
+  // lock). Stored in SecureStorage to survive iOS killing the suspended app.
+  markBackgrounded: async () => {
+    if (!get().isAuthenticated) return;
+    try {
+      await SecureStorage.setItem(AUTH_BACKGROUNDED_AT_KEY, String(Date.now()));
+    } catch (e) {
+      console.warn('Failed to stamp background timestamp:', e);
+    }
+  },
+
+  // Called on resume from background. If the stamp exists and is older than
+  // BACKGROUND_LOCK_MS, drops the local session and routes the user back to
+  // LoginScreen. Cold-boot path is handled inside restoreSession().
+  evaluateBackgroundLock: async () => {
+    if (!get().isAuthenticated) return;
+    if (await readAndClearBackgroundLock()) {
+      await get().clearLocalSession();
+      set({error: AUTO_LOCK_MESSAGE});
+    }
   },
 
   restoreSession: async () => {
@@ -125,6 +167,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const expiresAt = await SecureStorage.getItem(AUTH_EXPIRES_KEY);
 
       if (!token || !userJson) {
+        // Nothing to restore — also clear any orphaned background stamp.
+        await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
         set({isLoading: false});
         return;
       }
@@ -133,7 +177,19 @@ export const useAuthStore = create<AuthState>((set) => ({
         await SecureStorage.removeItem(AUTH_TOKEN_KEY);
         await SecureStorage.removeItem(AUTH_USER_KEY);
         await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+        await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
         set({isLoading: false});
+        return;
+      }
+
+      // Background-lock check: if iOS killed the app while suspended and the
+      // user is reopening after the lock window, drop the session here so
+      // the in-process AppState handler isn't required for correctness.
+      if (await readAndClearBackgroundLock()) {
+        await SecureStorage.removeItem(AUTH_TOKEN_KEY);
+        await SecureStorage.removeItem(AUTH_USER_KEY);
+        await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+        set({isLoading: false, error: AUTO_LOCK_MESSAGE});
         return;
       }
 
