@@ -1177,8 +1177,16 @@
                             font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
                         }
                         
-                        /* Hide only the top header with AERIS logo - be very specific */
-                        nav.bg-aeris-navy {
+                        /* Hide ONLY the dark AERIS-branded top header (the one with
+                           the logo). The desktop app has its own native toolbar so
+                           the duplicate site header is suppressed. Be very specific
+                           — the broad "nav:first-child" fallback that lived here
+                           previously was matching the new white desktop nav (which
+                           is wrapped in a Tailwind .hidden.md:block div, making the
+                           <nav class="bg-white..."> a :first-child of its wrapper)
+                           and hiding it too. */
+                        nav.bg-aeris-navy,
+                        header:has(.aeris-logo) {
                             display: none !important;
                             visibility: hidden !important;
                             height: 0 !important;
@@ -1188,28 +1196,7 @@
                             padding: 0 !important;
                             overflow: hidden !important;
                         }
-                        
-                        /* Alternative selectors for the top header only */
-                        header:has(.aeris-logo),
-                        .top-header,
-                        .main-header,
-                        nav:first-child:not([class*="menu"]):not([class*="sidebar"]) {
-                            display: none !important;
-                            visibility: hidden !important;
-                            height: 0 !important;
-                            overflow: hidden !important;
-                        }
-                        
-                        /* Ensure navigation menu stays visible */
-                        nav[class*="menu"],
-                        .navigation-menu,
-                        .nav-menu,
-                        .sidebar-nav,
-                        [role="navigation"]:not(.bg-aeris-navy) {
-                            display: block !important;
-                            visibility: visible !important;
-                        }
-                        
+
                         /* Adjust body padding to account for hidden navbar */
                         body {
                             padding-top: 0 !important;
