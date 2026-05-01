@@ -9,19 +9,30 @@ import {
   Alert,
 } from 'react-native';
 import {CameraView, useCameraPermissions} from 'expo-camera';
-import {useIsFocused} from '@react-navigation/native';
+import {useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
+import type {RouteProp} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import type {Product, ProductDetail} from '../types/api.types';
+import type {ItemsStackParamList} from '../types/navigation.types';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 
 const formatCents = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
+// In 'detail' mode, found products are pushed to ProductDetail (Items tab).
+// In 'cart' mode (default), they show a card with Add-to-Cart (QuickSale tab).
+type ScanMode = 'cart' | 'detail';
+
 const BarcodeScannerScreen: React.FC = () => {
   const isFocused = useIsFocused();
+  // Both stacks declare Scanner with different param shapes; we read the
+  // mode via a permissive route type and default to 'cart'.
+  const route = useRoute<RouteProp<ItemsStackParamList, 'Scanner'>>();
+  const mode: ScanMode = route.params?.mode === 'detail' ? 'detail' : 'cart';
+  const navigation = useNavigation();
   const [permission, requestPermission] = useCameraPermissions();
   const [torchOn, setTorchOn] = useState(false);
   const [scannedProduct, setScannedProduct] = useState<
@@ -59,9 +70,25 @@ const BarcodeScannerScreen: React.FC = () => {
         }
       };
 
+      // In detail mode, jump straight to the product page on a hit. We
+      // navigation.replace rather than navigate so the Scanner doesn't
+      // pile up in the back stack between scans.
+      const goDetail = (productId: number) => {
+        haptics.success();
+        // Cast: ProductDetail lives in ItemsStackParamList. Scanner reaches
+        // it via the same parent stack when invoked from the Items tab.
+        (navigation as unknown as {replace: (n: string, p: object) => void})
+          .replace('ProductDetail', {productId});
+      };
+
       // Try local cache first
       const cached = getByBarcode(barcode);
       if (cached) {
+        if (mode === 'detail') {
+          setIsLookingUp(false);
+          goDetail(cached.id);
+          return;
+        }
         setScannedProduct(cached);
         setIsLookingUp(false);
         haptics.success();
@@ -73,6 +100,10 @@ const BarcodeScannerScreen: React.FC = () => {
       try {
         const product = await ApiClient.getProductByBarcode(barcode);
         if (product) {
+          if (mode === 'detail') {
+            goDetail(product.id);
+            return;
+          }
           setScannedProduct(product);
           haptics.success();
           refreshStock(product.id);
@@ -87,7 +118,7 @@ const BarcodeScannerScreen: React.FC = () => {
         setIsLookingUp(false);
       }
     },
-    [getByBarcode, isLookingUp, scanLock, haptics],
+    [getByBarcode, isLookingUp, scanLock, haptics, mode, navigation],
   );
 
   const handleBarcodeScanned = useCallback(

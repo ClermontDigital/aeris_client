@@ -174,6 +174,17 @@ const ItemsScreen: React.FC = () => {
             <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
           </TouchableOpacity>
         ) : null}
+        <TouchableOpacity
+          onPress={() => {
+            haptics.light();
+            navigation.navigate('Scanner', {mode: 'detail'});
+          }}
+          style={styles.scanBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Scan barcode"
+          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+          <Ionicons name="barcode-outline" size={22} color={COLORS.crimson} />
+        </TouchableOpacity>
       </View>
 
       {error ? (
@@ -248,6 +259,7 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
   },
   clearBtn: {paddingHorizontal: SPACING.xs},
+  scanBtn: {paddingLeft: SPACING.sm},
   errorBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -205,9 +205,14 @@ export default function QuickSaleScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
-      {/* Search Bar + Scan shortcut */}
+      {/* Search Bar + inline Scan shortcut */}
       <View style={styles.searchContainer}>
-        <Text style={styles.searchIcon}>Search</Text>
+        <Ionicons
+          name="search"
+          size={18}
+          color={COLORS.textMuted}
+          style={styles.searchIcon}
+        />
         <TextInput
           style={styles.searchInput}
           placeholder="Search products..."
@@ -218,8 +223,10 @@ export default function QuickSaleScreen() {
           returnKeyType="search"
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Text style={styles.clearButton}>Clear</Text>
+          <TouchableOpacity
+            onPress={() => setSearchQuery('')}
+            style={styles.clearBtn}>
+            <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -229,8 +236,9 @@ export default function QuickSaleScreen() {
             navigation.navigate('Scanner');
           }}
           accessibilityRole="button"
-          accessibilityLabel="Scan barcode">
-          <Ionicons name="barcode" size={22} color={COLORS.cream} />
+          accessibilityLabel="Scan barcode"
+          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+          <Ionicons name="barcode-outline" size={22} color={COLORS.crimson} />
         </TouchableOpacity>
       </View>
 
@@ -306,8 +314,6 @@ const styles = StyleSheet.create({
     height: 44,
   },
   searchIcon: {
-    color: COLORS.textDim,
-    fontSize: FONT_SIZE.sm,
     marginRight: SPACING.sm,
   },
   searchInput: {
@@ -316,21 +322,11 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     height: 44,
   },
-  clearButton: {
-    color: COLORS.accent,
-    fontSize: FONT_SIZE.sm,
-    paddingLeft: SPACING.sm,
-  },
-  scanButton: {
-    // Apple HIG minimum tap target is 44×44.
-    width: 44,
-    height: 44,
-    borderRadius: BORDER_RADIUS.md,
-    backgroundColor: COLORS.crimson,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: SPACING.sm,
-  },
+  clearBtn: {paddingHorizontal: SPACING.xs},
+  // Inline barcode icon — sits inside the search container at the right
+  // edge. Borderless / crimson tint so it reads as part of the input row
+  // rather than a separate floating button. Tap target via hitSlop.
+  scanButton: {paddingLeft: SPACING.sm},
   categoryStrip: {
     maxHeight: 48,
     marginTop: SPACING.sm,
