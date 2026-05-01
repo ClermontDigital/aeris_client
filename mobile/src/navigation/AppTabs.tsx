@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, StyleSheet, TouchableOpacity} from 'react-native';
+import {View, Text, Image, StyleSheet, TouchableOpacity} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
@@ -41,6 +41,14 @@ const AppTabs: React.FC = () => {
           they don't double-pad. */}
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View style={styles.topBarRow}>
+          <View style={styles.brandSection}>
+            <Image
+              source={require('../../assets/images/app-icon.png')}
+              style={styles.brandLogo}
+              accessibilityIgnoresInvertColors
+            />
+            <Text style={styles.brandWordmark}>AERIS</Text>
+          </View>
           <View style={styles.topBarSpacer} />
           <TouchableOpacity
             onPress={() => {
@@ -140,6 +148,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: 44,
+    paddingLeft: 16,
+  },
+  brandSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  brandLogo: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  brandWordmark: {
+    color: COLORS.cream,
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 1.5,
   },
   topBarSpacer: {flex: 1},
   gearBtn: {

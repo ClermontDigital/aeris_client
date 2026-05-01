@@ -21,7 +21,8 @@ export type AppTabParamList = {
 
 export type QuickSaleStackParamList = {
   ProductGrid: undefined;
-  Scanner: undefined;
+  // mode = 'cart' (default): show found-product card with Add-to-Cart button.
+  Scanner: {mode?: 'cart'} | undefined;
   Cart: undefined;
   Checkout: undefined;
 };
@@ -35,6 +36,8 @@ export type TransactionsStackParamList = {
 export type ItemsStackParamList = {
   ItemsList: undefined;
   ProductDetail: {productId: number};
+  // mode = 'detail': on found product, replace Scanner with ProductDetail.
+  Scanner: {mode: 'detail'};
 };
 
 export type CustomersStackParamList = {
