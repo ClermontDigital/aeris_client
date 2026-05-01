@@ -11,9 +11,15 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
+import {useHaptics} from '../hooks/useHaptics';
 import type {Product} from '../types/api.types';
+import type {ItemsStackParamList} from '../types/navigation.types';
+
+type Nav = NativeStackNavigationProp<ItemsStackParamList>;
 
 const PER_PAGE = 50;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -21,6 +27,8 @@ const SEARCH_DEBOUNCE_MS = 300;
 const formatCurrency = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
 const ItemsScreen: React.FC = () => {
+  const navigation = useNavigation<Nav>();
+  const haptics = useHaptics();
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
@@ -85,7 +93,13 @@ const ItemsScreen: React.FC = () => {
   }, [isLoadingMore, page, lastPage, search, fetchPage]);
 
   const renderItem = ({item}: {item: Product}) => (
-    <View style={styles.row}>
+    <TouchableOpacity
+      style={styles.row}
+      activeOpacity={0.7}
+      onPress={() => {
+        haptics.light();
+        navigation.navigate('ProductDetail', {productId: item.id});
+      }}>
       <View style={styles.rowLeft}>
         <Text style={styles.rowName} numberOfLines={1}>
           {item.name}
@@ -107,7 +121,7 @@ const ItemsScreen: React.FC = () => {
             : `${item.stock_on_hand} on hand`}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderFooter = () => {

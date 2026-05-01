@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import {API_ENDPOINTS, RELAY_ACTIONS} from '../constants/api';
 import {validateWorkspaceCode} from '../constants/config';
 import type {
@@ -29,6 +30,25 @@ const RELAY_BUFFER_MS = 3_000; // client waits this long beyond server-side time
 // waiting longer than ~6s in the worst case (with jitter).
 const SALE_RETRY = {maxAttempts: 3, baseDelayMs: 500} as const;
 
+// One bonus attempt for idempotent reads — long enough to ride out a single
+// transient 502/504 without making the user wait through a full sale-style
+// backoff if the server is genuinely down.
+const READ_RETRY = {maxAttempts: 2, baseDelayMs: 400} as const;
+
+async function withReadRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= READ_RETRY.maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt >= READ_RETRY.maxAttempts || !isRetryable(e)) throw e;
+      await sleep(backoffDelay(attempt, READ_RETRY.baseDelayMs));
+    }
+  }
+  throw lastError;
+}
+
 export class RelayError extends Error {
   constructor(
     message: string,
@@ -45,23 +65,11 @@ interface RequestOptions {
   idempotencyKey?: string;
 }
 
+// Use expo-crypto rather than the Hermes `crypto` global — Hermes does not
+// reliably expose `crypto.getRandomValues` across all OS versions, so the
+// previous implementation crashed with "crypto not found" on some devices.
 function generateUuid(): string {
-  const bytes = new Uint8Array(16);
-  // Available in Hermes; polyfilled in jest.setup.ts for tests.
-  crypto.getRandomValues(bytes);
-  // RFC 4122 v4 fields
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20, 32),
-  ].join('-');
+  return Crypto.randomUUID();
 }
 
 function isRetryable(err: unknown): boolean {
@@ -76,6 +84,10 @@ function isRetryable(err: unknown): boolean {
     if (status === 408 || status === 429 || status === 504) return true;
     if (status !== undefined && status >= 500 && status < 600) return true;
     if (status !== undefined && status >= 400 && status < 500) return false;
+    // A status outside the 4xx/5xx ranges (e.g. 200 with a non-envelope
+    // body — see relay HTTP error handling) is not a transport failure;
+    // it's a contract violation that retrying won't fix.
+    if (status !== undefined) return false;
     // No status set → treat as transport failure (timeout, abort, DNS).
     return true;
   }
@@ -213,19 +225,21 @@ export class ApiClient {
     date?: string,
     locationId?: number,
   ): Promise<DailySummary> {
-    if (this.mode === 'relay') {
-      return this.relayRpc<DailySummary>(RELAY_ACTIONS.DASHBOARD_SUMMARY, {
-        date,
-        location_id: locationId,
-      });
-    }
-    const params = new URLSearchParams();
-    if (date) params.set('date', date);
-    if (locationId) params.set('location_id', String(locationId));
-    const qs = params.toString();
-    return this.get<DailySummary>(
-      `${API_ENDPOINTS.POS_DAILY_SUMMARY}${qs ? `?${qs}` : ''}`,
-    );
+    return withReadRetry(() => {
+      if (this.mode === 'relay') {
+        return this.relayRpc<DailySummary>(RELAY_ACTIONS.DASHBOARD_SUMMARY, {
+          date,
+          location_id: locationId,
+        });
+      }
+      const params = new URLSearchParams();
+      if (date) params.set('date', date);
+      if (locationId) params.set('location_id', String(locationId));
+      const qs = params.toString();
+      return this.get<DailySummary>(
+        `${API_ENDPOINTS.POS_DAILY_SUMMARY}${qs ? `?${qs}` : ''}`,
+      );
+    });
   }
 
   // --- Products ---
@@ -240,27 +254,29 @@ export class ApiClient {
       return emptyPage<Product>(page, perPage);
     }
 
-    let raw: PaginatedResponse<unknown>;
-    if (this.mode === 'relay') {
-      raw = await this.relayRpc<PaginatedResponse<unknown>>(
-        RELAY_ACTIONS.PRODUCTS_SEARCH,
-        {query: trimmed, page, per_page: perPage, category_id: categoryId},
-      );
-    } else {
-      const params = new URLSearchParams({
-        q: trimmed,
-        page: String(page),
-        per_page: String(perPage),
-      });
-      if (categoryId) params.set('category_id', String(categoryId));
-      raw = await this.get<PaginatedResponse<unknown>>(
-        `${API_ENDPOINTS.PRODUCTS_SEARCH}?${params}`,
-      );
-    }
-    return {
-      ...raw,
-      data: (raw.data || []).map(normalizeProduct),
-    };
+    return withReadRetry(async () => {
+      let raw: PaginatedResponse<unknown>;
+      if (this.mode === 'relay') {
+        raw = await this.relayRpc<PaginatedResponse<unknown>>(
+          RELAY_ACTIONS.PRODUCTS_SEARCH,
+          {query: trimmed, page, per_page: perPage, category_id: categoryId},
+        );
+      } else {
+        const params = new URLSearchParams({
+          q: trimmed,
+          page: String(page),
+          per_page: String(perPage),
+        });
+        if (categoryId) params.set('category_id', String(categoryId));
+        raw = await this.get<PaginatedResponse<unknown>>(
+          `${API_ENDPOINTS.PRODUCTS_SEARCH}?${params}`,
+        );
+      }
+      return {
+        ...raw,
+        data: (raw.data || []).map(normalizeProduct),
+      };
+    });
   }
 
   async listProducts(
@@ -268,82 +284,95 @@ export class ApiClient {
     perPage = 50,
     categoryId?: number,
   ): Promise<PaginatedResponse<Product>> {
-    let raw: PaginatedResponse<unknown>;
-    if (this.mode === 'relay') {
-      raw = await this.relayRpc<PaginatedResponse<unknown>>(
-        RELAY_ACTIONS.PRODUCTS_LIST,
-        {page, per_page: perPage, category_id: categoryId},
-      );
-    } else {
-      const params = new URLSearchParams({
-        page: String(page),
-        per_page: String(perPage),
-      });
-      if (categoryId) params.set('category_id', String(categoryId));
-      raw = await this.get<PaginatedResponse<unknown>>(
-        `${API_ENDPOINTS.POS_PRODUCTS}?${params}`,
-      );
-    }
-    return {
-      ...raw,
-      data: (raw.data || []).map(normalizeProduct),
-    };
+    return withReadRetry(async () => {
+      let raw: PaginatedResponse<unknown>;
+      if (this.mode === 'relay') {
+        raw = await this.relayRpc<PaginatedResponse<unknown>>(
+          RELAY_ACTIONS.PRODUCTS_LIST,
+          {page, per_page: perPage, category_id: categoryId},
+        );
+      } else {
+        const params = new URLSearchParams({
+          page: String(page),
+          per_page: String(perPage),
+        });
+        if (categoryId) params.set('category_id', String(categoryId));
+        raw = await this.get<PaginatedResponse<unknown>>(
+          `${API_ENDPOINTS.POS_PRODUCTS}?${params}`,
+        );
+      }
+      return {
+        ...raw,
+        data: (raw.data || []).map(normalizeProduct),
+      };
+    });
   }
 
   async getProductByBarcode(barcode: string): Promise<ProductDetail | null> {
-    try {
-      let raw: unknown;
-      if (this.mode === 'relay') {
-        raw = await this.relayRpc<unknown>(
-          RELAY_ACTIONS.PRODUCTS_BARCODE,
-          {barcode},
-        );
-      } else {
-        raw = await this.get<unknown>(
-          `${API_ENDPOINTS.PRODUCTS_BARCODE}/${encodeURIComponent(barcode)}`,
-        );
+    return withReadRetry(async () => {
+      try {
+        let raw: unknown;
+        if (this.mode === 'relay') {
+          // `code` alias is the placeholder name in the dispatcher route
+          // `/api/v1/products/barcode/{code}`; sending both keys is what
+          // the proposed dispatcher fix expects so this auto-lights-up.
+          raw = await this.relayRpc<unknown>(
+            RELAY_ACTIONS.PRODUCTS_BARCODE,
+            {barcode, code: barcode},
+          );
+        } else {
+          raw = await this.get<unknown>(
+            `${API_ENDPOINTS.PRODUCTS_BARCODE}/${encodeURIComponent(barcode)}`,
+          );
+        }
+        return raw == null ? null : normalizeProductDetail(raw);
+      } catch (e) {
+        if (isNotFound(e, this.mode)) return null;
+        throw e;
       }
-      return raw == null ? null : normalizeProductDetail(raw);
-    } catch (e) {
-      if (isNotFound(e, this.mode)) return null;
-      throw e;
-    }
+    });
   }
 
   async getProductDetail(productId: number): Promise<ProductDetail | null> {
-    try {
-      let raw: unknown;
-      if (this.mode === 'relay') {
-        raw = await this.relayRpc<unknown>(
-          RELAY_ACTIONS.PRODUCTS_DETAIL,
-          {product_id: productId},
-        );
-      } else {
-        raw = await this.get<unknown>(
-          `${API_ENDPOINTS.POS_PRODUCTS}/${productId}`,
-        );
+    return withReadRetry(async () => {
+      try {
+        let raw: unknown;
+        if (this.mode === 'relay') {
+          raw = await this.relayRpc<unknown>(
+            RELAY_ACTIONS.PRODUCTS_DETAIL,
+            {product_id: productId, id: productId},
+          );
+        } else {
+          raw = await this.get<unknown>(
+            `${API_ENDPOINTS.POS_PRODUCTS}/${productId}`,
+          );
+        }
+        return raw == null ? null : normalizeProductDetail(raw);
+      } catch (e) {
+        if (isNotFound(e, this.mode)) return null;
+        throw e;
       }
-      return raw == null ? null : normalizeProductDetail(raw);
-    } catch (e) {
-      if (isNotFound(e, this.mode)) return null;
-      throw e;
-    }
+    });
   }
 
   async getCategories(): Promise<Category[]> {
-    const result =
-      this.mode === 'relay'
-        ? await this.relayRpc<unknown>(RELAY_ACTIONS.PRODUCTS_CATEGORIES, {})
-        : await this.get<unknown>(API_ENDPOINTS.PRODUCTS_CATEGORIES);
-    return unwrapList<Category>(result);
+    return withReadRetry(async () => {
+      const result =
+        this.mode === 'relay'
+          ? await this.relayRpc<unknown>(RELAY_ACTIONS.PRODUCTS_CATEGORIES, {})
+          : await this.get<unknown>(API_ENDPOINTS.PRODUCTS_CATEGORIES);
+      return unwrapList<Category>(result);
+    });
   }
 
   async getPaymentMethods(): Promise<PaymentMethod[]> {
-    const result =
-      this.mode === 'relay'
-        ? await this.relayRpc<unknown>(RELAY_ACTIONS.POS_PAYMENT_METHODS, {})
-        : await this.get<unknown>(API_ENDPOINTS.POS_PAYMENT_METHODS);
-    return unwrapList<PaymentMethod>(result);
+    return withReadRetry(async () => {
+      const result =
+        this.mode === 'relay'
+          ? await this.relayRpc<unknown>(RELAY_ACTIONS.POS_PAYMENT_METHODS, {})
+          : await this.get<unknown>(API_ENDPOINTS.POS_PAYMENT_METHODS);
+      return unwrapList<PaymentMethod>(result);
+    });
   }
 
   // --- Inventory ---
@@ -351,17 +380,19 @@ export class ApiClient {
     productId: number,
     locationId?: number,
   ): Promise<StockSnapshot> {
-    if (this.mode === 'relay') {
-      return this.relayRpc<StockSnapshot>(RELAY_ACTIONS.INVENTORY_STOCK, {
-        product_id: productId,
-        location_id: locationId,
-      });
-    }
-    const params = new URLSearchParams({product_id: String(productId)});
-    if (locationId) params.set('location_id', String(locationId));
-    return this.get<StockSnapshot>(
-      `${API_ENDPOINTS.POS_PRODUCTS}/${productId}/stock?${params}`,
-    );
+    return withReadRetry(() => {
+      if (this.mode === 'relay') {
+        return this.relayRpc<StockSnapshot>(RELAY_ACTIONS.INVENTORY_STOCK, {
+          product_id: productId,
+          location_id: locationId,
+        });
+      }
+      const params = new URLSearchParams({product_id: String(productId)});
+      if (locationId) params.set('location_id', String(locationId));
+      return this.get<StockSnapshot>(
+        `${API_ENDPOINTS.POS_PRODUCTS}/${productId}/stock?${params}`,
+      );
+    });
   }
 
   // --- Sales ---
@@ -421,58 +452,67 @@ export class ApiClient {
     date_from?: string;
     date_to?: string;
   }): Promise<PaginatedResponse<Sale>> {
-    let raw: PaginatedResponse<unknown>;
-    if (this.mode === 'relay') {
-      raw = await this.relayRpc<PaginatedResponse<unknown>>(
-        RELAY_ACTIONS.TRANSACTIONS_LIST,
-        params || {},
-      );
-    } else {
-      const urlParams = new URLSearchParams();
-      if (params?.page) urlParams.set('page', String(params.page));
-      if (params?.per_page) urlParams.set('per_page', String(params.per_page));
-      if (params?.date_from) urlParams.set('date_from', params.date_from);
-      if (params?.date_to) urlParams.set('date_to', params.date_to);
-      const qs = urlParams.toString();
-      raw = await this.get<PaginatedResponse<unknown>>(
-        `${API_ENDPOINTS.SALES_LIST}${qs ? `?${qs}` : ''}`,
-      );
-    }
-    return {
-      ...raw,
-      data: (raw.data || []).map(normalizeSale),
-    };
+    return withReadRetry(async () => {
+      let raw: PaginatedResponse<unknown>;
+      if (this.mode === 'relay') {
+        raw = await this.relayRpc<PaginatedResponse<unknown>>(
+          RELAY_ACTIONS.TRANSACTIONS_LIST,
+          params || {},
+        );
+      } else {
+        const urlParams = new URLSearchParams();
+        if (params?.page) urlParams.set('page', String(params.page));
+        if (params?.per_page) urlParams.set('per_page', String(params.per_page));
+        if (params?.date_from) urlParams.set('date_from', params.date_from);
+        if (params?.date_to) urlParams.set('date_to', params.date_to);
+        const qs = urlParams.toString();
+        raw = await this.get<PaginatedResponse<unknown>>(
+          `${API_ENDPOINTS.SALES_LIST}${qs ? `?${qs}` : ''}`,
+        );
+      }
+      return {
+        ...raw,
+        data: (raw.data || []).map(normalizeSale),
+      };
+    });
   }
 
   async getTransactionDetail(saleId: number): Promise<SaleDetail | null> {
-    try {
-      let raw: unknown;
-      if (this.mode === 'relay') {
-        raw = await this.relayRpc<unknown>(
-          RELAY_ACTIONS.TRANSACTIONS_DETAIL,
-          {sale_id: saleId},
-        );
-      } else {
-        raw = await this.get<unknown>(
-          `${API_ENDPOINTS.SALES_LIST}/${saleId}`,
-        );
+    return withReadRetry(async () => {
+      try {
+        let raw: unknown;
+        if (this.mode === 'relay') {
+          raw = await this.relayRpc<unknown>(
+            RELAY_ACTIONS.TRANSACTIONS_DETAIL,
+            {sale_id: saleId, id: saleId},
+          );
+        } else {
+          raw = await this.get<unknown>(
+            `${API_ENDPOINTS.SALES_LIST}/${saleId}`,
+          );
+        }
+        return normalizeSaleDetail(raw);
+      } catch (e) {
+        if (isNotFound(e, this.mode)) return null;
+        throw e;
       }
-      return normalizeSaleDetail(raw);
-    } catch (e) {
-      if (isNotFound(e, this.mode)) return null;
-      throw e;
-    }
+    });
   }
 
   async getReceipt(saleId: number): Promise<ReceiptData> {
-    if (this.mode === 'relay') {
-      return this.relayRpc<ReceiptData>(RELAY_ACTIONS.TRANSACTIONS_RECEIPT, {
-        sale_id: saleId,
-      });
-    }
-    return this.get<ReceiptData>(
-      `${API_ENDPOINTS.SALES_LIST}/${saleId}/receipt`,
-    );
+    return withReadRetry(() => {
+      if (this.mode === 'relay') {
+        // `id` alias mirrors the dispatcher placeholder for /api/v1/sales/{id}/receipt;
+        // see reference_marketplace_dispatcher_bug.md.
+        return this.relayRpc<ReceiptData>(RELAY_ACTIONS.TRANSACTIONS_RECEIPT, {
+          sale_id: saleId,
+          id: saleId,
+        });
+      }
+      return this.get<ReceiptData>(
+        `${API_ENDPOINTS.SALES_LIST}/${saleId}/receipt`,
+      );
+    });
   }
 
   // --- Customers ---
@@ -484,46 +524,72 @@ export class ApiClient {
     if (!trimmed) {
       return emptyPage<Customer>(page, 20);
     }
-    let raw: PaginatedResponse<unknown>;
-    if (this.mode === 'relay') {
-      raw = await this.relayRpc<PaginatedResponse<unknown>>(
-        RELAY_ACTIONS.CUSTOMERS_SEARCH,
-        {query: trimmed, term: trimmed, page},
-      );
-    } else {
-      raw = await this.get<PaginatedResponse<unknown>>(
-        `${API_ENDPOINTS.CUSTOMERS_SEARCH}?q=${encodeURIComponent(trimmed)}&page=${page}`,
-      );
-    }
-    return {
-      ...raw,
-      data: (raw.data || []).map(normalizeCustomer),
-    };
+    return withReadRetry(async () => {
+      let raw: PaginatedResponse<unknown>;
+      if (this.mode === 'relay') {
+        raw = await this.relayRpc<PaginatedResponse<unknown>>(
+          RELAY_ACTIONS.CUSTOMERS_SEARCH,
+          {query: trimmed, term: trimmed, page},
+        );
+      } else {
+        raw = await this.get<PaginatedResponse<unknown>>(
+          `${API_ENDPOINTS.CUSTOMERS_SEARCH}?q=${encodeURIComponent(trimmed)}&page=${page}`,
+        );
+      }
+      return {
+        ...raw,
+        data: (raw.data || []).map(normalizeCustomer),
+      };
+    });
   }
 
   async listCustomers(
     page = 1,
     perPage = 50,
   ): Promise<PaginatedResponse<Customer>> {
-    let raw: PaginatedResponse<unknown>;
-    if (this.mode === 'relay') {
-      raw = await this.relayRpc<PaginatedResponse<unknown>>(
-        RELAY_ACTIONS.CUSTOMERS_LIST,
-        {page, per_page: perPage},
-      );
-    } else {
-      const params = new URLSearchParams({
-        page: String(page),
-        per_page: String(perPage),
-      });
-      raw = await this.get<PaginatedResponse<unknown>>(
-        `${API_ENDPOINTS.CUSTOMERS_LIST}?${params}`,
-      );
-    }
-    return {
-      ...raw,
-      data: (raw.data || []).map(normalizeCustomer),
-    };
+    return withReadRetry(async () => {
+      let raw: PaginatedResponse<unknown>;
+      if (this.mode === 'relay') {
+        raw = await this.relayRpc<PaginatedResponse<unknown>>(
+          RELAY_ACTIONS.CUSTOMERS_LIST,
+          {page, per_page: perPage},
+        );
+      } else {
+        const params = new URLSearchParams({
+          page: String(page),
+          per_page: String(perPage),
+        });
+        raw = await this.get<PaginatedResponse<unknown>>(
+          `${API_ENDPOINTS.CUSTOMERS_LIST}?${params}`,
+        );
+      }
+      return {
+        ...raw,
+        data: (raw.data || []).map(normalizeCustomer),
+      };
+    });
+  }
+
+  async getCustomerDetail(customerId: number): Promise<Customer | null> {
+    return withReadRetry(async () => {
+      try {
+        let raw: unknown;
+        if (this.mode === 'relay') {
+          raw = await this.relayRpc<unknown>(
+            RELAY_ACTIONS.CUSTOMERS_DETAIL,
+            {customer_id: customerId, id: customerId},
+          );
+        } else {
+          raw = await this.get<unknown>(
+            `${API_ENDPOINTS.CUSTOMERS_LIST}/${customerId}`,
+          );
+        }
+        return raw == null ? null : normalizeCustomer(raw);
+      } catch (e) {
+        if (isNotFound(e, this.mode)) return null;
+        throw e;
+      }
+    });
   }
 
   // --- Internal HTTP methods ---
@@ -660,7 +726,20 @@ export class ApiClient {
       }
 
       if (!envelope) {
-        const err = new Error(`Relay request failed (${response.status})`);
+        // 502/503/504 with no envelope means the relay edge itself is
+        // unhealthy (gateway down, upstream timeout). The tech-flavoured
+        // "Relay request failed (502)" leaks implementation detail; show
+        // a friendlier copy for these specific transport states. Status
+        // remains attached so isRetryable still classifies correctly.
+        const isTransportFailure =
+          response.status === 502 ||
+          response.status === 503 ||
+          response.status === 504;
+        const err = new Error(
+          isTransportFailure
+            ? "Couldn't reach the server. Please try again."
+            : `Relay request failed (${response.status})`,
+        );
         (err as Error & {status?: number}).status = response.status;
         throw err;
       }
@@ -925,7 +1004,7 @@ export function normalizeCustomer(input: unknown): Customer {
     name: fullName,
     email: typeof raw.email === 'string' ? raw.email : null,
     phone: typeof raw.phone === 'string' ? raw.phone : null,
-    account_balance_cents: pickCents(
+    account_balance_cents: pickCentsOrNull(
       raw,
       'account_balance_cents',
       'account_balance',

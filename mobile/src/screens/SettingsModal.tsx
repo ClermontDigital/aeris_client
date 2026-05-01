@@ -14,6 +14,7 @@ import {
 import Modal from 'react-native-modal';
 import {useSettings} from '../hooks/useSettings';
 import {useAuthStore} from '../stores/authStore';
+import {useHaptics} from '../hooks/useHaptics';
 import {COLORS} from '../constants/theme';
 import type {ConnectionMode} from '../types/api.types';
 
@@ -24,6 +25,7 @@ interface Props {
 
 const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
   const {settings, saveSettings, testConnection} = useSettings();
+  const haptics = useHaptics();
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const clearLocalSession = useAuthStore(s => s.clearLocalSession);
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
@@ -33,6 +35,9 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
   );
   const [sessionTimeout, setSessionTimeout] = useState(settings.sessionTimeout);
   const [enableSessions, setEnableSessions] = useState(settings.enableSessionManagement);
+  const [hapticsEnabled, setHapticsEnabled] = useState(
+    settings.hapticsEnabled !== false,
+  );
 
   useEffect(() => {
     // Sync local form state when the modal opens or persisted settings
@@ -44,12 +49,14 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
     setMode(settings.connectionMode ?? 'direct');
     setSessionTimeout(settings.sessionTimeout);
     setEnableSessions(settings.enableSessionManagement);
+    setHapticsEnabled(settings.hapticsEnabled !== false);
   }, [
     settings.baseUrl,
     settings.relayUrl,
     settings.connectionMode,
     settings.sessionTimeout,
     settings.enableSessionManagement,
+    settings.hapticsEnabled,
     visible,
   ]);
 
@@ -76,6 +83,7 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
   };
 
   const handleSave = async () => {
+    haptics.selection();
     const fullBaseUrl = ensureProtocol(baseUrl);
     if (mode === 'direct' && !validateUrl(fullBaseUrl, 'Server URL')) return;
 
@@ -120,11 +128,13 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
       connectionMode: mode,
       sessionTimeout,
       enableSessionManagement: enableSessions,
+      hapticsEnabled,
     });
     onClose();
   };
 
   const handleLogout = () => {
+    haptics.light();
     Alert.alert('Log out', 'Are you sure you want to log out?', [
       {text: 'Cancel', style: 'cancel'},
       {
@@ -240,6 +250,11 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
           <View style={styles.switchRow}>
             <Text style={styles.label}>Session Management</Text>
             <Switch value={enableSessions} onValueChange={setEnableSessions} />
+          </View>
+
+          <View style={styles.switchRow}>
+            <Text style={styles.label}>Haptic Feedback</Text>
+            <Switch value={hapticsEnabled} onValueChange={setHapticsEnabled} />
           </View>
 
           <View style={styles.buttons}>

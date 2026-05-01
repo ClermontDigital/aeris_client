@@ -14,10 +14,10 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import {useProductCacheStore} from '../stores/productCacheStore';
+import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import type {Product, Category} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
@@ -28,6 +28,7 @@ const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
 
 export default function QuickSaleScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const haptics = useHaptics();
   const {addItem, getItemCount, getTotalCents} = useCartStore();
   const {
     products: cachedProducts,
@@ -105,10 +106,10 @@ export default function QuickSaleScreen() {
 
   const handleAddToCart = useCallback(
     (product: Product) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.light();
       addItem(product);
     },
-    [addItem],
+    [addItem, haptics],
   );
 
   const handleCategoryPress = useCallback((categoryId: number | null) => {
@@ -223,7 +224,10 @@ export default function QuickSaleScreen() {
         )}
         <TouchableOpacity
           style={styles.scanButton}
-          onPress={() => navigation.navigate('Scanner')}
+          onPress={() => {
+            haptics.light();
+            navigation.navigate('Scanner');
+          }}
           accessibilityRole="button"
           accessibilityLabel="Scan barcode">
           <Ionicons name="barcode" size={22} color={COLORS.cream} />

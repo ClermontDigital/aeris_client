@@ -11,9 +11,9 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
+import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
 import type {PaymentMethod} from '../types/api.types';
@@ -37,6 +37,7 @@ interface SaleResult {
 
 export default function CheckoutScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const haptics = useHaptics();
   const {items, customerId, discountCents, notes, getTotalCents, getItemCount, clear} =
     useCartStore();
 
@@ -80,6 +81,7 @@ export default function CheckoutScreen() {
   const handleCompleteSale = useCallback(async () => {
     if (!selectedMethod) return;
 
+    haptics.medium();
     setIsSubmitting(true);
     setError(null);
 
@@ -106,15 +108,16 @@ export default function CheckoutScreen() {
         notes: notes || undefined,
       });
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       setSaleResult(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sale failed';
+      haptics.error();
       setError(msg);
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedMethod, items, totalCents, customerId, discountCents, notes]);
+  }, [selectedMethod, items, totalCents, customerId, discountCents, notes, haptics]);
 
   const handlePrintReceipt = useCallback(async () => {
     if (!saleResult) return;
