@@ -5,7 +5,8 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
 import DashboardScreen from '../screens/DashboardScreen';
 import QuickSaleStack from './QuickSaleStack';
-import BarcodeScannerScreen from '../screens/BarcodeScannerScreen';
+import ItemsScreen from '../screens/ItemsScreen';
+import CustomersScreen from '../screens/CustomersScreen';
 import TransactionsStack from './TransactionsStack';
 import ERPScreen from '../screens/ERPScreen';
 import {useSettingsStore} from '../stores/settingsStore';
@@ -66,11 +67,20 @@ const AppTabs: React.FC = () => {
         }}
       />
       <Tab.Screen
-        name="Scanner"
-        component={BarcodeScannerScreen}
+        name="Items"
+        component={ItemsScreen}
         options={{
           tabBarIcon: ({color, size}) => (
-            <Ionicons name="barcode" size={size} color={color} />
+            <Ionicons name="cube" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Customers"
+        component={CustomersScreen}
+        options={{
+          tabBarIcon: ({color, size}) => (
+            <Ionicons name="people" size={size} color={color} />
           ),
         }}
       />

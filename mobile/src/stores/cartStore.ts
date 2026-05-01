@@ -95,12 +95,17 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   getTaxCents: () => {
+    // Aeris2's ProductResource emits tax_rate as a *percentage* number
+    // (e.g. `tax_rate: 10` for 10% GST). The cart math needs a decimal
+    // multiplier, hence /100. Without this divide, a $10 item with 10%
+    // GST computes to $100 of tax instead of $1.
     return get().items.reduce(
       (sum, item) =>
         sum +
         Math.round(
-          (item.unit_price_cents * item.quantity - item.discount_cents) *
-            item.product.tax_rate,
+          ((item.unit_price_cents * item.quantity - item.discount_cents) *
+            item.product.tax_rate) /
+            100,
         ),
       0,
     );
