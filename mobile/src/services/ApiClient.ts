@@ -484,15 +484,46 @@ export class ApiClient {
     if (!trimmed) {
       return emptyPage<Customer>(page, 20);
     }
+    let raw: PaginatedResponse<unknown>;
     if (this.mode === 'relay') {
-      return this.relayRpc<PaginatedResponse<Customer>>(
+      raw = await this.relayRpc<PaginatedResponse<unknown>>(
         RELAY_ACTIONS.CUSTOMERS_SEARCH,
-        {query: trimmed, page},
+        {query: trimmed, term: trimmed, page},
+      );
+    } else {
+      raw = await this.get<PaginatedResponse<unknown>>(
+        `${API_ENDPOINTS.CUSTOMERS_SEARCH}?q=${encodeURIComponent(trimmed)}&page=${page}`,
       );
     }
-    return this.get<PaginatedResponse<Customer>>(
-      `${API_ENDPOINTS.CUSTOMERS_SEARCH}?q=${encodeURIComponent(trimmed)}&page=${page}`,
-    );
+    return {
+      ...raw,
+      data: (raw.data || []).map(normalizeCustomer),
+    };
+  }
+
+  async listCustomers(
+    page = 1,
+    perPage = 50,
+  ): Promise<PaginatedResponse<Customer>> {
+    let raw: PaginatedResponse<unknown>;
+    if (this.mode === 'relay') {
+      raw = await this.relayRpc<PaginatedResponse<unknown>>(
+        RELAY_ACTIONS.CUSTOMERS_LIST,
+        {page, per_page: perPage},
+      );
+    } else {
+      const params = new URLSearchParams({
+        page: String(page),
+        per_page: String(perPage),
+      });
+      raw = await this.get<PaginatedResponse<unknown>>(
+        `${API_ENDPOINTS.CUSTOMERS_LIST}?${params}`,
+      );
+    }
+    return {
+      ...raw,
+      data: (raw.data || []).map(normalizeCustomer),
+    };
   }
 
   // --- Internal HTTP methods ---
@@ -873,6 +904,32 @@ export function normalizeProduct(input: unknown): Product {
     category_name: categoryName,
     image_url: typeof raw.image_url === 'string' ? raw.image_url : null,
     is_active: isActive,
+  };
+}
+
+// Aeris2's CustomerResource emits first_name/last_name + email/phone +
+// account-balance fields. Mobile expects a single `name`, plus
+// account_balance_cents. Build a flat shape on the way in so screens
+// don't have to know about the wire variation.
+export function normalizeCustomer(input: unknown): Customer {
+  const raw = (input || {}) as Record<string, unknown>;
+  const fullName =
+    typeof raw.name === 'string' && raw.name.trim() !== ''
+      ? raw.name
+      : [raw.first_name, raw.last_name]
+          .filter(p => typeof p === 'string' && (p as string).trim() !== '')
+          .join(' ')
+          .trim();
+  return {
+    id: asNumber(raw.id),
+    name: fullName,
+    email: typeof raw.email === 'string' ? raw.email : null,
+    phone: typeof raw.phone === 'string' ? raw.phone : null,
+    account_balance_cents: pickCents(
+      raw,
+      'account_balance_cents',
+      'account_balance',
+    ),
   };
 }
 

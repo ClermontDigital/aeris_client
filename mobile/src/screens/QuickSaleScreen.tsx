@@ -11,6 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {Ionicons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import * as Haptics from 'expo-haptics';
@@ -203,7 +204,7 @@ export default function QuickSaleScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
-      {/* Search Bar */}
+      {/* Search Bar + Scan shortcut */}
       <View style={styles.searchContainer}>
         <Text style={styles.searchIcon}>Search</Text>
         <TextInput
@@ -220,6 +221,13 @@ export default function QuickSaleScreen() {
             <Text style={styles.clearButton}>Clear</Text>
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          style={styles.scanButton}
+          onPress={() => navigation.navigate('Scanner')}
+          accessibilityRole="button"
+          accessibilityLabel="Scan barcode">
+          <Ionicons name="barcode" size={22} color={COLORS.cream} />
+        </TouchableOpacity>
       </View>
 
       {/* Category Pills */}
@@ -308,6 +316,16 @@ const styles = StyleSheet.create({
     color: COLORS.accent,
     fontSize: FONT_SIZE.sm,
     paddingLeft: SPACING.sm,
+  },
+  scanButton: {
+    // Apple HIG minimum tap target is 44×44.
+    width: 44,
+    height: 44,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.crimson,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: SPACING.sm,
   },
   categoryStrip: {
     maxHeight: 48,

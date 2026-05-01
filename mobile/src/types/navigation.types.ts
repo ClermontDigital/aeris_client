@@ -13,13 +13,15 @@ export type AuthStackParamList = {
 export type AppTabParamList = {
   Dashboard: undefined;
   QuickSale: undefined;
-  Scanner: undefined;
+  Items: undefined;
+  Customers: undefined;
   Transactions: undefined;
   ERP: undefined;
 };
 
 export type QuickSaleStackParamList = {
   ProductGrid: undefined;
+  Scanner: undefined;
   Cart: undefined;
   Checkout: undefined;
 };

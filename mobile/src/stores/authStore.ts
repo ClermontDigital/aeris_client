@@ -1,14 +1,15 @@
 import {create} from 'zustand';
 import ApiClient, {RelayError} from '../services/ApiClient';
 import {SecureStorage} from '../services/StorageService';
-import {BACKGROUND_LOCK_MS} from '../constants/config';
 import type {User} from '../types/api.types';
 
 const AUTH_TOKEN_KEY = 'aeris_auth_token';
 const AUTH_USER_KEY = 'aeris_auth_user';
 const AUTH_EXPIRES_KEY = 'aeris_auth_expires_at';
-const AUTH_BACKGROUNDED_AT_KEY = 'aeris_auth_backgrounded_at';
-const AUTO_LOCK_MESSAGE = 'Auto-locked due to inactivity. Please log in again.';
+// Legacy key from the (now-removed) background auto-lock feature. Cleaned
+// up opportunistically on logout / clearLocalSession / token-missing
+// restore so a stale stamp left over from an older build doesn't bleed.
+const LEGACY_BACKGROUNDED_AT_KEY = 'aeris_auth_backgrounded_at';
 
 interface AuthState {
   user: User | null;
@@ -22,31 +23,10 @@ interface AuthState {
   logout: () => Promise<void>;
   restoreSession: () => Promise<void>;
   clearLocalSession: () => Promise<void>;
-  markBackgrounded: () => Promise<void>;
-  evaluateBackgroundLock: () => Promise<void>;
   clearError: () => void;
 }
 
-function isExpired(expiresAt: string | null): boolean {
-  if (!expiresAt) return false;
-  const ts = Date.parse(expiresAt);
-  if (Number.isNaN(ts)) return false;
-  return ts <= Date.now();
-}
-
-// Read + clear the background-stamp. Returns true if the stamp existed and
-// represents a window longer than BACKGROUND_LOCK_MS — i.e. the session
-// should be locked on resume / cold-boot.
-async function readAndClearBackgroundLock(): Promise<boolean> {
-  const stamp = await SecureStorage.getItem(AUTH_BACKGROUNDED_AT_KEY);
-  if (!stamp) return false;
-  await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
-  const ts = parseInt(stamp, 10);
-  if (Number.isNaN(ts)) return false;
-  return Date.now() - ts > BACKGROUND_LOCK_MS;
-}
-
-export const useAuthStore = create<AuthState>((set, get) => ({
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
   expiresAt: null,
@@ -62,6 +42,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       ApiClient.setAuthToken(access_token);
       await SecureStorage.setItem(AUTH_TOKEN_KEY, access_token);
       await SecureStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+      // expires_at is persisted for read-back / display purposes only —
+      // it is NOT acted on locally. The session stays live until the user
+      // explicitly logs out or the API returns 401 (handled below via
+      // ApiClient.setOnUnauthorized → clearLocalSession). Honoring
+      // expires_at here would preempt the API and produce surprise
+      // logouts; the API is the source of truth for token validity.
       if (expires_at) {
         await SecureStorage.setItem(AUTH_EXPIRES_KEY, expires_at);
       } else {
@@ -108,7 +94,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStorage.removeItem(AUTH_TOKEN_KEY);
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
-    await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
+    await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
     set({
       user: null,
       token: null,
@@ -118,15 +104,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  // Wipes local auth state without calling the server. Used when the
-  // server has already invalidated the session (401) so we don't loop
-  // back through ApiClient.logout() which would just 401 again.
+  // Wipes local auth state without calling the server. Triggered when the
+  // API rejects the token (HTTP 401) so we don't loop back through
+  // ApiClient.logout() which would just 401 again. This is the ONLY
+  // automatic session-wipe path — there is no background-timeout, no
+  // expires_at preempt, no inactivity lock. The session stays live until
+  // either (a) the user taps Logout, or (b) the API says 401 here.
   clearLocalSession: async () => {
     ApiClient.setAuthToken(null);
     await SecureStorage.removeItem(AUTH_TOKEN_KEY);
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
-    await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
+    await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
     set({
       user: null,
       token: null,
@@ -134,29 +123,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isAuthenticated: false,
       error: 'Your session has expired. Please log in again.',
     });
-  },
-
-  // Stamp the background-entered timestamp so a subsequent resume / cold-boot
-  // can decide whether to auto-lock. No-op if not authenticated (nothing to
-  // lock). Stored in SecureStorage to survive iOS killing the suspended app.
-  markBackgrounded: async () => {
-    if (!get().isAuthenticated) return;
-    try {
-      await SecureStorage.setItem(AUTH_BACKGROUNDED_AT_KEY, String(Date.now()));
-    } catch (e) {
-      console.warn('Failed to stamp background timestamp:', e);
-    }
-  },
-
-  // Called on resume from background. If the stamp exists and is older than
-  // BACKGROUND_LOCK_MS, drops the local session and routes the user back to
-  // LoginScreen. Cold-boot path is handled inside restoreSession().
-  evaluateBackgroundLock: async () => {
-    if (!get().isAuthenticated) return;
-    if (await readAndClearBackgroundLock()) {
-      await get().clearLocalSession();
-      set({error: AUTO_LOCK_MESSAGE});
-    }
   },
 
   restoreSession: async () => {
@@ -167,32 +133,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const expiresAt = await SecureStorage.getItem(AUTH_EXPIRES_KEY);
 
       if (!token || !userJson) {
-        // Nothing to restore — also clear any orphaned background stamp.
-        await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
+        // Nothing to restore — also drop any orphaned legacy stamps from
+        // older builds.
+        await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
         set({isLoading: false});
         return;
       }
 
-      if (isExpired(expiresAt)) {
-        await SecureStorage.removeItem(AUTH_TOKEN_KEY);
-        await SecureStorage.removeItem(AUTH_USER_KEY);
-        await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
-        await SecureStorage.removeItem(AUTH_BACKGROUNDED_AT_KEY);
-        set({isLoading: false});
-        return;
-      }
-
-      // Background-lock check: if iOS killed the app while suspended and the
-      // user is reopening after the lock window, drop the session here so
-      // the in-process AppState handler isn't required for correctness.
-      if (await readAndClearBackgroundLock()) {
-        await SecureStorage.removeItem(AUTH_TOKEN_KEY);
-        await SecureStorage.removeItem(AUTH_USER_KEY);
-        await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
-        set({isLoading: false, error: AUTO_LOCK_MESSAGE});
-        return;
-      }
-
+      // Restore the session as-is — we deliberately do NOT check
+      // expires_at or any other "is this token still valid" heuristic.
+      // The next API call will tell us via 401 if the deployment has
+      // invalidated the token, and the onUnauthorized handler will route
+      // the user back to login at that moment. This matches the policy
+      // "stay logged in until logout or API rejection".
       const user = JSON.parse(userJson) as User;
       ApiClient.setAuthToken(token);
       set({
@@ -202,6 +155,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAuthenticated: true,
         isLoading: false,
       });
+      // Best-effort cleanup of legacy stamp.
+      SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY).catch(() => {});
     } catch {
       set({isLoading: false});
     }
