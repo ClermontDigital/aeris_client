@@ -120,7 +120,7 @@ export interface Customer {
   name: string;
   email: string | null;
   phone: string | null;
-  account_balance_cents: number;
+  account_balance_cents: number | null;
 }
 
 export interface DailySummary {

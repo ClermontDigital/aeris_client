@@ -13,6 +13,7 @@ import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
+import {useHaptics} from '../hooks/useHaptics';
 import type {Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 
@@ -68,6 +69,7 @@ function getStatusColor(status: Sale['status']): string {
 
 export default function TransactionListScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const haptics = useHaptics();
 
   const [transactions, setTransactions] = useState<Sale[]>([]);
   const [dateFilter, setDateFilter] = useState<DateFilter>('today');
@@ -130,16 +132,21 @@ export default function TransactionListScreen() {
     }
   }, [isLoadingMore, page, lastPage, fetchTransactions]);
 
-  const handleFilterChange = useCallback((filter: DateFilter) => {
-    setDateFilter(filter);
-    setPage(1);
-  }, []);
+  const handleFilterChange = useCallback(
+    (filter: DateFilter) => {
+      haptics.selection();
+      setDateFilter(filter);
+      setPage(1);
+    },
+    [haptics],
+  );
 
   const handleRowPress = useCallback(
     (sale: Sale) => {
-      navigation.navigate('Receipt', {saleId: sale.id});
+      haptics.light();
+      navigation.navigate('SaleDetail', {saleId: sale.id});
     },
-    [navigation],
+    [navigation, haptics],
   );
 
   const renderTransaction = ({item}: {item: Sale}) => (

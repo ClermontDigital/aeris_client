@@ -14,6 +14,7 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
+import {useHaptics} from '../hooks/useHaptics';
 import type {CartItem} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
 
@@ -23,6 +24,7 @@ const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
 
 export default function CartScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const haptics = useHaptics();
   const {
     items,
     discountCents,
@@ -55,8 +57,9 @@ export default function CartScreen() {
   }, [clear]);
 
   const handleCheckout = useCallback(() => {
+    haptics.medium();
     navigation.navigate('Checkout');
-  }, [navigation]);
+  }, [navigation, haptics]);
 
   const handleBackToProducts = useCallback(() => {
     // Pop back if we have history (came from ProductGrid → Cart navigate),
@@ -102,23 +105,28 @@ export default function CartScreen() {
         <View style={styles.quantityStepper}>
           <TouchableOpacity
             style={styles.stepperButton}
-            onPress={() =>
-              updateQuantity(item.product.id, item.quantity - 1)
-            }>
+            onPress={() => {
+              haptics.light();
+              updateQuantity(item.product.id, item.quantity - 1);
+            }}>
             <Text style={styles.stepperButtonText}>-</Text>
           </TouchableOpacity>
           <Text style={styles.quantityText}>{item.quantity}</Text>
           <TouchableOpacity
             style={styles.stepperButton}
-            onPress={() =>
-              updateQuantity(item.product.id, item.quantity + 1)
-            }>
+            onPress={() => {
+              haptics.light();
+              updateQuantity(item.product.id, item.quantity + 1);
+            }}>
             <Text style={styles.stepperButtonText}>+</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity
           style={styles.deleteButton}
-          onPress={() => handleSwipeDelete(item.product.id)}>
+          onPress={() => {
+            haptics.light();
+            handleSwipeDelete(item.product.id);
+          }}>
           <Text style={styles.deleteButtonText}>X</Text>
         </TouchableOpacity>
       </View>

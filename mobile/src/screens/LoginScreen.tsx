@@ -15,6 +15,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useAuthStore} from '../stores/authStore';
 import {useSettingsStore} from '../stores/settingsStore';
+import {useHaptics} from '../hooks/useHaptics';
 import SettingsModal from './SettingsModal';
 import {SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {validateWorkspaceCode} from '../constants/config';
@@ -47,6 +48,7 @@ const LoginScreen: React.FC = () => {
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
+  const haptics = useHaptics();
   const login = useAuthStore(s => s.login);
   const isLoading = useAuthStore(s => s.isLoading);
   const error = useAuthStore(s => s.error);
@@ -76,6 +78,7 @@ const LoginScreen: React.FC = () => {
       : null;
 
   const handleSignIn = useCallback(async () => {
+    haptics.medium();
     if (!email.trim() || !password.trim()) return;
     if (connectionMode === 'relay') {
       const err = validateWorkspaceCode(workspace.trim().toLowerCase());
@@ -90,7 +93,7 @@ const LoginScreen: React.FC = () => {
     } catch {
       // Error is set in the store
     }
-  }, [email, password, login, connectionMode, workspace, persistWorkspace]);
+  }, [email, password, login, connectionMode, workspace, persistWorkspace, haptics]);
 
   const handleEmailChange = useCallback(
     (text: string) => {
