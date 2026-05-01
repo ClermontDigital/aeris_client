@@ -325,7 +325,7 @@ export class ApiClient {
             `${API_ENDPOINTS.PRODUCTS_BARCODE}/${encodeURIComponent(barcode)}`,
           );
         }
-        return raw == null ? null : normalizeProductDetail(raw);
+        return raw == null ? null : normalizeProductDetail(unwrapResource(raw));
       } catch (e) {
         if (isNotFound(e, this.mode)) return null;
         throw e;
@@ -347,7 +347,7 @@ export class ApiClient {
             `${API_ENDPOINTS.POS_PRODUCTS}/${productId}`,
           );
         }
-        return raw == null ? null : normalizeProductDetail(raw);
+        return raw == null ? null : normalizeProductDetail(unwrapResource(raw));
       } catch (e) {
         if (isNotFound(e, this.mode)) return null;
         throw e;
@@ -419,14 +419,25 @@ export class ApiClient {
     let lastError: unknown;
     for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
       try {
+        // Aeris2's POSController::store wraps the created sale in a Resource,
+        // so the body is `{data: {sale_id, ...}}`. Unwrap to match the
+        // declared return shape; otherwise the success view renders an
+        // undefined sale_number / total_cents.
+        let result: unknown;
         if (this.mode === 'relay') {
-          return await this.relayRpc(RELAY_ACTIONS.SALE_CREATE, data, {
+          result = await this.relayRpc(RELAY_ACTIONS.SALE_CREATE, data, {
+            idempotencyKey,
+          });
+        } else {
+          result = await this.post(API_ENDPOINTS.POS_SALES, data, {
             idempotencyKey,
           });
         }
-        return await this.post(API_ENDPOINTS.POS_SALES, data, {
-          idempotencyKey,
-        });
+        return unwrapResource<{
+          sale_id: number;
+          sale_number: string;
+          total_cents: number;
+        }>(result);
       } catch (e) {
         lastError = e;
         if (
@@ -491,7 +502,7 @@ export class ApiClient {
             `${API_ENDPOINTS.SALES_LIST}/${saleId}`,
           );
         }
-        return normalizeSaleDetail(raw);
+        return normalizeSaleDetail(unwrapResource(raw));
       } catch (e) {
         if (isNotFound(e, this.mode)) return null;
         throw e;
@@ -500,18 +511,21 @@ export class ApiClient {
   }
 
   async getReceipt(saleId: number): Promise<ReceiptData> {
-    return withReadRetry(() => {
+    return withReadRetry(async () => {
+      let raw: unknown;
       if (this.mode === 'relay') {
         // `id` alias mirrors the dispatcher placeholder for /api/v1/sales/{id}/receipt;
         // see reference_marketplace_dispatcher_bug.md.
-        return this.relayRpc<ReceiptData>(RELAY_ACTIONS.TRANSACTIONS_RECEIPT, {
+        raw = await this.relayRpc<unknown>(RELAY_ACTIONS.TRANSACTIONS_RECEIPT, {
           sale_id: saleId,
           id: saleId,
         });
+      } else {
+        raw = await this.get<unknown>(
+          `${API_ENDPOINTS.SALES_LIST}/${saleId}/receipt`,
+        );
       }
-      return this.get<ReceiptData>(
-        `${API_ENDPOINTS.SALES_LIST}/${saleId}/receipt`,
-      );
+      return unwrapResource<ReceiptData>(raw);
     });
   }
 
@@ -584,7 +598,7 @@ export class ApiClient {
             `${API_ENDPOINTS.CUSTOMERS_LIST}/${customerId}`,
           );
         }
-        return raw == null ? null : normalizeCustomer(raw);
+        return raw == null ? null : normalizeCustomer(unwrapResource(raw));
       } catch (e) {
         if (isNotFound(e, this.mode)) return null;
         throw e;
@@ -790,6 +804,27 @@ function emptyPage<T>(page: number, perPage: number): PaginatedResponse<T> {
     data: [],
     meta: {current_page: page, last_page: 1, per_page: perPage, total: 0},
   };
+}
+
+// Aeris2's controllers wrap single-resource responses in `{data: {...}}` via
+// Laravel's API Resource convention. The relay envelope unwraps to expose
+// that body verbatim, so mobile sees `{data: {...}}` instead of the bare
+// resource. Detail screens that read `raw.id`/`raw.name`/etc. would render
+// empty fields without this. Lists are not affected — paginated bodies are
+// `{data: [...], meta}` and the call sites already index into `.data`.
+function unwrapResource<T = unknown>(result: unknown): T {
+  if (
+    result &&
+    typeof result === 'object' &&
+    !Array.isArray(result) &&
+    'data' in result
+  ) {
+    const inner = (result as {data: unknown}).data;
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      return inner as T;
+    }
+  }
+  return result as T;
 }
 
 // Aeris2 may emit either dollars (`total_amount`) or cents (`total_cents`);
