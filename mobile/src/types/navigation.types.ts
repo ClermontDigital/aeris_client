@@ -28,7 +28,18 @@ export type QuickSaleStackParamList = {
 
 export type TransactionsStackParamList = {
   TransactionList: undefined;
+  SaleDetail: {saleId: number};
   Receipt: {saleId: number};
+};
+
+export type ItemsStackParamList = {
+  ItemsList: undefined;
+  ProductDetail: {productId: number};
+};
+
+export type CustomersStackParamList = {
+  CustomersList: undefined;
+  CustomerDetail: {customerId: number};
 };
 
 // Screen prop types

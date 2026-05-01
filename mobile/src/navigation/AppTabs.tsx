@@ -1,16 +1,18 @@
-import React from 'react';
-import {View, StyleSheet} from 'react-native';
+import React, {useState} from 'react';
+import {View, StyleSheet, TouchableOpacity} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
 import DashboardScreen from '../screens/DashboardScreen';
 import QuickSaleStack from './QuickSaleStack';
-import ItemsScreen from '../screens/ItemsScreen';
-import CustomersScreen from '../screens/CustomersScreen';
+import ItemsStack from './ItemsStack';
+import CustomersStack from './CustomersStack';
 import TransactionsStack from './TransactionsStack';
 import ERPScreen from '../screens/ERPScreen';
+import SettingsModal from '../screens/SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
+import {useHaptics} from '../hooks/useHaptics';
 import {COLORS} from '../constants/theme';
 import type {AppTabParamList} from '../types/navigation.types';
 
@@ -26,6 +28,8 @@ const AppTabs: React.FC = () => {
   // NSURLErrorDomain -1004 if they tap it expecting the tab to work.
   const {isServerReachable} = useNetworkStatus(baseUrl);
   const showErpTab = connectionMode !== 'relay' || isServerReachable;
+  const haptics = useHaptics();
+  const [settingsVisible, setSettingsVisible] = useState(false);
 
   return (
     <View style={styles.root}>
@@ -35,7 +39,22 @@ const AppTabs: React.FC = () => {
           three surfaces read as one product. The screens below render with
           their own cream SafeAreaView; the top inset is consumed here so
           they don't double-pad. */}
-      <SafeAreaView edges={['top']} style={styles.topBar} />
+      <SafeAreaView edges={['top']} style={styles.topBar}>
+        <View style={styles.topBarRow}>
+          <View style={styles.topBarSpacer} />
+          <TouchableOpacity
+            onPress={() => {
+              haptics.light();
+              setSettingsVisible(true);
+            }}
+            style={styles.gearBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+            <Ionicons name="settings-outline" size={22} color={COLORS.cream} />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
       <Tab.Navigator
       initialRouteName="Dashboard"
       screenOptions={{
@@ -68,7 +87,7 @@ const AppTabs: React.FC = () => {
       />
       <Tab.Screen
         name="Items"
-        component={ItemsScreen}
+        component={ItemsStack}
         options={{
           tabBarIcon: ({color, size}) => (
             <Ionicons name="cube" size={size} color={color} />
@@ -77,7 +96,7 @@ const AppTabs: React.FC = () => {
       />
       <Tab.Screen
         name="Customers"
-        component={CustomersScreen}
+        component={CustomersStack}
         options={{
           tabBarIcon: ({color, size}) => (
             <Ionicons name="people" size={size} color={color} />
@@ -106,6 +125,10 @@ const AppTabs: React.FC = () => {
         />
       )}
       </Tab.Navigator>
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+      />
     </View>
   );
 };
@@ -113,6 +136,19 @@ const AppTabs: React.FC = () => {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.navy},
   topBar: {backgroundColor: COLORS.navy},
+  topBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+  },
+  topBarSpacer: {flex: 1},
+  gearBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingRight: 16,
+  },
 });
 
 export default AppTabs;

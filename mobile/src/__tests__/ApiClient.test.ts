@@ -52,7 +52,12 @@ describe('ApiClient', () => {
     });
 
     it('throws on non-404 errors from getProductByBarcode', async () => {
-      fetchMock.mockResolvedValueOnce(jsonResponse({message: 'oops'}, 500));
+      // Idempotent reads now retry once on transient 5xx. Use
+      // mockImplementation so each retry gets a fresh Response — Response
+      // bodies can only be read once.
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(jsonResponse({message: 'oops'}, 500)),
+      );
       await expect(client.getProductByBarcode('123')).rejects.toThrow(
         /Request failed \(500\)/,
       );
@@ -130,12 +135,17 @@ describe('ApiClient', () => {
     });
 
     it('throws RelayError(TIMEOUT) on timeout envelope', async () => {
-      fetchMock.mockResolvedValueOnce(
-        jsonResponse({
-          correlation_id: 'cid-4',
-          action: 'dashboard.summary',
-          status: 'timeout',
-        }),
+      // Idempotent reads now retry once on TIMEOUT envelopes. Use
+      // mockImplementation so each retry gets a fresh Response — Response
+      // bodies can only be read once.
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse({
+            correlation_id: 'cid-4',
+            action: 'dashboard.summary',
+            status: 'timeout',
+          }),
+        ),
       );
 
       try {

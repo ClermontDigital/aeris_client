@@ -13,6 +13,7 @@ import {useIsFocused} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useCartStore} from '../stores/cartStore';
+import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import type {Product, ProductDetail} from '../types/api.types';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
@@ -35,6 +36,7 @@ const BarcodeScannerScreen: React.FC = () => {
 
   const getByBarcode = useProductCacheStore(s => s.getByBarcode);
   const addItem = useCartStore(s => s.addItem);
+  const haptics = useHaptics();
 
   const lookupBarcode = useCallback(
     async (barcode: string) => {
@@ -62,6 +64,7 @@ const BarcodeScannerScreen: React.FC = () => {
       if (cached) {
         setScannedProduct(cached);
         setIsLookingUp(false);
+        haptics.success();
         refreshStock(cached.id);
         return;
       }
@@ -71,17 +74,20 @@ const BarcodeScannerScreen: React.FC = () => {
         const product = await ApiClient.getProductByBarcode(barcode);
         if (product) {
           setScannedProduct(product);
+          haptics.success();
           refreshStock(product.id);
         } else {
           setNotFound(true);
+          haptics.error();
         }
       } catch {
         setNotFound(true);
+        haptics.error();
       } finally {
         setIsLookingUp(false);
       }
     },
-    [getByBarcode, isLookingUp, scanLock],
+    [getByBarcode, isLookingUp, scanLock, haptics],
   );
 
   const handleBarcodeScanned = useCallback(

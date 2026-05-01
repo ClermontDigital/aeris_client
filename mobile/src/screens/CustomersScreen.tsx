@@ -11,9 +11,15 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
+import {useNavigation} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
+import {useHaptics} from '../hooks/useHaptics';
 import type {Customer} from '../types/api.types';
+import type {CustomersStackParamList} from '../types/navigation.types';
+
+type Nav = NativeStackNavigationProp<CustomersStackParamList>;
 
 const PER_PAGE = 50;
 
@@ -39,6 +45,8 @@ function localFilter(items: Customer[], q: string): Customer[] {
 }
 
 const CustomersScreen: React.FC = () => {
+  const navigation = useNavigation<Nav>();
+  const haptics = useHaptics();
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<Customer[]>([]);
   const [page, setPage] = useState(1);
@@ -97,7 +105,13 @@ const CustomersScreen: React.FC = () => {
   const visible = useMemo(() => localFilter(items, search), [items, search]);
 
   const renderItem = ({item}: {item: Customer}) => (
-    <View style={styles.row}>
+    <TouchableOpacity
+      style={styles.row}
+      activeOpacity={0.7}
+      onPress={() => {
+        haptics.light();
+        navigation.navigate('CustomerDetail', {customerId: item.id});
+      }}>
       <View style={styles.rowLeft}>
         <Text style={styles.rowName} numberOfLines={1}>
           {item.name || '(unnamed)'}
@@ -107,16 +121,26 @@ const CustomersScreen: React.FC = () => {
         </Text>
       </View>
       <View style={styles.rowRight}>
-        <Text
-          style={[
-            styles.rowBalance,
-            item.account_balance_cents > 0 && styles.rowBalanceOwed,
-          ]}>
-          {formatCurrency(item.account_balance_cents)}
-        </Text>
-        <Text style={styles.rowBalanceLabel}>balance</Text>
+        {item.account_balance_cents != null ? (
+          <View style={styles.balanceCol}>
+            <Text
+              style={[
+                styles.rowBalance,
+                item.account_balance_cents > 0 && styles.rowBalanceOwed,
+              ]}>
+              {formatCurrency(item.account_balance_cents)}
+            </Text>
+            <Text style={styles.rowBalanceLabel}>balance</Text>
+          </View>
+        ) : null}
+        <Ionicons
+          name="chevron-forward"
+          size={18}
+          color={COLORS.textMuted}
+          style={styles.chevron}
+        />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderFooter = () => {
@@ -273,7 +297,9 @@ const styles = StyleSheet.create({
   rowLeft: {flex: 1, marginRight: SPACING.md},
   rowName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
   rowMeta: {color: COLORS.textMuted, fontSize: FONT_SIZE.xs, marginTop: 2},
-  rowRight: {alignItems: 'flex-end'},
+  rowRight: {flexDirection: 'row', alignItems: 'center'},
+  balanceCol: {alignItems: 'flex-end'},
+  chevron: {marginLeft: SPACING.sm},
   rowBalance: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
   rowBalanceOwed: {color: COLORS.crimson},
   rowBalanceLabel: {

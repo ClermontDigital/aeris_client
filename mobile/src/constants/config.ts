@@ -11,6 +11,7 @@ export const DEFAULT_CONFIG = {
   pinLockoutDuration: 5 * 60 * 1000, // 5 minutes
   sessionCleanupDays: 3,
   enableSessionManagement: false,
+  hapticsEnabled: true,
 };
 
 export const STORAGE_KEYS = {

@@ -12,6 +12,7 @@ jest.mock('expo-crypto', () => {
   return {
     getRandomBytes: (count: number) => mockCryptoModule.randomBytes(count),
     getRandomValues: (arr: any) => mockCryptoModule.randomFillSync(arr),
+    randomUUID: () => mockCryptoModule.randomUUID(),
     digestStringAsync: jest.fn((_algo: string, data: string) => {
       return Promise.resolve(
         mockCryptoModule.createHash('sha256').update(data).digest('hex')
