@@ -10,6 +10,7 @@ export const API_ENDPOINTS = {
   PRODUCTS_BARCODE: '/api/v1/products/barcode',
   PRODUCTS_CATEGORIES: '/api/v1/products/categories',
   SALES_LIST: '/api/v1/sales',
+  CUSTOMERS_LIST: '/api/v1/customers',
   CUSTOMERS_SEARCH: '/api/v1/customers/search',
 } as const;
 
@@ -28,6 +29,8 @@ export const RELAY_ACTIONS = {
   TRANSACTIONS_LIST: 'transactions.list',
   TRANSACTIONS_DETAIL: 'transactions.detail',
   TRANSACTIONS_RECEIPT: 'transactions.receipt',
+  CUSTOMERS_LIST: 'customers.list',
   CUSTOMERS_SEARCH: 'customers.search',
+  CUSTOMERS_DETAIL: 'customers.detail',
   INVENTORY_STOCK: 'inventory.stock',
 } as const;
