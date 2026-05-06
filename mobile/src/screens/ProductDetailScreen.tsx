@@ -69,7 +69,13 @@ export default function ProductDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.center}>
-          <Text style={styles.errorTitle}>Detail view is not available yet</Text>
+          <Ionicons
+            name="cloud-offline-outline"
+            size={36}
+            color={COLORS.textDim}
+            style={styles.errorIcon}
+          />
+          <Text style={styles.errorTitle}>Detail view not available</Text>
           <Text style={styles.errorBody}>
             We couldn&apos;t load this item right now. Please try again in a
             moment.
@@ -98,6 +104,12 @@ export default function ProductDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.center}>
+          <Ionicons
+            name="search-outline"
+            size={36}
+            color={COLORS.textDim}
+            style={styles.errorIcon}
+          />
           <Text style={styles.errorTitle}>Item not found</Text>
           <TouchableOpacity
             onPress={() => {
@@ -112,17 +124,58 @@ export default function ProductDetailScreen() {
   }
 
   const stockLevels = product.stock_levels ?? [];
+  const totalOnHand = product.stock_on_hand ?? 0;
+  const stockTone =
+    totalOnHand <= 0
+      ? styles.stockOut
+      : totalOnHand < 5
+      ? styles.stockLow
+      : styles.stockOk;
+  const stockLabel =
+    totalOnHand <= 0 ? 'Out of stock' : totalOnHand < 5 ? 'Low stock' : 'In stock';
+
+  // Margin = (price - cost) / price. Only meaningful when both > 0; we hide
+  // the row otherwise so we don't render "100%" or "Infinity%" for free items.
+  const marginPct =
+    product.cost_cents != null &&
+    product.cost_cents >= 0 &&
+    product.price_cents > 0
+      ? Math.round(
+          ((product.price_cents - product.cost_cents) / product.price_cents) *
+            100,
+        )
+      : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.card}>
-          <Text style={styles.name}>{product.name}</Text>
-          <View style={styles.metaRow}>
-            <Text style={styles.meta}>
-              {product.sku || '—'}
-              {product.category_name ? ` · ${product.category_name}` : ''}
-            </Text>
+        <View style={styles.heroCard}>
+          <View style={styles.heroTopRow}>
+            <View style={styles.heroTitleWrap}>
+              <Text style={styles.name}>{product.name}</Text>
+              <View style={styles.metaRow}>
+                <View style={styles.metaItem}>
+                  <Ionicons
+                    name="pricetag-outline"
+                    size={12}
+                    color={COLORS.textMuted}
+                    style={styles.metaIcon}
+                  />
+                  <Text style={styles.meta}>{product.sku || '—'}</Text>
+                </View>
+                {product.barcode ? (
+                  <View style={styles.metaItem}>
+                    <Ionicons
+                      name="barcode-outline"
+                      size={12}
+                      color={COLORS.textMuted}
+                      style={styles.metaIcon}
+                    />
+                    <Text style={styles.meta}>{product.barcode}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
             <View
               style={[
                 styles.badge,
@@ -133,49 +186,108 @@ export default function ProductDetailScreen() {
               </Text>
             </View>
           </View>
-          <Text style={styles.price}>{formatCurrency(product.price_cents)}</Text>
-          {product.cost_cents != null ? (
-            <Text style={styles.cost}>
-              Cost: {formatCurrency(product.cost_cents)}
-            </Text>
-          ) : null}
+          <View style={styles.pillRow}>
+            {product.category_name ? (
+              <View style={styles.categoryPill}>
+                <Ionicons
+                  name="folder-outline"
+                  size={12}
+                  color={COLORS.text}
+                  style={styles.metaIcon}
+                />
+                <Text style={styles.categoryPillText}>
+                  {product.category_name}
+                </Text>
+              </View>
+            ) : null}
+            <View style={styles.stockPill}>
+              <View style={[styles.stockDot, stockTone]} />
+              <Text style={styles.stockPillText}>{stockLabel}</Text>
+            </View>
+          </View>
         </View>
 
-        {product.description ? (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Description</Text>
-            <Text style={styles.body}>{product.description}</Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Pricing</Text>
+          <Text style={styles.price}>{formatCurrency(product.price_cents)}</Text>
+          {product.cost_cents != null ? (
+            <View style={styles.kvRow}>
+              <Text style={styles.kvLabel}>Cost</Text>
+              <Text style={styles.kvValue}>
+                {formatCurrency(product.cost_cents)}
+              </Text>
+            </View>
+          ) : null}
+          {marginPct != null ? (
+            <View style={styles.kvRow}>
+              <Text style={styles.kvLabel}>Margin</Text>
+              <Text
+                style={[
+                  styles.kvValue,
+                  marginPct < 0 && styles.marginNegative,
+                ]}>
+                {marginPct}%
+              </Text>
+            </View>
+          ) : null}
+          <View style={[styles.kvRow, styles.kvRowLast]}>
+            <Text style={styles.kvLabel}>Tax rate</Text>
+            <Text style={styles.kvValue}>{product.tax_rate}%</Text>
           </View>
-        ) : null}
+        </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Stock</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Stock</Text>
+            <Text style={styles.totalOnHand}>
+              {totalOnHand} <Text style={styles.totalOnHandUnit}>on hand</Text>
+            </Text>
+          </View>
           {stockLevels.length > 0 ? (
-            stockLevels.map(level => (
-              <View key={level.location_id} style={styles.tableRow}>
-                <Text style={styles.tableLabel} numberOfLines={1}>
-                  {level.location_name}
-                </Text>
-                <Text style={styles.tableValue}>
-                  {level.on_hand} on hand
-                </Text>
+            stockLevels.map((level, idx) => (
+              <View
+                key={level.location_id}
+                style={[
+                  styles.tableRow,
+                  idx === stockLevels.length - 1 && styles.tableRowLast,
+                ]}>
+                <View style={styles.tableLabelWrap}>
+                  <Ionicons
+                    name="location-outline"
+                    size={14}
+                    color={COLORS.textMuted}
+                    style={styles.metaIcon}
+                  />
+                  <Text style={styles.tableLabel} numberOfLines={1}>
+                    {level.location_name}
+                  </Text>
+                </View>
+                <Text style={styles.tableValue}>{level.on_hand}</Text>
               </View>
             ))
           ) : (
-            <View style={styles.tableRow}>
-              <Text style={styles.tableLabel}>Total</Text>
-              <Text style={styles.tableValue}>
-                {product.stock_on_hand} on hand
-              </Text>
-            </View>
+            <Text style={styles.emptyHint}>
+              No per-location breakdown available.
+            </Text>
           )}
         </View>
 
         {product.variants && product.variants.length > 0 ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Variants</Text>
-            {product.variants.map(v => (
-              <View key={v.id} style={styles.variantRow}>
+            <Text style={styles.sectionTitle}>
+              Variants
+              <Text style={styles.sectionCount}>
+                {' '}
+                · {product.variants.length}
+              </Text>
+            </Text>
+            {product.variants.map((v, idx) => (
+              <View
+                key={v.id}
+                style={[
+                  styles.variantRow,
+                  idx === product.variants.length - 1 && styles.variantRowLast,
+                ]}>
                 <View style={styles.variantLeft}>
                   <Text style={styles.variantName}>{v.name}</Text>
                   <Text style={styles.variantSku}>{v.sku || '—'}</Text>
@@ -193,6 +305,13 @@ export default function ProductDetailScreen() {
           </View>
         ) : null}
 
+        {product.description ? (
+          <View style={styles.descriptionCard}>
+            <Text style={styles.sectionTitle}>Description</Text>
+            <Text style={styles.body}>{product.description}</Text>
+          </View>
+        ) : null}
+
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => {
@@ -202,7 +321,7 @@ export default function ProductDetailScreen() {
           <Ionicons
             name="chevron-back"
             size={20}
-            color={COLORS.text}
+            color={COLORS.white}
             style={styles.backBtnIcon}
           />
           <Text style={styles.backBtnText}>Back</Text>
@@ -211,6 +330,20 @@ export default function ProductDetailScreen() {
     </SafeAreaView>
   );
 }
+
+const cardBase = {
+  backgroundColor: COLORS.surface,
+  borderWidth: 1,
+  borderColor: COLORS.surfaceBorder,
+  borderRadius: BORDER_RADIUS.lg,
+  padding: SPACING.md,
+  marginBottom: SPACING.sm,
+  shadowColor: COLORS.black,
+  shadowOffset: {width: 0, height: 1},
+  shadowOpacity: 0.06,
+  shadowRadius: 3,
+  elevation: 1,
+};
 
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: COLORS.background},
@@ -221,30 +354,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: SPACING.lg,
   },
-  card: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.md,
-    marginBottom: SPACING.sm,
+  errorIcon: {marginBottom: SPACING.md},
+  heroCard: {...cardBase},
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
+  heroTitleWrap: {flex: 1, marginRight: SPACING.sm},
   name: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xl,
     fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: SPACING.xs,
   },
   metaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
+    flexWrap: 'wrap',
+    gap: SPACING.md,
   },
-  meta: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm, flex: 1},
+  metaItem: {flexDirection: 'row', alignItems: 'center'},
+  metaIcon: {marginRight: 4},
+  meta: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm},
   badge: {
     paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: BORDER_RADIUS.full,
   },
   badgeActive: {backgroundColor: COLORS.success},
@@ -252,30 +387,116 @@ const styles = StyleSheet.create({
   badgeText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+  },
+  categoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.cream,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.full,
+  },
+  categoryPillText: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.xs,
     fontWeight: '600',
+  },
+  stockPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.cream,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.full,
+  },
+  stockDot: {
+    width: 6,
+    height: 6,
+    borderRadius: BORDER_RADIUS.full,
+    marginRight: 6,
+  },
+  stockOk: {backgroundColor: COLORS.success},
+  stockLow: {backgroundColor: COLORS.warning},
+  stockOut: {backgroundColor: COLORS.danger},
+  stockPillText: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '600',
+  },
+  card: {...cardBase},
+  descriptionCard: {
+    ...cardBase,
+    backgroundColor: COLORS.cream,
   },
   price: {
     color: COLORS.crimson,
-    fontSize: FONT_SIZE.xxl,
+    fontSize: FONT_SIZE.title,
     fontWeight: '700',
-  },
-  cost: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm, marginTop: SPACING.xs},
-  sectionTitle: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    letterSpacing: -0.5,
     marginBottom: SPACING.sm,
   },
-  body: {color: COLORS.textLight, fontSize: FONT_SIZE.md, lineHeight: 20},
-  tableRow: {
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
+  },
+  sectionTitle: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: SPACING.sm,
+  },
+  sectionCount: {
+    color: COLORS.textDim,
+    fontWeight: '500',
+  },
+  totalOnHand: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.lg,
+    fontWeight: '700',
+  },
+  totalOnHandUnit: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '500',
+  },
+  body: {color: COLORS.textLight, fontSize: FONT_SIZE.md, lineHeight: 22},
+  kvRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: SPACING.xs,
+    paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.surfaceBorder,
   },
+  kvRowLast: {borderBottomWidth: 0, paddingBottom: 0},
+  kvLabel: {color: COLORS.textMuted, fontSize: FONT_SIZE.md},
+  kvValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  marginNegative: {color: COLORS.danger},
+  tableRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceBorder,
+  },
+  tableRowLast: {borderBottomWidth: 0, paddingBottom: 0},
+  tableLabelWrap: {flexDirection: 'row', alignItems: 'center', flex: 1},
   tableLabel: {color: COLORS.textLight, fontSize: FONT_SIZE.md, flex: 1},
-  tableValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  tableValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '700'},
+  emptyHint: {color: COLORS.textDim, fontSize: FONT_SIZE.sm, fontStyle: 'italic'},
   variantRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -284,6 +505,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.surfaceBorder,
   },
+  variantRowLast: {borderBottomWidth: 0, paddingBottom: 0},
   variantLeft: {flex: 1, marginRight: SPACING.md},
   variantName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
   variantSku: {color: COLORS.textMuted, fontSize: FONT_SIZE.xs, marginTop: 2},
@@ -315,12 +537,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   primaryBtnText: {color: COLORS.white, fontWeight: '700', fontSize: FONT_SIZE.md},
-  linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md},
+  linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md, fontWeight: '600'},
   backBtn: {
     flexDirection: 'row',
-    borderWidth: 1.5,
-    borderColor: COLORS.text,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.text,
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     alignItems: 'center',
@@ -329,7 +549,7 @@ const styles = StyleSheet.create({
   },
   backBtnIcon: {marginRight: SPACING.xs},
   backBtnText: {
-    color: COLORS.text,
+    color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },

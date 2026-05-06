@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, Text, Image, StyleSheet, TouchableOpacity} from 'react-native';
+import {View, Image, StyleSheet, TouchableOpacity} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
@@ -46,8 +46,8 @@ const AppTabs: React.FC = () => {
               source={require('../../assets/images/app-icon.png')}
               style={styles.brandLogo}
               accessibilityIgnoresInvertColors
+              accessibilityLabel="Aeris"
             />
-            <Text style={styles.brandWordmark}>AERIS</Text>
           </View>
           <View style={styles.topBarSpacer} />
           <TouchableOpacity
@@ -155,16 +155,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   brandLogo: {
-    width: 26,
-    height: 26,
+    width: 28,
+    height: 28,
     borderRadius: 6,
-    marginRight: 8,
-  },
-  brandWordmark: {
-    color: COLORS.cream,
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 1.5,
   },
   topBarSpacer: {flex: 1},
   gearBtn: {

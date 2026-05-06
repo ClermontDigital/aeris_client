@@ -277,7 +277,13 @@ export default function QuickSaleScreen() {
         keyExtractor={item => String(item.id)}
         numColumns={2}
         columnWrapperStyle={styles.gridRow}
-        contentContainerStyle={styles.gridContent}
+        // Tighter bottom padding when the cart bar isn't visible — its
+        // 100pt clearance was leaving a dead band of cream space above
+        // the tab bar when the cart was empty.
+        contentContainerStyle={[
+          styles.gridContent,
+          itemCount > 0 ? styles.gridContentWithCart : styles.gridContentNoCart,
+        ]}
         ListEmptyComponent={renderEmpty}
         refreshControl={
           <RefreshControl
@@ -357,21 +363,27 @@ const styles = StyleSheet.create({
   // rather than a separate floating button. Tap target via hitSlop.
   scanButton: {paddingLeft: SPACING.sm},
   categoryStrip: {
-    maxHeight: 48,
-    marginTop: SPACING.sm,
+    maxHeight: 56,
+    paddingVertical: SPACING.sm,
   },
   categoryContent: {
     paddingHorizontal: SPACING.md,
-    gap: SPACING.sm,
+    alignItems: 'center',
   },
+  // Wider horizontal padding + taller vertical padding so each pill has
+  // breathing room and a real tap target. The previous SPACING.xs vertical
+  // pad made the row feel "squished" against the search bar above and the
+  // grid below.
   categoryPill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
     borderRadius: BORDER_RADIUS.full,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     marginRight: SPACING.sm,
+    minHeight: 36,
+    justifyContent: 'center',
   },
   categoryPillActive: {
     backgroundColor: COLORS.crimson,
@@ -380,6 +392,7 @@ const styles = StyleSheet.create({
   categoryPillText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.sm,
+    fontWeight: '500',
   },
   categoryPillTextActive: {
     color: COLORS.white,
@@ -403,8 +416,9 @@ const styles = StyleSheet.create({
   gridContent: {
     paddingHorizontal: SPACING.sm,
     paddingTop: SPACING.xs,
-    paddingBottom: 120,
   },
+  gridContentWithCart: {paddingBottom: 96},
+  gridContentNoCart: {paddingBottom: SPACING.md},
   gridRow: {
     justifyContent: 'space-between',
   },
