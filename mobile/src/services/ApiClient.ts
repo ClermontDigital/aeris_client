@@ -922,9 +922,29 @@ export function normalizeReceipt(input: unknown): ReceiptData {
     };
   });
 
-  const subtotalCents = findCents(inner, 'subtotal_cents', 'subtotal');
-  const taxCents = findCents(inner, 'tax_cents', 'tax', 'tax_amount');
-  const totalCents = findCents(inner, 'total_cents', 'total', 'total_amount');
+  // Aeris2 sometimes nests money fields under `totals: {...}`. Drill into
+  // that wrapper if present and use it as a secondary source after the
+  // top-level inner object — the top level wins when both are populated.
+  const totalsObj = (inner.totals && typeof inner.totals === 'object'
+    ? (inner.totals as Record<string, unknown>)
+    : null);
+  const findCentsAcross = (
+    centsKey: string,
+    ...dollarKeys: string[]
+  ): number | undefined => {
+    const a = findCents(inner, centsKey, ...dollarKeys);
+    if (a !== undefined) return a;
+    return totalsObj
+      ? findCents(totalsObj, centsKey, ...dollarKeys)
+      : undefined;
+  };
+  const subtotalCents = findCentsAcross(
+    'subtotal_cents',
+    'subtotal',
+    'subtotal_amount',
+  );
+  const taxCents = findCentsAcross('tax_cents', 'tax', 'tax_amount');
+  const totalCents = findCentsAcross('total_cents', 'total', 'total_amount');
 
   return {
     sale_number: pickString(inner, 'sale_number', 'number', 'reference', 'id'),
@@ -937,12 +957,19 @@ export function normalizeReceipt(input: unknown): ReceiptData {
     items,
     subtotal:
       pickString(inner, 'subtotal', 'subtotal_formatted') ||
+      (totalsObj
+        ? pickString(totalsObj, 'subtotal', 'subtotal_formatted')
+        : '') ||
       formatCentsString(subtotalCents),
     tax:
       pickString(inner, 'tax', 'tax_formatted', 'tax_amount_formatted') ||
+      (totalsObj
+        ? pickString(totalsObj, 'tax', 'tax_formatted', 'tax_amount_formatted')
+        : '') ||
       formatCentsString(taxCents),
     total:
       pickString(inner, 'total', 'total_formatted') ||
+      (totalsObj ? pickString(totalsObj, 'total', 'total_formatted') : '') ||
       formatCentsString(totalCents),
     payments,
     date: pickString(inner, 'date', 'created_at', 'completed_at', 'timestamp'),

@@ -75,15 +75,14 @@ const DashboardScreen: React.FC = () => {
   const greeting = greetingFor(new Date().getHours());
   const name = firstName(userName);
 
-  // Sibling-tab navigation. RootNavigator uses a top-level stack with the tab
-  // navigator nested inside, so getParent() walks up to the tab navigator.
+  // Dashboard is a direct Tab.Screen, so useNavigation() already returns the
+  // tab navigator — calling `.navigate(siblingTabName)` jumps tabs directly.
+  // The earlier getParent() chase walked up to RootNavigator (which only
+  // knows 'Auth' / 'App') and silently no-op'd, so the tiles did nothing.
   const goToTab = useCallback(
     (tab: string) => {
       haptics.light();
-      const parent = (navigation as any).getParent?.();
-      if (parent?.navigate) {
-        parent.navigate(tab);
-      }
+      (navigation as unknown as {navigate: (n: string) => void}).navigate(tab);
     },
     [haptics, navigation],
   );

@@ -13,7 +13,6 @@ import type {RouteProp} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
-import PrintService from '../services/PrintService';
 import type {ReceiptData} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 
@@ -27,7 +26,6 @@ export default function ReceiptViewerScreen() {
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
     loadReceipt();
@@ -47,33 +45,6 @@ export default function ReceiptViewerScreen() {
       setIsLoading(false);
     }
   }, [saleId]);
-
-  const handlePrint = useCallback(async () => {
-    if (!receipt) return;
-    setIsPrinting(true);
-    try {
-      const html = buildReceiptHtml(receipt);
-      await PrintService.printHtml(html);
-    } catch {
-      // PrintService handles its own errors
-    } finally {
-      setIsPrinting(false);
-    }
-  }, [receipt]);
-
-  const handleShare = useCallback(async () => {
-    if (!receipt) return;
-    setIsPrinting(true);
-    try {
-      const html = buildReceiptHtml(receipt);
-      // printHtml will fallback to share if printing fails
-      await PrintService.printHtml(html);
-    } catch {
-      // handled internally
-    } finally {
-      setIsPrinting(false);
-    }
-  }, [receipt]);
 
   // Loading state
   if (isLoading) {
@@ -219,22 +190,6 @@ export default function ReceiptViewerScreen() {
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
-            style={styles.printButton}
-            onPress={handlePrint}
-            disabled={isPrinting}>
-            {isPrinting ? (
-              <ActivityIndicator color={COLORS.white} size="small" />
-            ) : (
-              <Text style={styles.printButtonText}>Print</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.shareButton}
-            onPress={handleShare}
-            disabled={isPrinting}>
-            <Text style={styles.shareButtonText}>Share</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}>
             <Ionicons
@@ -249,54 +204,6 @@ export default function ReceiptViewerScreen() {
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-function buildReceiptHtml(receipt: ReceiptData): string {
-  const itemRows = receipt.items
-    .map(
-      i =>
-        `<tr><td>${i.name}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right">${i.unit_price}</td><td style="text-align:right">${i.line_total}</td></tr>`,
-    )
-    .join('');
-
-  const paymentRows = receipt.payments
-    .map(p => `<p>${p.method}: ${p.amount}</p>`)
-    .join('');
-
-  return `
-    <html>
-    <head><style>
-      body { font-family: monospace; font-size: 12px; padding: 10px; }
-      h2 { text-align: center; margin-bottom: 4px; }
-      .info { text-align: center; font-size: 11px; color: #666; }
-      table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-      th, td { padding: 2px 4px; text-align: left; }
-      .sep { border-top: 1px dashed #333; margin: 6px 0; }
-      .totals td:first-child { font-weight: bold; }
-      .total-row td { font-size: 14px; font-weight: bold; }
-    </style></head>
-    <body>
-      <h2>${receipt.business_name}</h2>
-      ${receipt.business_address ? `<p class="info">${receipt.business_address}</p>` : ''}
-      <p class="info">Sale #${receipt.sale_number}</p>
-      <p class="info">${receipt.date}</p>
-      <div class="sep"></div>
-      <table>
-        <tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr>
-        ${itemRows}
-      </table>
-      <div class="sep"></div>
-      <table class="totals">
-        <tr><td>Subtotal</td><td style="text-align:right">${receipt.subtotal}</td></tr>
-        <tr><td>Tax</td><td style="text-align:right">${receipt.tax}</td></tr>
-        <tr class="total-row"><td>Total</td><td style="text-align:right">${receipt.total}</td></tr>
-      </table>
-      <div class="sep"></div>
-      ${paymentRows}
-      ${receipt.served_by ? `<p class="info">Served by: ${receipt.served_by}</p>` : ''}
-    </body>
-    </html>
-  `;
 }
 
 const styles = StyleSheet.create({
@@ -485,32 +392,6 @@ const styles = StyleSheet.create({
   // Action Buttons
   actionButtons: {
     flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  printButton: {
-    flex: 1,
-    backgroundColor: COLORS.accent,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.md,
-    alignItems: 'center',
-  },
-  printButtonText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '700',
-  },
-  shareButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: COLORS.accent,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.md,
-    alignItems: 'center',
-  },
-  shareButtonText: {
-    color: COLORS.accent,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '600',
   },
   backButton: {
     flex: 1,
