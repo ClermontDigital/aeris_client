@@ -11,6 +11,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
@@ -18,10 +19,9 @@ import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
 import type {PaymentMethod} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
-
-const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
 
 const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   {code: 'cash', name: 'Cash', requires_reference: false},
@@ -47,6 +47,9 @@ export default function CheckoutScreen() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS,
   );
+  const [paymentMethodsState, setPaymentMethodsState] = useState<
+    'loading' | 'live' | 'fallback'
+  >('loading');
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [amountTendered, setAmountTendered] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,19 +57,32 @@ export default function CheckoutScreen() {
   const [saleResult, setSaleResult] = useState<SaleResult | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Load payment methods
-  useEffect(() => {
-    (async () => {
-      try {
-        const methods = await ApiClient.getPaymentMethods();
-        if (methods.length > 0) {
-          setPaymentMethods(methods);
-        }
-      } catch {
-        // Fall back to defaults
+  // Load payment methods. Surfacing the fallback state lets the operator
+  // know the workspace's customised method list isn't loaded — important
+  // when a deployment has e.g. 'EFTPOS', 'GiftCard' beyond cash/card. The
+  // chip above the grid offers a tap-to-retry rather than silently
+  // serving defaults forever.
+  const loadPaymentMethods = useCallback(async () => {
+    setPaymentMethodsState('loading');
+    try {
+      const methods = await ApiClient.getPaymentMethods();
+      if (methods.length > 0) {
+        setPaymentMethods(methods);
+        setPaymentMethodsState('live');
+      } else {
+        setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+        setPaymentMethodsState('fallback');
       }
-    })();
+    } catch (e) {
+      console.warn('Failed to load payment methods, using defaults:', e);
+      setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+      setPaymentMethodsState('fallback');
+    }
   }, []);
+
+  useEffect(() => {
+    loadPaymentMethods();
+  }, [loadPaymentMethods]);
 
   const tenderedCents = Math.round(parseFloat(amountTendered || '0') * 100);
   const changeCents =
@@ -191,6 +207,23 @@ export default function CheckoutScreen() {
 
         {/* Payment Methods */}
         <Text style={styles.sectionTitle}>Payment Method</Text>
+        {paymentMethodsState === 'fallback' ? (
+          <TouchableOpacity
+            style={styles.methodsFallbackChip}
+            onPress={loadPaymentMethods}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading payment methods">
+            <Ionicons
+              name="cloud-offline-outline"
+              size={14}
+              color={COLORS.warning}
+              style={styles.methodsFallbackIcon}
+            />
+            <Text style={styles.methodsFallbackText}>
+              Using offline defaults — tap to retry
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         <View style={styles.methodGrid}>
           {paymentMethods.map(method => (
             <TouchableOpacity
@@ -367,6 +400,25 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: SPACING.sm,
     marginBottom: SPACING.lg,
+  },
+  methodsFallbackChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.warning,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  methodsFallbackIcon: {
+    marginRight: SPACING.xs,
+  },
+  methodsFallbackText: {
+    color: COLORS.warning,
+    fontSize: FONT_SIZE.xs,
   },
   methodButton: {
     flex: 1,

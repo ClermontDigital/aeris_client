@@ -18,12 +18,11 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {Customer} from '../types/api.types';
 import type {CustomersStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type Nav = NativeStackNavigationProp<CustomersStackParamList>;
 
 const PER_PAGE = 50;
-
-const formatCurrency = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
 // Client-side filter on the loaded pages. NOTE: customers.search via the
 // relay is currently blocked by the marketplace dispatcher's

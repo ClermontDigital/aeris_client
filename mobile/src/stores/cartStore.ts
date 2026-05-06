@@ -75,7 +75,19 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   setCustomer: (id, name) => set({customerId: id, customerName: name}),
-  setDiscount: (cents) => set({discountCents: cents}),
+  // Clamp discount into [0, subtotal+tax]. We deliberately use the
+  // pre-discount total here — a negative result would let the cashier
+  // print a sale where the customer owes nothing or even gets cash back,
+  // which the gateway would reject anyway. NaN/negative input defaults
+  // to 0; any over-cap value caps at subtotal+tax so the final total
+  // bottoms at $0.
+  setDiscount: (cents) => {
+    const max = get().getSubtotalCents() + get().getTaxCents();
+    const safeMax = Math.max(0, max);
+    const numeric = Number.isFinite(cents) ? cents : 0;
+    const clamped = Math.max(0, Math.min(numeric, safeMax));
+    set({discountCents: clamped});
+  },
   setNotes: (notes) => set({notes}),
   clear: () =>
     set({

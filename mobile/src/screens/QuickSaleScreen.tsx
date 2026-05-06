@@ -21,10 +21,9 @@ import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import type {Product, Category} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
-
-const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
 
 export default function QuickSaleScreen() {
   const navigation = useNavigation<NavigationProp>();

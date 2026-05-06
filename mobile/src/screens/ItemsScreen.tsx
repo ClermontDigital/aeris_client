@@ -18,13 +18,12 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {Product} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type Nav = NativeStackNavigationProp<ItemsStackParamList>;
 
 const PER_PAGE = 50;
 const SEARCH_DEBOUNCE_MS = 300;
-
-const formatCurrency = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
 const ItemsScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
