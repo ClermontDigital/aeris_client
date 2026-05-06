@@ -400,7 +400,9 @@ const styles = StyleSheet.create({
   categoryPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.cream,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.text,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
     borderRadius: BORDER_RADIUS.full,
@@ -413,7 +415,9 @@ const styles = StyleSheet.create({
   stockPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.cream,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.text,
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
     borderRadius: BORDER_RADIUS.full,
@@ -433,10 +437,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   card: {...cardBase},
-  descriptionCard: {
-    ...cardBase,
-    backgroundColor: COLORS.cream,
-  },
+  descriptionCard: {...cardBase},
   price: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.title,
