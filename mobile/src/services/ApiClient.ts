@@ -424,6 +424,45 @@ export class ApiClient {
     discount_cents?: number;
     notes?: string;
   }): Promise<{sale_id: number; sale_number: string; total_cents: number}> {
+    // Public signature stays in cents; convert to the dollar-shape that
+    // Aeris2's POSController::processSale (mapped from sale.create) expects.
+    // ProcessSaleRequest validates required dollar fields (unit_price,
+    // amount, subtotal, total_amount) and runs a cross-field math check
+    // that demands subtotal == sum(qty * unit_price_ex_gst - discount_ex_gst)
+    // ±0.02. Items are flagged gst_applicable: true so the server splits
+    // inc-GST → ex-GST itself (AU 10%).
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const centsToDollars = (c: number) => round2(c / 100);
+
+    const lineTotalCents = data.items.reduce(
+      (sum, i) => sum + i.unit_price_cents * i.quantity - (i.discount_cents ?? 0),
+      0,
+    );
+    const totalAmount = centsToDollars(lineTotalCents);
+    const subtotal = round2(totalAmount / 1.10);
+    const taxAmount = round2(totalAmount - subtotal);
+
+    const payload: Record<string, unknown> = {
+      items: data.items.map(i => ({
+        product_id: i.product_id,
+        quantity: i.quantity,
+        unit_price: centsToDollars(i.unit_price_cents),
+        gst_applicable: true,
+        discount_amount: i.discount_cents ? centsToDollars(i.discount_cents) : 0,
+      })),
+      payments: data.payments.map(p => ({
+        method: p.method,
+        amount: centsToDollars(p.amount_cents),
+        ...(p.reference ? {reference: p.reference} : {}),
+      })),
+      subtotal,
+      tax_amount: taxAmount,
+      total_amount: totalAmount,
+    };
+    if (data.customer_id !== undefined) payload.customer_id = data.customer_id;
+    if (data.discount_cents) payload.discount_amount = centsToDollars(data.discount_cents);
+    if (data.notes) payload.notes = data.notes;
+
     // One key per logical sale, reused on every retry. Gateway dedupes at
     // /api/relay/rpc (and propagates X-Aeris-Idempotency-Key on to the
     // deployment), so retrying with the same key is end-to-end safe.
@@ -431,25 +470,37 @@ export class ApiClient {
     let lastError: unknown;
     for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
       try {
-        // Aeris2's POSController::store wraps the created sale in a Resource,
-        // so the body is `{data: {sale_id, ...}}`. Unwrap to match the
-        // declared return shape; otherwise the success view renders an
-        // undefined sale_number / total_cents.
         let result: unknown;
         if (this.mode === 'relay') {
-          result = await this.relayRpc(RELAY_ACTIONS.SALE_CREATE, data, {
+          result = await this.relayRpc(RELAY_ACTIONS.SALE_CREATE, payload, {
             idempotencyKey,
           });
         } else {
-          result = await this.post(API_ENDPOINTS.POS_SALES, data, {
+          result = await this.post(API_ENDPOINTS.POS_SALES, payload, {
             idempotencyKey,
           });
         }
-        return unwrapResource<{
-          sale_id: number;
-          sale_number: string;
-          total_cents: number;
+        // POSController::processSale returns SaleResource; the resource
+        // emits `id` (not sale_id). Map at the boundary so the public
+        // return shape is unchanged. Tolerate either field for resilience
+        // against future shape drift.
+        const unwrapped = unwrapResource<{
+          id?: number;
+          sale_id?: number;
+          sale_number?: string;
+          total_cents?: number;
+          total_amount?: number;
         }>(result);
+        return {
+          sale_id: (unwrapped.id ?? unwrapped.sale_id) as number,
+          sale_number: unwrapped.sale_number ?? '',
+          total_cents:
+            typeof unwrapped.total_cents === 'number'
+              ? unwrapped.total_cents
+              : typeof unwrapped.total_amount === 'number'
+              ? Math.round(unwrapped.total_amount * 100)
+              : 0,
+        };
       } catch (e) {
         lastError = e;
         if (
