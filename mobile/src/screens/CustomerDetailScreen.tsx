@@ -15,9 +15,45 @@ import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
-import type {Customer} from '../types/api.types';
+import type {Address, Customer, Sale} from '../types/api.types';
 import type {CustomersStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
+
+const formatShortDate = (iso: string | null | undefined): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+const statusColor = (status: Sale['status']): string => {
+  switch (status) {
+    case 'completed':
+      return COLORS.success;
+    case 'refunded':
+      return COLORS.danger;
+    case 'voided':
+      return COLORS.warning;
+    default:
+      return COLORS.textDim;
+  }
+};
+
+function renderAddressLines(a: Address): string {
+  const parts: string[] = [];
+  if (a.line_1) parts.push(a.line_1);
+  if (a.line_2) parts.push(a.line_2);
+  const cityState = [a.city, a.state].filter(Boolean).join(', ');
+  if (cityState || a.postcode) {
+    parts.push([cityState, a.postcode].filter(Boolean).join(' '));
+  }
+  if (a.country) parts.push(a.country);
+  return parts.filter(Boolean).join('\n');
+}
 
 type CustomerDetailRouteProp = RouteProp<
   CustomersStackParamList,
@@ -82,6 +118,24 @@ export default function CustomerDetailScreen() {
       Linking.openURL(`tel:${cleaned}`).catch(() => {});
     },
     [haptics],
+  );
+
+  // SaleDetail lives under the Transactions tab (sibling of Customers).
+  // useNavigation() in this screen returns CustomersStack; getParent()
+  // walks up to the AppTabs navigator, which routes 'Transactions' →
+  // TransactionsStack and then nests SaleDetail with the saleId param.
+  const goToSale = useCallback(
+    (saleId: number) => {
+      haptics.light();
+      const parent = (navigation as unknown as {
+        getParent?: () => {navigate: (n: string, p: unknown) => void} | undefined;
+      }).getParent?.();
+      parent?.navigate?.('Transactions', {
+        screen: 'SaleDetail',
+        params: {saleId},
+      });
+    },
+    [haptics, navigation],
   );
 
   if (isLoading) {
@@ -203,22 +257,142 @@ export default function CustomerDetailScreen() {
           </>
         ) : null}
 
+        {(customer.payment_terms ||
+          customer.credit_limit_cents != null ||
+          customer.loyalty_points != null ||
+          customer.total_orders != null ||
+          customer.total_spent_cents != null) ? (
+          <>
+            <Text style={styles.sectionLabel}>Account terms</Text>
+            <View style={styles.card}>
+              {customer.payment_terms ? (
+                <TermsRow
+                  label="Payment terms"
+                  value={customer.payment_terms}
+                  isFirst
+                />
+              ) : null}
+              {customer.credit_limit_cents != null ? (
+                <TermsRow
+                  label="Credit limit"
+                  value={formatCurrency(customer.credit_limit_cents)}
+                  isFirst={!customer.payment_terms}
+                />
+              ) : null}
+              {customer.loyalty_points != null ? (
+                <TermsRow
+                  label="Loyalty points"
+                  value={customer.loyalty_points.toLocaleString()}
+                  isFirst={
+                    !customer.payment_terms &&
+                    customer.credit_limit_cents == null
+                  }
+                />
+              ) : null}
+              {customer.total_orders != null ? (
+                <TermsRow
+                  label="Total orders"
+                  value={customer.total_orders.toLocaleString()}
+                />
+              ) : null}
+              {customer.total_spent_cents != null ? (
+                <TermsRow
+                  label="Lifetime value"
+                  value={formatCurrency(customer.total_spent_cents)}
+                />
+              ) : null}
+            </View>
+          </>
+        ) : null}
+
         <Text style={styles.sectionLabel}>Activity</Text>
-        <View style={styles.placeholderCard}>
-          <Ionicons
-            name="time-outline"
-            size={20}
-            color={COLORS.textMuted}
-            style={styles.placeholderIcon}
-          />
-          <View style={styles.placeholderTextWrap}>
-            <Text style={styles.placeholderTitle}>More detail coming soon</Text>
-            <Text style={styles.placeholderBody}>
-              Recent transactions, addresses, and notes will appear here once
-              the server enriches the response.
-            </Text>
+        {customer.recent_sales.length > 0 ? (
+          <View style={styles.card}>
+            {customer.recent_sales.map((s, idx) => (
+              <TouchableOpacity
+                key={s.id}
+                activeOpacity={0.7}
+                onPress={() => goToSale(s.id)}
+                style={[
+                  styles.activityRow,
+                  idx > 0 && styles.activityRowDivider,
+                ]}>
+                <View style={styles.activityLeft}>
+                  <Text style={styles.activitySaleNumber}>{s.sale_number}</Text>
+                  <Text style={styles.activitySaleDate}>
+                    {formatShortDate(s.created_at)}
+                  </Text>
+                </View>
+                <View style={styles.activityRight}>
+                  <Text style={styles.activityAmount}>
+                    {formatCurrency(s.total_cents)}
+                  </Text>
+                  <View
+                    style={[
+                      styles.activityStatusChip,
+                      {backgroundColor: statusColor(s.status)},
+                    ]}>
+                    <Text style={styles.activityStatusText}>{s.status}</Text>
+                  </View>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={COLORS.textDim}
+                  style={styles.activityChevron}
+                />
+              </TouchableOpacity>
+            ))}
           </View>
-        </View>
+        ) : (
+          <View style={styles.placeholderCard}>
+            <Ionicons
+              name="time-outline"
+              size={20}
+              color={COLORS.textMuted}
+              style={styles.placeholderIcon}
+            />
+            <View style={styles.placeholderTextWrap}>
+              <Text style={styles.placeholderTitle}>No recent activity</Text>
+              <Text style={styles.placeholderBody}>
+                This customer&apos;s recent transactions will appear here.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {(customer.default_address || customer.addresses.length > 0) ? (
+          <>
+            <Text style={styles.sectionLabel}>Addresses</Text>
+            {customer.default_address ? (
+              <View style={styles.addressDefault}>
+                <View style={styles.addressBadgeRow}>
+                  <Text style={styles.addressBadge}>Default</Text>
+                  {customer.default_address.label ? (
+                    <Text style={styles.addressLabel}>
+                      {customer.default_address.label}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text style={styles.addressLines}>
+                  {renderAddressLines(customer.default_address)}
+                </Text>
+              </View>
+            ) : null}
+            {customer.addresses
+              .filter(a => a !== customer.default_address)
+              .map((a, idx) => (
+                <View key={a.id ?? idx} style={styles.addressOther}>
+                  {a.label ? (
+                    <Text style={styles.addressLabel}>{a.label}</Text>
+                  ) : null}
+                  <Text style={styles.addressLines}>
+                    {renderAddressLines(a)}
+                  </Text>
+                </View>
+              ))}
+          </>
+        ) : null}
 
         <TouchableOpacity
           style={styles.backBtn}
@@ -238,6 +412,17 @@ export default function CustomerDetailScreen() {
     </SafeAreaView>
   );
 }
+
+const TermsRow: React.FC<{
+  label: string;
+  value: string;
+  isFirst?: boolean;
+}> = ({label, value, isFirst}) => (
+  <View style={[styles.termsRow, !isFirst && styles.termsRowDivider]}>
+    <Text style={styles.termsLabel}>{label}</Text>
+    <Text style={styles.termsValue}>{value}</Text>
+  </View>
+);
 
 const ContactRow: React.FC<{
   icon: React.ComponentProps<typeof Ionicons>['name'];
@@ -462,5 +647,105 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
+  },
+  termsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+  },
+  termsRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.surfaceBorder,
+  },
+  termsLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '500',
+  },
+  termsValue: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+  },
+  activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+  },
+  activityRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.surfaceBorder,
+  },
+  activityLeft: {flex: 1},
+  activitySaleNumber: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+  },
+  activitySaleDate: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    marginTop: 2,
+  },
+  activityRight: {alignItems: 'flex-end', marginRight: SPACING.sm},
+  activityAmount: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  activityStatusChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: BORDER_RADIUS.full,
+  },
+  activityStatusText: {
+    color: COLORS.white,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  activityChevron: {marginLeft: 4},
+  addressDefault: {
+    ...cardBase,
+    padding: SPACING.md,
+  },
+  addressOther: {
+    ...cardBase,
+    padding: SPACING.md,
+    backgroundColor: COLORS.background,
+  },
+  addressBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+    gap: SPACING.sm,
+  },
+  addressBadge: {
+    color: COLORS.white,
+    backgroundColor: COLORS.crimson,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: BORDER_RADIUS.full,
+    overflow: 'hidden',
+  },
+  addressLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  addressLines: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    lineHeight: 22,
+    marginTop: 2,
   },
 });
