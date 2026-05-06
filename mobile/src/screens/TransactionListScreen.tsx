@@ -16,12 +16,11 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<TransactionsStackParamList>;
 
 type DateFilter = 'today' | 'week' | 'all';
-
-const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
 
 function getDateRange(filter: DateFilter): {
   date_from?: string;

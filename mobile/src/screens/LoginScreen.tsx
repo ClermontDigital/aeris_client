@@ -13,6 +13,7 @@ import {
   ScrollView,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {Ionicons} from '@expo/vector-icons';
 import {useAuthStore} from '../stores/authStore';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useHaptics} from '../hooks/useHaptics';
@@ -37,6 +38,10 @@ const LOGIN = {
   errorText: '#c1121f',
   helpText: '#6b7280',               // Muted gray
   inputErrorBorder: '#c1121f',       // same as focus crimson; used on workspace error
+  expiredBg: '#fef3c7',              // amber-100; orange/warning chip backdrop
+  expiredBorder: '#f59e0b',          // amber-500; warm border so the card reads "info" not "fatal"
+  expiredText: '#92400e',             // amber-900; warm, readable on the cream card
+  expiredIcon: '#b45309',             // amber-700
 };
 
 const LoginScreen: React.FC = () => {
@@ -52,6 +57,7 @@ const LoginScreen: React.FC = () => {
   const login = useAuthStore(s => s.login);
   const isLoading = useAuthStore(s => s.isLoading);
   const error = useAuthStore(s => s.error);
+  const errorKind = useAuthStore(s => s.errorKind);
   const clearError = useAuthStore(s => s.clearError);
   const connectionMode = useSettingsStore(s => s.settings.connectionMode);
   const persistedWorkspace = useSettingsStore(s => s.settings.workspaceCode);
@@ -64,6 +70,22 @@ const LoginScreen: React.FC = () => {
   useEffect(() => {
     setWorkspace(persistedWorkspace ?? '');
   }, [persistedWorkspace]);
+
+  // When the user lands on LoginScreen because their session expired, drop
+  // them straight on the email field — they were already signed in once
+  // this session, the workspace is persisted, so saving them a tap matches
+  // the "the screen DID change, please re-auth" intent.
+  useEffect(() => {
+    if (errorKind === 'expired') {
+      // Tiny delay so the focus call lands after the screen mounts.
+      const t = setTimeout(() => emailRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+    // Run once on mount when the condition holds — we deliberately don't
+    // re-trigger on every errorKind change (e.g. invalid → cleared).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const persistWorkspace = useCallback(() => {
     const normalized = workspace.trim().toLowerCase();
@@ -88,12 +110,15 @@ const LoginScreen: React.FC = () => {
       }
       persistWorkspace();
     }
+    // Reset both error AND errorKind before submission so the expired
+    // banner doesn't flash back if the user retries during a quick login.
+    clearError();
     try {
       await login(email.trim(), password);
     } catch {
       // Error is set in the store
     }
-  }, [email, password, login, connectionMode, workspace, persistWorkspace, haptics]);
+  }, [email, password, login, connectionMode, workspace, persistWorkspace, haptics, clearError]);
 
   const handleEmailChange = useCallback(
     (text: string) => {
@@ -133,6 +158,21 @@ const LoginScreen: React.FC = () => {
               style={styles.logo}
               resizeMode="contain"
             />
+
+            {errorKind === 'expired' && error ? (
+              <View
+                style={styles.expiredBanner}
+                accessibilityLiveRegion="polite"
+                accessibilityRole="alert">
+                <Ionicons
+                  name="time-outline"
+                  size={20}
+                  color={LOGIN.expiredIcon}
+                  style={styles.expiredIcon}
+                />
+                <Text style={styles.expiredText}>{error}</Text>
+              </View>
+            ) : null}
 
             {connectionMode === 'relay' ? (
               <View style={styles.inputContainer}>
@@ -216,7 +256,7 @@ const LoginScreen: React.FC = () => {
               />
             </View>
 
-            {error ? (
+            {error && errorKind !== 'expired' ? (
               <View accessibilityLiveRegion="polite" accessibilityRole="alert">
                 <Text style={styles.errorText}>{error}</Text>
               </View>
@@ -332,6 +372,27 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     textAlign: 'center',
     marginBottom: SPACING.md,
+  },
+  expiredBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    backgroundColor: LOGIN.expiredBg,
+    borderWidth: 1,
+    borderColor: LOGIN.expiredBorder,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  expiredIcon: {
+    marginRight: SPACING.sm,
+  },
+  expiredText: {
+    flex: 1,
+    color: LOGIN.expiredText,
+    fontSize: FONT_SIZE.sm,
+    lineHeight: 18,
   },
   goButton: {
     width: '100%',
