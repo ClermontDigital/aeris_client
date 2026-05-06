@@ -10,6 +10,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
+import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
@@ -198,6 +199,12 @@ export default function ProductDetailScreen() {
             haptics.light();
             navigation.goBack();
           }}>
+          <Ionicons
+            name="chevron-back"
+            size={20}
+            color={COLORS.text}
+            style={styles.backBtnIcon}
+          />
           <Text style={styles.backBtnText}>Back</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -310,15 +317,19 @@ const styles = StyleSheet.create({
   primaryBtnText: {color: COLORS.white, fontWeight: '700', fontSize: FONT_SIZE.md},
   linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md},
   backBtn: {
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    flexDirection: 'row',
+    borderWidth: 1.5,
+    borderColor: COLORS.text,
+    backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: SPACING.sm,
   },
+  backBtnIcon: {marginRight: SPACING.xs},
   backBtnText: {
-    color: COLORS.textMuted,
+    color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },
