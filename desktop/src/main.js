@@ -9,11 +9,12 @@ const Store = require('electron-store');
 const SessionManager = require('./session-manager');
 
 const store = new Store();
-const sessionManager = new SessionManager();
+const sessionManager = new SessionManager(store);
 
 let mainWindow;
 let settingsWindow;
 let sessionSwitcherWindow;
+let sessionCleanupInterval = null;
 
 // Default configuration
 const defaultConfig = {
@@ -717,7 +718,7 @@ function initializeSessionManager() {
   }
   
   // Set up periodic cleanup every hour
-  setInterval(() => {
+  sessionCleanupInterval = setInterval(() => {
     const cleanedCount = sessionManager.cleanupOldSessions();
     if (cleanedCount > 0) {
       console.log(`Cleaned up ${cleanedCount} old sessions during periodic cleanup`);
@@ -883,6 +884,11 @@ app.on('before-quit', () => {
     mainWindow.webContents.session.clearStorageData({
       storages: ['sessionstorage']
     });
+  }
+
+  if (sessionCleanupInterval) {
+    clearInterval(sessionCleanupInterval);
+    sessionCleanupInterval = null;
   }
 
   // Ensure cleanup happens before quit
