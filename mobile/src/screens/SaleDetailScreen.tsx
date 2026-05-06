@@ -247,7 +247,7 @@ export default function SaleDetailScreen() {
             <Ionicons
               name="chevron-back"
               size={20}
-              color={COLORS.text}
+              color={COLORS.white}
               style={styles.backBtnIcon}
             />
             <Text style={styles.backBtnText}>Back</Text>
@@ -383,9 +383,7 @@ const styles = StyleSheet.create({
   primaryBtnText: {color: COLORS.white, fontWeight: '700', fontSize: FONT_SIZE.md},
   backBtn: {
     flexDirection: 'row',
-    borderWidth: 1.5,
-    borderColor: COLORS.text,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.text,
     paddingVertical: SPACING.md,
     borderRadius: BORDER_RADIUS.lg,
     alignItems: 'center',
@@ -393,7 +391,7 @@ const styles = StyleSheet.create({
   },
   backBtnIcon: {marginRight: SPACING.xs},
   backBtnText: {
-    color: COLORS.text,
+    color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },

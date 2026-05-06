@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
@@ -22,6 +23,15 @@ type CustomerDetailRouteProp = RouteProp<
   CustomersStackParamList,
   'CustomerDetail'
 >;
+
+const initialsOf = (name: string | undefined): string => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  const first = parts[0]?.[0] ?? '';
+  const last = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? '' : '';
+  return (first + last).toUpperCase() || '?';
+};
 
 export default function CustomerDetailScreen() {
   const navigation = useNavigation();
@@ -56,6 +66,24 @@ export default function CustomerDetailScreen() {
     load();
   }, [load]);
 
+  const openMail = useCallback(
+    (email: string) => {
+      haptics.light();
+      Linking.openURL(`mailto:${email}`).catch(() => {});
+    },
+    [haptics],
+  );
+
+  const openTel = useCallback(
+    (phone: string) => {
+      haptics.light();
+      // Strip spaces / dashes; tel: is usually tolerant but cleaner is safer.
+      const cleaned = phone.replace(/[^+\d]/g, '');
+      Linking.openURL(`tel:${cleaned}`).catch(() => {});
+    },
+    [haptics],
+  );
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
@@ -70,7 +98,13 @@ export default function CustomerDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.center}>
-          <Text style={styles.errorTitle}>Detail view is not available yet</Text>
+          <Ionicons
+            name="cloud-offline-outline"
+            size={36}
+            color={COLORS.textDim}
+            style={styles.errorIcon}
+          />
+          <Text style={styles.errorTitle}>Detail view not available</Text>
           <Text style={styles.errorBody}>
             We couldn&apos;t load this customer right now. Please try again in a
             moment.
@@ -99,6 +133,12 @@ export default function CustomerDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.center}>
+          <Ionicons
+            name="person-outline"
+            size={36}
+            color={COLORS.textDim}
+            style={styles.errorIcon}
+          />
           <Text style={styles.errorTitle}>Customer not found</Text>
           <TouchableOpacity
             onPress={() => {
@@ -114,36 +154,70 @@ export default function CustomerDetailScreen() {
 
   const balance = customer.account_balance_cents;
   const showBalance = balance != null && balance !== 0;
+  const owed = balance != null && balance > 0;
+  const displayName = customer.name?.trim() || '(Unnamed)';
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.heroCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initialsOf(customer.name)}</Text>
+          </View>
+          <Text style={styles.name}>{displayName}</Text>
+          <Text style={styles.subtitle}>Customer</Text>
+        </View>
+
+        <Text style={styles.sectionLabel}>Contact</Text>
         <View style={styles.card}>
-          <Text style={styles.name}>{customer.name || '(unnamed)'}</Text>
-          {customer.email ? (
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Email</Text>
-              <Text style={styles.rowValue}>{customer.email}</Text>
-            </View>
-          ) : null}
-          {customer.phone ? (
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Phone</Text>
-              <Text style={styles.rowValue}>{customer.phone}</Text>
-            </View>
-          ) : null}
-          {showBalance ? (
-            <View style={styles.row}>
-              <Text style={styles.rowLabel}>Balance</Text>
-              <Text
-                style={[
-                  styles.rowValue,
-                  balance > 0 && styles.balanceOwed,
-                ]}>
-                {formatCurrency(balance)}
+          <ContactRow
+            icon="mail-outline"
+            label="Email"
+            value={customer.email}
+            onPress={
+              customer.email ? () => openMail(customer.email as string) : undefined
+            }
+            isFirst
+          />
+          <ContactRow
+            icon="call-outline"
+            label="Phone"
+            value={customer.phone}
+            onPress={
+              customer.phone ? () => openTel(customer.phone as string) : undefined
+            }
+          />
+        </View>
+
+        {showBalance ? (
+          <>
+            <Text style={styles.sectionLabel}>Account</Text>
+            <View style={styles.balanceCard}>
+              <Text style={[styles.balance, owed && styles.balanceOwed]}>
+                {formatCurrency(Math.abs(balance as number))}
+              </Text>
+              <Text style={styles.balanceLabel}>
+                {owed ? 'Owed by customer' : 'Credit on account'}
               </Text>
             </View>
-          ) : null}
+          </>
+        ) : null}
+
+        <Text style={styles.sectionLabel}>Activity</Text>
+        <View style={styles.placeholderCard}>
+          <Ionicons
+            name="time-outline"
+            size={20}
+            color={COLORS.textMuted}
+            style={styles.placeholderIcon}
+          />
+          <View style={styles.placeholderTextWrap}>
+            <Text style={styles.placeholderTitle}>More detail coming soon</Text>
+            <Text style={styles.placeholderBody}>
+              Recent transactions, addresses, and notes will appear here once
+              the server enriches the response.
+            </Text>
+          </View>
         </View>
 
         <TouchableOpacity
@@ -155,7 +229,7 @@ export default function CustomerDetailScreen() {
           <Ionicons
             name="chevron-back"
             size={20}
-            color={COLORS.text}
+            color={COLORS.white}
             style={styles.backBtnIcon}
           />
           <Text style={styles.backBtnText}>Back</Text>
@@ -164,6 +238,61 @@ export default function CustomerDetailScreen() {
     </SafeAreaView>
   );
 }
+
+const ContactRow: React.FC<{
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  value: string | null;
+  onPress?: () => void;
+  isFirst?: boolean;
+}> = ({icon, label, value, onPress, isFirst}) => {
+  const inner = (
+    <View style={[styles.contactRow, !isFirst && styles.contactRowDivider]}>
+      <View style={styles.contactIconWrap}>
+        <Ionicons name={icon} size={18} color={COLORS.crimson} />
+      </View>
+      <View style={styles.contactTextWrap}>
+        <Text style={styles.contactLabel}>{label}</Text>
+        <Text
+          style={[
+            styles.contactValue,
+            value ? styles.contactValueLink : styles.contactValueEmpty,
+          ]}
+          numberOfLines={1}>
+          {value || '—'}
+        </Text>
+      </View>
+      {onPress ? (
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={COLORS.textDim}
+        />
+      ) : null}
+    </View>
+  );
+  if (onPress) {
+    return (
+      <TouchableOpacity activeOpacity={0.7} onPress={onPress}>
+        {inner}
+      </TouchableOpacity>
+    );
+  }
+  return inner;
+};
+
+const cardBase = {
+  backgroundColor: COLORS.surface,
+  borderWidth: 1,
+  borderColor: COLORS.surfaceBorder,
+  borderRadius: BORDER_RADIUS.lg,
+  marginBottom: SPACING.md,
+  shadowColor: COLORS.black,
+  shadowOffset: {width: 0, height: 1},
+  shadowOpacity: 0.06,
+  shadowRadius: 3,
+  elevation: 1,
+};
 
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: COLORS.background},
@@ -174,38 +303,129 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: SPACING.lg,
   },
-  card: {
-    backgroundColor: COLORS.surface,
+  errorIcon: {marginBottom: SPACING.md},
+  heroCard: {
+    ...cardBase,
+    padding: SPACING.lg,
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 72,
+    height: 72,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.cream,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.sm,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
-    borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.md,
-    marginBottom: SPACING.sm,
+  },
+  avatarText: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.xxl,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   name: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xl,
     fontWeight: '700',
-    marginBottom: SPACING.md,
+    letterSpacing: -0.3,
+    textAlign: 'center',
   },
-  row: {
+  subtitle: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '500',
+    marginTop: SPACING.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  sectionLabel: {
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: SPACING.sm,
+  },
+  card: {
+    ...cardBase,
+    paddingHorizontal: SPACING.md,
+  },
+  contactRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.md,
+  },
+  contactRowDivider: {
     borderTopWidth: 1,
     borderTopColor: COLORS.surfaceBorder,
   },
-  rowLabel: {color: COLORS.textMuted, fontSize: FONT_SIZE.md},
-  rowValue: {
+  contactIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.cream,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.md,
+  },
+  contactTextWrap: {flex: 1},
+  contactLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  contactValue: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  contactValueLink: {color: COLORS.text},
+  contactValueEmpty: {color: COLORS.textDim, fontWeight: '500'},
+  balanceCard: {
+    ...cardBase,
+    padding: SPACING.lg,
+    alignItems: 'center',
+  },
+  balance: {
+    fontSize: FONT_SIZE.title,
+    fontWeight: '700',
+    color: COLORS.text,
+    letterSpacing: -0.5,
+  },
+  balanceOwed: {color: COLORS.crimson},
+  balanceLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: SPACING.xs,
+  },
+  placeholderCard: {
+    ...cardBase,
+    backgroundColor: COLORS.cream,
+    flexDirection: 'row',
+    padding: SPACING.md,
+    borderColor: COLORS.surfaceBorder,
+  },
+  placeholderIcon: {marginRight: SPACING.sm, marginTop: 2},
+  placeholderTextWrap: {flex: 1},
+  placeholderTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
-    flexShrink: 1,
-    textAlign: 'right',
-    marginLeft: SPACING.md,
+    marginBottom: 2,
   },
-  balanceOwed: {color: COLORS.crimson},
+  placeholderBody: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    lineHeight: 20,
+  },
   errorTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
@@ -227,12 +447,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   primaryBtnText: {color: COLORS.white, fontWeight: '700', fontSize: FONT_SIZE.md},
-  linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md},
+  linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md, fontWeight: '600'},
   backBtn: {
     flexDirection: 'row',
-    borderWidth: 1.5,
-    borderColor: COLORS.text,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.text,
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     alignItems: 'center',
@@ -241,7 +459,7 @@ const styles = StyleSheet.create({
   },
   backBtnIcon: {marginRight: SPACING.xs},
   backBtnText: {
-    color: COLORS.text,
+    color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },
