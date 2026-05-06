@@ -115,12 +115,39 @@ export interface SalePayment {
   reference: string | null;
 }
 
+export interface Address {
+  id: number | null;
+  label: string | null;
+  line_1: string;
+  line_2: string | null;
+  city: string;
+  state: string | null;
+  postcode: string;
+  country: string | null;
+}
+
 export interface Customer {
   id: number;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
+  company: string | null;
   email: string | null;
   phone: string | null;
+  mobile: string | null;
+  customer_number: string | null;
   account_balance_cents: number | null;
+  payment_terms: string | null;
+  credit_limit_cents: number | null;
+  loyalty_points: number | null;
+  total_orders: number | null;
+  total_spent_cents: number | null;
+  last_purchase_date: string | null;
+  recent_sales: Sale[];
+  addresses: Address[];
+  default_address: Address | null;
+  notes: string | null;
+  created_at: string | null;
 }
 
 export interface DailySummary {
