@@ -10,6 +10,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
+import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
@@ -236,6 +237,12 @@ export default function ReceiptViewerScreen() {
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}>
+            <Ionicons
+              name="chevron-back"
+              size={20}
+              color={COLORS.text}
+              style={styles.backButtonIcon}
+            />
             <Text style={styles.backButtonText}>Back</Text>
           </TouchableOpacity>
         </View>
@@ -507,14 +514,18 @@ const styles = StyleSheet.create({
   },
   backButton: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    flexDirection: 'row',
+    borderWidth: 1.5,
+    borderColor: COLORS.text,
+    backgroundColor: COLORS.white,
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     alignItems: 'center',
+    justifyContent: 'center',
   },
+  backButtonIcon: {marginRight: SPACING.xs},
   backButtonText: {
-    color: COLORS.textMuted,
+    color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },
