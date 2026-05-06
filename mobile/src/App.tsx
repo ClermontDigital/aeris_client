@@ -1,5 +1,5 @@
 import React, {useEffect} from 'react';
-import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {NavigationContainer} from '@react-navigation/native';
 import {activateKeepAwakeAsync} from 'expo-keep-awake';
@@ -62,6 +62,9 @@ const App: React.FC = () => {
   const restoreSession = useAuthStore(s => s.restoreSession);
   const clearLocalSession = useAuthStore(s => s.clearLocalSession);
   const restoreCache = useProductCacheStore(s => s.restoreCache);
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const expiresAt = useAuthStore(s => s.expiresAt);
+  const refreshSession = useAuthStore(s => s.refreshSession);
 
   useEffect(() => {
     activateKeepAwakeAsync();
@@ -100,6 +103,44 @@ const App: React.FC = () => {
     settings?.connectionMode,
     settings?.workspaceCode,
   ]);
+
+  // Proactive Sanctum refresh: 2 minutes before expiry, mint a new token so
+  // the user never sees a mid-shift "session expired" interruption. The
+  // timer covers the always-foreground POS use case; the AppState listener
+  // below covers the close-the-app-overnight case.
+  useEffect(() => {
+    if (!isAuthenticated || !expiresAt) return;
+    const REFRESH_LEAD_MS = 120_000; // 2 minutes
+    const msUntilRefresh = Date.parse(expiresAt) - Date.now() - REFRESH_LEAD_MS;
+    if (Number.isNaN(msUntilRefresh)) return;
+    if (msUntilRefresh <= 0) {
+      // Already past the lead — fire immediately. refreshSession handles
+      // its own dedupe and error logging.
+      refreshSession().catch(() => {});
+      return;
+    }
+    const timer = setTimeout(() => {
+      refreshSession().catch(() => {});
+    }, msUntilRefresh);
+    return () => clearTimeout(timer);
+  }, [isAuthenticated, expiresAt, refreshSession]);
+
+  // Foreground after long background → if expiry is near, refresh now.
+  // The setTimeout above is paused while backgrounded on iOS, so without
+  // this hook a user who closes the app overnight wakes up to a stale
+  // token and would hit the natural-401 path on the first tap.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      if (!isAuthenticated || !expiresAt) return;
+      const remaining = Date.parse(expiresAt) - Date.now();
+      if (Number.isNaN(remaining)) return;
+      if (remaining < 120_000) {
+        refreshSession().catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, [isAuthenticated, expiresAt, refreshSession]);
 
   return (
     <ErrorBoundary>

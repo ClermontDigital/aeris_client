@@ -1,4 +1,4 @@
-import React, {useCallback} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -17,10 +17,9 @@ import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
 import type {CartItem} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
-
-const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
 
 export default function CartScreen() {
   const navigation = useNavigation<NavigationProp>();
@@ -44,6 +43,46 @@ export default function CartScreen() {
   const tax = getTaxCents();
   const total = getTotalCents();
   const itemCount = getItemCount();
+
+  // The discount input is dollars-as-text on screen but the store holds
+  // cents. We mirror the store value into local state so the user can type
+  // freely (decimal in progress, intermediate empty string) without the
+  // store clobbering each keystroke. Commit on blur/submit.
+  const [discountInput, setDiscountInput] = useState<string>(
+    discountCents > 0 ? (discountCents / 100).toFixed(2) : '',
+  );
+  const [discountClampNotice, setDiscountClampNotice] = useState(false);
+  // If another path resets discountCents (e.g. clear cart), reflect it.
+  useEffect(() => {
+    setDiscountInput(discountCents > 0 ? (discountCents / 100).toFixed(2) : '');
+  }, [discountCents]);
+
+  const commitDiscount = useCallback(() => {
+    const trimmed = discountInput.trim();
+    if (trimmed === '') {
+      setDiscount(0);
+      setDiscountClampNotice(false);
+      return;
+    }
+    const dollars = parseFloat(trimmed);
+    if (!Number.isFinite(dollars) || dollars < 0) {
+      setDiscount(0);
+      setDiscountInput('');
+      setDiscountClampNotice(false);
+      return;
+    }
+    const requested = Math.round(dollars * 100);
+    setDiscount(requested);
+    // Read the resulting (post-clamp) value to detect whether the store
+    // had to cap the request.
+    const after = useCartStore.getState().discountCents;
+    if (after !== requested) {
+      setDiscountClampNotice(true);
+      setDiscountInput(after > 0 ? (after / 100).toFixed(2) : '');
+    } else {
+      setDiscountClampNotice(false);
+    }
+  }, [discountInput, setDiscount]);
 
   const handleClearCart = useCallback(() => {
     Alert.alert(
@@ -173,18 +212,27 @@ export default function CartScreen() {
       {items.length > 0 && (
         <View style={styles.inputsSection}>
           <View style={styles.inputRow}>
-            <Text style={styles.inputLabel}>Discount (cents)</Text>
+            <Text style={styles.inputLabel}>Discount ($)</Text>
             <TextInput
               style={styles.input}
-              value={discountCents > 0 ? String(discountCents) : ''}
+              value={discountInput}
               onChangeText={text => {
-                const val = parseInt(text, 10);
-                setDiscount(isNaN(val) ? 0 : val);
+                // Hide the clamp helper as soon as the user edits — they've
+                // acknowledged the cap and are correcting their value.
+                if (discountClampNotice) setDiscountClampNotice(false);
+                setDiscountInput(text);
               }}
-              keyboardType="numeric"
-              placeholder="0"
+              onBlur={commitDiscount}
+              onSubmitEditing={commitDiscount}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
               placeholderTextColor={COLORS.textDim}
             />
+            {discountClampNotice ? (
+              <Text style={styles.discountHelper}>
+                Discount can&apos;t exceed total
+              </Text>
+            ) : null}
           </View>
           <View style={styles.inputRow}>
             <Text style={styles.inputLabel}>Notes</Text>
@@ -387,6 +435,11 @@ const styles = StyleSheet.create({
   notesInput: {
     minHeight: 48,
     textAlignVertical: 'top',
+  },
+  discountHelper: {
+    color: COLORS.danger,
+    fontSize: FONT_SIZE.xs,
+    marginTop: SPACING.xs,
   },
   summaryCard: {
     backgroundColor: COLORS.surfaceHover,

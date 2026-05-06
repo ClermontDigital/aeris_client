@@ -18,6 +18,7 @@ export const RELAY_ACTIONS = {
   AUTH_LOGIN: 'auth.login',
   AUTH_BIOMETRIC: 'auth.biometric',
   AUTH_LOGOUT: 'auth.logout',
+  AUTH_REFRESH: 'auth.refresh',
   DASHBOARD_SUMMARY: 'dashboard.summary',
   PRODUCTS_LIST: 'products.list',
   PRODUCTS_SEARCH: 'products.search',

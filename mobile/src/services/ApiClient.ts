@@ -220,6 +220,17 @@ export class ApiClient {
     }
   }
 
+  // Mints a fresh Sanctum token off the current bearer. Caller is responsible
+  // for persisting the new token + expires_at and calling setAuthToken().
+  // Failures (401, network) propagate so the caller can decide whether to
+  // wipe the session (proactive expired path) or simply log and retry later.
+  async refreshToken(): Promise<AuthResponse> {
+    if (this.mode === 'relay') {
+      return this.relayRpc<AuthResponse>(RELAY_ACTIONS.AUTH_REFRESH, {});
+    }
+    return this.post<AuthResponse>('/api/v1/auth/refresh', {});
+  }
+
   // --- Dashboard ---
   async getDailySummary(
     date?: string,

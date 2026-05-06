@@ -15,10 +15,9 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {ProductDetail} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type ProductDetailRouteProp = RouteProp<ItemsStackParamList, 'ProductDetail'>;
-
-const formatCurrency = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
 export default function ProductDetailScreen() {
   const navigation = useNavigation();

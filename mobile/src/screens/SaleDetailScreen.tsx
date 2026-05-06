@@ -16,11 +16,10 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {SaleDetail, Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type SaleDetailRouteProp = RouteProp<TransactionsStackParamList, 'SaleDetail'>;
 type Nav = NativeStackNavigationProp<TransactionsStackParamList>;
-
-const formatCurrency = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
 function formatDateTime(iso: string): string {
   if (!iso) return '';
