@@ -10,13 +10,17 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
+import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
 import ApiClient from '../services/ApiClient';
 import type {DailySummary} from '../types/api.types';
+import type {AppTabParamList} from '../types/navigation.types';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {useAuthStore} from '../stores/authStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {formatCurrency} from '../utils/format';
+
+type Nav = BottomTabNavigationProp<AppTabParamList, 'Dashboard'>;
 
 const greetingFor = (hour: number): string => {
   if (hour < 12) return 'Good morning';
@@ -32,7 +36,7 @@ const firstName = (full: string | undefined): string => {
 };
 
 const DashboardScreen: React.FC = () => {
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const haptics = useHaptics();
   const userName = useAuthStore(s => s.user?.name);
   const [summary, setSummary] = useState<DailySummary | null>(null);
@@ -56,12 +60,13 @@ const DashboardScreen: React.FC = () => {
     } catch (e) {
       const message =
         e instanceof Error ? e.message : 'Failed to load dashboard';
+      haptics.error();
       setError(message);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [haptics]);
 
   useEffect(() => {
     fetchSummary();
@@ -80,9 +85,9 @@ const DashboardScreen: React.FC = () => {
   // The earlier getParent() chase walked up to RootNavigator (which only
   // knows 'Auth' / 'App') and silently no-op'd, so the tiles did nothing.
   const goToTab = useCallback(
-    (tab: string) => {
+    (tab: keyof AppTabParamList) => {
       haptics.light();
-      (navigation as unknown as {navigate: (n: string) => void}).navigate(tab);
+      navigation.navigate(tab);
     },
     [haptics, navigation],
   );

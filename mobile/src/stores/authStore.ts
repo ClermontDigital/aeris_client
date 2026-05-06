@@ -180,7 +180,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // invalidated the token, and the onUnauthorized handler will route
       // the user back to login at that moment. This matches the policy
       // "stay logged in until logout or API rejection".
-      const user = JSON.parse(userJson) as User;
+      let user: User;
+      try {
+        user = JSON.parse(userJson) as User;
+      } catch {
+        console.warn('authStore: stored user JSON malformed, clearing');
+        await SecureStorage.removeItem(AUTH_USER_KEY);
+        await SecureStorage.removeItem(AUTH_TOKEN_KEY);
+        await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+        await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
+        set({isLoading: false});
+        return;
+      }
       ApiClient.setAuthToken(token);
       set({
         user,

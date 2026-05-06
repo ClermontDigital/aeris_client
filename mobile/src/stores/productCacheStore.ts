@@ -12,6 +12,7 @@ interface ProductCacheState {
   categories: Category[];
   lastSynced: string | null;
   isSyncing: boolean;
+  lastSyncError: string | null;
 
   syncProducts: () => Promise<void>;
   restoreCache: () => Promise<void>;
@@ -25,9 +26,10 @@ export const useProductCacheStore = create<ProductCacheState>((set, get) => ({
   categories: [],
   lastSynced: null,
   isSyncing: false,
+  lastSyncError: null,
 
   syncProducts: async () => {
-    set({isSyncing: true});
+    set({isSyncing: true, lastSyncError: null});
     try {
       // Fetch all POS products (paginated — fetch all pages)
       let allProducts: Product[] = [];
@@ -54,9 +56,12 @@ export const useProductCacheStore = create<ProductCacheState>((set, get) => ({
         categories,
         lastSynced: timestamp,
         isSyncing: false,
+        lastSyncError: null,
       });
-    } catch {
-      set({isSyncing: false});
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Catalog sync failed';
+      console.warn('productCacheStore.syncProducts failed:', msg);
+      set({isSyncing: false, lastSyncError: msg});
     }
   },
 

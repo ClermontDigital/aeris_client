@@ -60,6 +60,7 @@ const ItemsScreen: React.FC = () => {
         setLastPage(result.meta.last_page);
       } catch (e) {
         if (seq !== requestSeq.current) return;
+        haptics.error();
         setError(e instanceof Error ? e.message : 'Failed to load items');
       } finally {
         if (seq === requestSeq.current) {
@@ -69,7 +70,7 @@ const ItemsScreen: React.FC = () => {
         }
       }
     },
-    [],
+    [haptics],
   );
 
   // Initial load + debounced search
@@ -124,12 +125,32 @@ const ItemsScreen: React.FC = () => {
   );
 
   const renderFooter = () => {
-    if (!isLoadingMore) return null;
-    return (
-      <View style={styles.footerLoader}>
-        <ActivityIndicator color={COLORS.accent} size="small" />
-      </View>
-    );
+    if (isLoadingMore) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator color={COLORS.accent} size="small" />
+        </View>
+      );
+    }
+    if (error && items.length > 0) {
+      return (
+        <TouchableOpacity
+          style={styles.footerRetry}
+          onPress={() => fetchPage(page + 1, true, search)}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading next page">
+          <Text style={styles.footerRetryText}>Tap to retry</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (items.length > 0 && page >= lastPage) {
+      return (
+        <View style={styles.footerEnd}>
+          <Text style={styles.footerEndText}>End of list</Text>
+        </View>
+      );
+    }
+    return null;
   };
 
   const renderEmpty = () => {
@@ -312,6 +333,24 @@ const styles = StyleSheet.create({
   },
   rowStockOut: {color: COLORS.warning},
   footerLoader: {paddingVertical: SPACING.lg, alignItems: 'center'},
+  footerEnd: {paddingVertical: SPACING.lg, alignItems: 'center'},
+  footerEndText: {
+    color: COLORS.textDim,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  footerRetry: {
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
+  },
+  footerRetryText: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
   emptyContainer: {alignItems: 'center', paddingTop: SPACING.xxl},
   emptyText: {
     color: COLORS.textMuted,
