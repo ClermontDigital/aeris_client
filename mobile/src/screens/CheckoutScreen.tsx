@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -50,6 +50,8 @@ export default function CheckoutScreen() {
   const [paymentMethodsState, setPaymentMethodsState] = useState<
     'loading' | 'live' | 'fallback'
   >('loading');
+  const paymentMethodsStateRef = useRef(paymentMethodsState);
+  paymentMethodsStateRef.current = paymentMethodsState;
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [amountTendered, setAmountTendered] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,26 +61,32 @@ export default function CheckoutScreen() {
 
   // Load payment methods. Surfacing the fallback state lets the operator
   // know the workspace's customised method list isn't loaded — important
-  // when a deployment has e.g. 'EFTPOS', 'GiftCard' beyond cash/card. The
-  // chip above the grid offers a tap-to-retry rather than silently
-  // serving defaults forever.
+  // when a deployment has e.g. 'EFTPOS', 'GiftCard' beyond cash/card. We
+  // block sale completion in fallback because the hard-coded codes
+  // (cash/card/account) aren't guaranteed valid for every deployment;
+  // submitting an unknown method would be a server-side validation fail
+  // mid-sale. Tap-to-retry covers the transient-network case.
   const loadPaymentMethods = useCallback(async () => {
+    const wasFallback =
+      paymentMethodsStateRef.current === 'fallback';
     setPaymentMethodsState('loading');
     try {
       const methods = await ApiClient.getPaymentMethods();
       if (methods.length > 0) {
         setPaymentMethods(methods);
         setPaymentMethodsState('live');
-      } else {
-        setPaymentMethods(DEFAULT_PAYMENT_METHODS);
-        setPaymentMethodsState('fallback');
+        return;
       }
+      setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+      setPaymentMethodsState('fallback');
+      if (!wasFallback) haptics.error();
     } catch (e) {
       console.warn('Failed to load payment methods, using defaults:', e);
       setPaymentMethods(DEFAULT_PAYMENT_METHODS);
       setPaymentMethodsState('fallback');
+      if (!wasFallback) haptics.error();
     }
-  }, []);
+  }, [haptics]);
 
   useEffect(() => {
     loadPaymentMethods();
@@ -91,6 +99,7 @@ export default function CheckoutScreen() {
       : 0;
 
   const canComplete =
+    paymentMethodsState === 'live' &&
     selectedMethod !== null &&
     (selectedMethod !== 'cash' || tenderedCents >= totalCents);
 
@@ -143,11 +152,12 @@ export default function CheckoutScreen() {
       const html = buildReceiptHtml(receipt);
       await PrintService.printHtml(html);
     } catch {
+      haptics.error();
       setError('Failed to print receipt');
     } finally {
       setIsPrinting(false);
     }
-  }, [saleResult]);
+  }, [saleResult, haptics]);
 
   const handleNewSale = useCallback(() => {
     clear();
@@ -303,6 +313,15 @@ export default function CheckoutScreen() {
   );
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function buildReceiptHtml(receipt: {
   business_name: string;
   sale_number: string;
@@ -317,12 +336,12 @@ function buildReceiptHtml(receipt: {
   const itemRows = receipt.items
     .map(
       i =>
-        `<tr><td>${i.name}</td><td>${i.quantity}</td><td>${i.unit_price}</td><td>${i.line_total}</td></tr>`,
+        `<tr><td>${escapeHtml(i.name)}</td><td>${i.quantity}</td><td>${escapeHtml(i.unit_price)}</td><td>${escapeHtml(i.line_total)}</td></tr>`,
     )
     .join('');
 
   const paymentRows = receipt.payments
-    .map(p => `<p>${p.method}: ${p.amount}</p>`)
+    .map(p => `<p>${escapeHtml(p.method)}: ${escapeHtml(p.amount)}</p>`)
     .join('');
 
   return `
@@ -338,9 +357,9 @@ function buildReceiptHtml(receipt: {
       .total-row td { font-size: 14px; font-weight: bold; }
     </style></head>
     <body>
-      <h2>${receipt.business_name}</h2>
-      <p class="info">Sale #${receipt.sale_number}</p>
-      <p class="info">${receipt.date}</p>
+      <h2>${escapeHtml(receipt.business_name)}</h2>
+      <p class="info">Sale #${escapeHtml(receipt.sale_number)}</p>
+      <p class="info">${escapeHtml(receipt.date)}</p>
       <div class="sep"></div>
       <table>
         <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>
@@ -348,13 +367,13 @@ function buildReceiptHtml(receipt: {
       </table>
       <div class="sep"></div>
       <table class="totals">
-        <tr><td>Subtotal</td><td>${receipt.subtotal}</td></tr>
-        <tr><td>Tax</td><td>${receipt.tax}</td></tr>
-        <tr class="total-row"><td>Total</td><td>${receipt.total}</td></tr>
+        <tr><td>Subtotal</td><td>${escapeHtml(receipt.subtotal)}</td></tr>
+        <tr><td>Tax</td><td>${escapeHtml(receipt.tax)}</td></tr>
+        <tr class="total-row"><td>Total</td><td>${escapeHtml(receipt.total)}</td></tr>
       </table>
       <div class="sep"></div>
       ${paymentRows}
-      ${receipt.served_by ? `<p class="info">Served by: ${receipt.served_by}</p>` : ''}
+      ${receipt.served_by ? `<p class="info">Served by: ${escapeHtml(receipt.served_by)}</p>` : ''}
     </body>
     </html>
   `;

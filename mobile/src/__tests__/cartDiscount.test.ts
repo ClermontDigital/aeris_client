@@ -24,10 +24,10 @@ describe('cartStore setDiscount clamping', () => {
   });
 
   it('clamps to [0, subtotal+tax]: a request equal to the cap commits as-is', () => {
-    // $10 item + 10% tax = $11.00 = 1100 cents max discount.
+    // Product.price_cents is inc-GST, so subtotal+tax = lineTotalInc = 1000.
     useCartStore.getState().addItem(makeProduct({price_cents: 1000, tax_rate: 10}));
-    useCartStore.getState().setDiscount(1100);
-    expect(useCartStore.getState().discountCents).toBe(1100);
+    useCartStore.getState().setDiscount(1000);
+    expect(useCartStore.getState().discountCents).toBe(1000);
     // Total should clamp to $0 once the full discount lands.
     expect(useCartStore.getState().getTotalCents()).toBe(0);
   });
@@ -39,10 +39,10 @@ describe('cartStore setDiscount clamping', () => {
   });
 
   it('clamps a wildly large request down to subtotal+tax', () => {
-    // $10 + 10% tax = 1100 cap; 99,999,999 cents far exceeds it.
+    // lineTotalInc = 1000; 99,999,999 cents far exceeds it.
     useCartStore.getState().addItem(makeProduct({price_cents: 1000, tax_rate: 10}));
     useCartStore.getState().setDiscount(99_999_999);
-    expect(useCartStore.getState().discountCents).toBe(1100);
+    expect(useCartStore.getState().discountCents).toBe(1000);
   });
 
   it('caps at 0 when the cart is empty (subtotal+tax = 0)', () => {

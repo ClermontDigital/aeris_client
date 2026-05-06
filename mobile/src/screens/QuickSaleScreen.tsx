@@ -93,11 +93,12 @@ export default function QuickSaleScreen() {
       setDisplayProducts(response.data);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load products';
+      haptics.error();
       setError(msg);
     } finally {
       setIsSearching(false);
     }
-  }, [cachedProducts, searchQuery, selectedCategory, searchLocal]);
+  }, [cachedProducts, searchQuery, selectedCategory, searchLocal, haptics]);
 
   const handleRefresh = useCallback(async () => {
     await syncProducts();

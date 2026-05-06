@@ -26,30 +26,32 @@ describe('cartStore tax math', () => {
   it('treats tax_rate as a percentage (10 = 10%), not a decimal multiplier', () => {
     // Regression for the bug where a $10 item with tax_rate=10 produced
     // $100 of tax instead of $1 because the cart math multiplied directly
-    // without /100. Aeris2's ProductResource always emits tax_rate as a
-    // percentage number; the cart was treating it as a decimal.
+    // without /100. Convention: Product.price_cents is inc-GST; the cart
+    // splits it to match the server (subtotal = ex-GST, tax = embedded GST,
+    // total = inc-GST minus cart discount). So a $10 inc-GST item @ 10% =
+    // $9.09 ex / $0.91 GST / $10.00 total.
     useCartStore.getState().addItem(makeProduct({price_cents: 1000, tax_rate: 10}));
-    expect(useCartStore.getState().getSubtotalCents()).toBe(1000);
-    expect(useCartStore.getState().getTaxCents()).toBe(100); // 10% of $10 = $1.00
-    expect(useCartStore.getState().getTotalCents()).toBe(1100); // $11.00
+    expect(useCartStore.getState().getSubtotalCents()).toBe(909);
+    expect(useCartStore.getState().getTaxCents()).toBe(91);
+    expect(useCartStore.getState().getTotalCents()).toBe(1000);
   });
 
   it('handles a 0% tax_rate without dividing-by-zero or NaN', () => {
     useCartStore.getState().addItem(makeProduct({price_cents: 500, tax_rate: 0}));
+    expect(useCartStore.getState().getSubtotalCents()).toBe(500);
     expect(useCartStore.getState().getTaxCents()).toBe(0);
     expect(useCartStore.getState().getTotalCents()).toBe(500);
   });
 
   it('rounds tax to nearest cent (no float drift across line items)', () => {
-    // $3.33 × 3 lines @ 10% = $9.99 subtotal × 10% = $0.999 -> 100 cents.
-    // Matters because the prior code accumulated three rounded line-tax
-    // values; with the percentage fix, each line is rounded once.
+    // $3.33 × 3 = $9.99 inc-GST. ex = round(999/1.1) = 908. tax = 999-908 = 91.
+    // Total (no discount) = 999. Mirrors the server's single-round split.
     useCartStore
       .getState()
       .addItem(makeProduct({id: 1, price_cents: 333, tax_rate: 10}), 3);
-    expect(useCartStore.getState().getSubtotalCents()).toBe(999);
-    // 999 * 10 / 100 = 99.9 -> rounds to 100
-    expect(useCartStore.getState().getTaxCents()).toBe(100);
+    expect(useCartStore.getState().getSubtotalCents()).toBe(908);
+    expect(useCartStore.getState().getTaxCents()).toBe(91);
+    expect(useCartStore.getState().getTotalCents()).toBe(999);
   });
 
   it('subtracts the cart-level discount from the total', () => {
@@ -57,8 +59,10 @@ describe('cartStore tax math', () => {
       .getState()
       .addItem(makeProduct({price_cents: 1000, tax_rate: 10}));
     useCartStore.getState().setDiscount(200); // $2.00 off the bill
-    // Subtotal $10 + tax $1 - discount $2 = $9.00
-    expect(useCartStore.getState().getTotalCents()).toBe(900);
+    // Subtotal $9.09 + tax $0.91 - discount $2.00 = $8.00
+    expect(useCartStore.getState().getSubtotalCents()).toBe(909);
+    expect(useCartStore.getState().getTaxCents()).toBe(91);
+    expect(useCartStore.getState().getTotalCents()).toBe(800);
   });
 
   it('counts items by quantity, not by distinct line', () => {

@@ -210,6 +210,9 @@ export class ApiClient {
   }
 
   async logout(): Promise<void> {
+    // No-op when there's nothing to revoke — avoids firing
+    // `Authorization: Bearer null` and a guaranteed 401 against the server.
+    if (!this.authToken) return;
     try {
       if (this.mode === 'relay') {
         await this.relayRpc(RELAY_ACTIONS.AUTH_LOGOUT, {});
@@ -438,6 +441,12 @@ export class ApiClient {
       (sum, i) => sum + i.unit_price_cents * i.quantity - (i.discount_cents ?? 0),
       0,
     );
+    // total_amount / subtotal / tax_amount mirror the LINE totals (pre cart-level
+    // discount). The server's cross-field check is subtotal == sum(line_ex_gst),
+    // so any cart-level discount must stay as the separate top-level
+    // `discount_amount` field — applying it to total_amount here would make the
+    // sent subtotal disagree with the server-computed sum of line ex-GSTs.
+    const cartDiscountCents = Math.max(0, data.discount_cents ?? 0);
     const totalAmount = centsToDollars(lineTotalCents);
     const subtotal = round2(totalAmount / 1.10);
     const taxAmount = round2(totalAmount - subtotal);
@@ -460,7 +469,7 @@ export class ApiClient {
       total_amount: totalAmount,
     };
     if (data.customer_id !== undefined) payload.customer_id = data.customer_id;
-    if (data.discount_cents) payload.discount_amount = centsToDollars(data.discount_cents);
+    if (cartDiscountCents > 0) payload.discount_amount = centsToDollars(cartDiscountCents);
     if (data.notes) payload.notes = data.notes;
 
     // One key per logical sale, reused on every retry. Gateway dedupes at
