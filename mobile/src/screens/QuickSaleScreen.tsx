@@ -204,6 +204,16 @@ export default function QuickSaleScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      {/* Header — matches Items/Customers/Transactions for visual consistency */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Sale</Text>
+        {itemCount > 0 ? (
+          <Text style={styles.headerSubtitle}>
+            {itemCount} {itemCount === 1 ? 'item' : 'items'} in cart
+          </Text>
+        ) : null}
+      </View>
+
       {/* Search Bar + inline Scan shortcut */}
       <View style={styles.searchContainer}>
         <Ionicons
@@ -283,12 +293,14 @@ export default function QuickSaleScreen() {
         <TouchableOpacity
           style={styles.cartBar}
           onPress={() => navigation.navigate('Cart')}
-          activeOpacity={0.8}>
+          activeOpacity={0.85}>
           <Text style={styles.cartBarText}>
-            {itemCount} {itemCount === 1 ? 'item' : 'items'} &mdash;{' '}
-            {formatCurrency(totalCents)}
+            {itemCount} {itemCount === 1 ? 'item' : 'items'} · {formatCurrency(totalCents)}
           </Text>
-          <Text style={styles.cartBarAction}>View Cart &gt;</Text>
+          <View style={styles.cartBarActionRow}>
+            <Text style={styles.cartBarAction}>View Cart</Text>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.white} />
+          </View>
         </TouchableOpacity>
       )}
     </SafeAreaView>
@@ -300,6 +312,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  header: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.xxl,
+    fontWeight: '700',
+  },
+  headerSubtitle: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '500',
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -308,7 +338,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.inputBorder,
     borderRadius: BORDER_RADIUS.lg,
     marginHorizontal: SPACING.md,
-    marginTop: SPACING.sm,
+    marginBottom: SPACING.xs,
     paddingHorizontal: SPACING.md,
     height: 44,
   },
@@ -371,8 +401,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
   },
   gridContent: {
-    padding: SPACING.md,
-    paddingBottom: 100,
+    paddingHorizontal: SPACING.sm,
+    paddingTop: SPACING.xs,
+    paddingBottom: 120,
   },
   gridRow: {
     justifyContent: 'space-between',
@@ -386,16 +417,22 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     marginBottom: SPACING.sm,
     marginHorizontal: SPACING.xs,
+    shadowColor: COLORS.black,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
   },
   productName: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
-    marginBottom: SPACING.xs,
-    minHeight: 36,
+    marginBottom: SPACING.sm,
+    minHeight: 38,
+    lineHeight: 19,
   },
   productPrice: {
-    color: COLORS.accent,
+    color: COLORS.crimson,
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
     marginBottom: SPACING.xs,
@@ -428,12 +465,15 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     marginTop: SPACING.sm,
   },
+  // Sits ABOVE the bottom tab bar (which is ~49pt + bottom safe area on
+  // iOS). 12pt of clearance keeps it from kissing the tab bar edge while
+  // still feeling docked.
   cartBar: {
     position: 'absolute',
-    bottom: SPACING.lg,
+    bottom: SPACING.sm,
     left: SPACING.md,
     right: SPACING.md,
-    backgroundColor: COLORS.accent,
+    backgroundColor: COLORS.crimson,
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
@@ -441,9 +481,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     shadowColor: COLORS.black,
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
     elevation: 8,
   },
   cartBarText: {
@@ -451,9 +491,11 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
   },
+  cartBarActionRow: {flexDirection: 'row', alignItems: 'center'},
   cartBarAction: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
+    marginRight: SPACING.xs,
   },
 });

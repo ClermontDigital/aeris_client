@@ -536,7 +536,7 @@ export class ApiClient {
           `${API_ENDPOINTS.SALES_LIST}/${saleId}/receipt`,
         );
       }
-      return unwrapResource<ReceiptData>(raw);
+      return normalizeReceipt(unwrapResource(raw));
     });
   }
 
@@ -836,6 +836,58 @@ function unwrapResource<T = unknown>(result: unknown): T {
     }
   }
   return result as T;
+}
+
+// Receipt shape from Aeris2 has been observed missing one of items/payments
+// on edge cases (server returning a partial render before the sale's
+// payment row commits, etc.). The receipt screen's `.map()` calls then
+// throw and surface as the ErrorBoundary's "Something went wrong". Default
+// the arrays here so the screen renders gracefully and a missing field
+// shows as an empty section rather than a screen-killing crash. Also
+// accepts `line_items` as an alternate key seen on some deployments.
+export function normalizeReceipt(input: unknown): ReceiptData {
+  const raw = (input || {}) as Record<string, unknown>;
+  const itemsSource = raw.items ?? raw.line_items;
+  const items = unwrapList<unknown>(itemsSource).map(it => {
+    const i = (it || {}) as Record<string, unknown>;
+    return {
+      name:
+        typeof i.name === 'string'
+          ? i.name
+          : typeof i.product_name === 'string'
+          ? (i.product_name as string)
+          : '',
+      quantity: asNumber(i.quantity, 0),
+      unit_price:
+        typeof i.unit_price === 'string' ? i.unit_price : asString(i.price),
+      line_total:
+        typeof i.line_total === 'string'
+          ? i.line_total
+          : asString(i.total ?? i.line_total_formatted),
+    };
+  });
+  const payments = unwrapList<unknown>(raw.payments).map(p => {
+    const pp = (p || {}) as Record<string, unknown>;
+    return {
+      method: asString(pp.method),
+      amount:
+        typeof pp.amount === 'string'
+          ? pp.amount
+          : asString(pp.amount_formatted),
+    };
+  });
+  return {
+    sale_number: asString(raw.sale_number),
+    business_name: asString(raw.business_name),
+    business_address: asString(raw.business_address),
+    items,
+    subtotal: asString(raw.subtotal),
+    tax: asString(raw.tax),
+    total: asString(raw.total),
+    payments,
+    date: asString(raw.date),
+    served_by: typeof raw.served_by === 'string' ? raw.served_by : null,
+  };
 }
 
 // Aeris2 may emit either dollars (`total_amount`) or cents (`total_cents`);
