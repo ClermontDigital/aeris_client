@@ -838,55 +838,116 @@ function unwrapResource<T = unknown>(result: unknown): T {
   return result as T;
 }
 
-// Receipt shape from Aeris2 has been observed missing one of items/payments
-// on edge cases (server returning a partial render before the sale's
-// payment row commits, etc.). The receipt screen's `.map()` calls then
-// throw and surface as the ErrorBoundary's "Something went wrong". Default
-// the arrays here so the screen renders gracefully and a missing field
-// shows as an empty section rather than a screen-killing crash. Also
-// accepts `line_items` as an alternate key seen on some deployments.
+// Receipt shape from Aeris2 has varied across deployments — controllers
+// sometimes return pre-formatted display strings (`subtotal: "$10.00"`),
+// other times return raw cents (`subtotal_cents: 1000`), and the business
+// info is sometimes nested under `{business: {name, address}}`. This
+// normalizer accepts every shape we've seen and falls back to numeric
+// formatting so the screen always renders something readable. Empty
+// strings on missing fields keep `.map()` calls crash-free even on
+// partial server responses. Accepts `line_items` and nested `sale.items`
+// as alternate items keys.
+function formatCentsString(c: number | undefined): string {
+  if (c === undefined || !Number.isFinite(c)) return '';
+  return '$' + (c / 100).toFixed(2);
+}
+
+function pickString(
+  source: Record<string, unknown>,
+  ...keys: string[]
+): string {
+  for (const key of keys) {
+    const v = source[key];
+    if (typeof v === 'string' && v.trim() !== '') return v;
+  }
+  return '';
+}
+
 export function normalizeReceipt(input: unknown): ReceiptData {
   const raw = (input || {}) as Record<string, unknown>;
-  const itemsSource = raw.items ?? raw.line_items;
+  // Some deployments wrap the actual receipt under a top-level `sale` or
+  // `receipt` key. Drill in once if we see a familiar nested shape.
+  const inner =
+    raw.receipt && typeof raw.receipt === 'object'
+      ? (raw.receipt as Record<string, unknown>)
+      : raw.sale && typeof raw.sale === 'object'
+      ? (raw.sale as Record<string, unknown>)
+      : raw;
+
+  const business = (inner.business && typeof inner.business === 'object'
+    ? (inner.business as Record<string, unknown>)
+    : null);
+
+  const itemsSource =
+    inner.items ??
+    inner.line_items ??
+    inner.products ??
+    [];
   const items = unwrapList<unknown>(itemsSource).map(it => {
     const i = (it || {}) as Record<string, unknown>;
+    const unitCents = findCents(i, 'unit_price_cents', 'unit_price', 'price');
+    const lineCents = findCents(
+      i,
+      'line_total_cents',
+      'line_total',
+      'total',
+      'price',
+    );
     return {
-      name:
-        typeof i.name === 'string'
-          ? i.name
-          : typeof i.product_name === 'string'
-          ? (i.product_name as string)
-          : '',
-      quantity: asNumber(i.quantity, 0),
+      name: pickString(i, 'name', 'product_name', 'description', 'sku'),
+      quantity: asNumber(i.quantity ?? i.qty, 0),
       unit_price:
-        typeof i.unit_price === 'string' ? i.unit_price : asString(i.price),
+        pickString(i, 'unit_price', 'unit_price_formatted', 'price_formatted') ||
+        formatCentsString(unitCents),
       line_total:
-        typeof i.line_total === 'string'
-          ? i.line_total
-          : asString(i.total ?? i.line_total_formatted),
+        pickString(
+          i,
+          'line_total',
+          'line_total_formatted',
+          'total',
+          'total_formatted',
+        ) || formatCentsString(lineCents),
     };
   });
-  const payments = unwrapList<unknown>(raw.payments).map(p => {
+
+  const paymentsSource = inner.payments ?? inner.payment_methods ?? [];
+  const payments = unwrapList<unknown>(paymentsSource).map(p => {
     const pp = (p || {}) as Record<string, unknown>;
+    const amtCents = findCents(pp, 'amount_cents', 'amount');
     return {
-      method: asString(pp.method),
+      method: pickString(pp, 'method', 'payment_method', 'type', 'name'),
       amount:
-        typeof pp.amount === 'string'
-          ? pp.amount
-          : asString(pp.amount_formatted),
+        pickString(pp, 'amount', 'amount_formatted') ||
+        formatCentsString(amtCents),
     };
   });
+
+  const subtotalCents = findCents(inner, 'subtotal_cents', 'subtotal');
+  const taxCents = findCents(inner, 'tax_cents', 'tax', 'tax_amount');
+  const totalCents = findCents(inner, 'total_cents', 'total', 'total_amount');
+
   return {
-    sale_number: asString(raw.sale_number),
-    business_name: asString(raw.business_name),
-    business_address: asString(raw.business_address),
+    sale_number: pickString(inner, 'sale_number', 'number', 'reference', 'id'),
+    business_name:
+      pickString(inner, 'business_name') ||
+      (business ? pickString(business, 'name', 'display_name') : ''),
+    business_address:
+      pickString(inner, 'business_address') ||
+      (business ? pickString(business, 'address', 'address_line') : ''),
     items,
-    subtotal: asString(raw.subtotal),
-    tax: asString(raw.tax),
-    total: asString(raw.total),
+    subtotal:
+      pickString(inner, 'subtotal', 'subtotal_formatted') ||
+      formatCentsString(subtotalCents),
+    tax:
+      pickString(inner, 'tax', 'tax_formatted', 'tax_amount_formatted') ||
+      formatCentsString(taxCents),
+    total:
+      pickString(inner, 'total', 'total_formatted') ||
+      formatCentsString(totalCents),
     payments,
-    date: asString(raw.date),
-    served_by: typeof raw.served_by === 'string' ? raw.served_by : null,
+    date: pickString(inner, 'date', 'created_at', 'completed_at', 'timestamp'),
+    served_by:
+      pickString(inner, 'served_by', 'cashier_name', 'staff_name') || null,
   };
 }
 

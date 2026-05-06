@@ -240,7 +240,7 @@ export default function ReceiptViewerScreen() {
             <Ionicons
               name="chevron-back"
               size={20}
-              color={COLORS.text}
+              color={COLORS.white}
               style={styles.backButtonIcon}
             />
             <Text style={styles.backButtonText}>Back</Text>
@@ -515,9 +515,7 @@ const styles = StyleSheet.create({
   backButton: {
     flex: 1,
     flexDirection: 'row',
-    borderWidth: 1.5,
-    borderColor: COLORS.text,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.text,
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     alignItems: 'center',
@@ -525,7 +523,7 @@ const styles = StyleSheet.create({
   },
   backButtonIcon: {marginRight: SPACING.xs},
   backButtonText: {
-    color: COLORS.text,
+    color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },
