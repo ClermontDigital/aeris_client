@@ -10,13 +10,18 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
-import type {RouteProp} from '@react-navigation/native';
+import type {CompositeNavigationProp, RouteProp} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {Address, Customer, Sale} from '../types/api.types';
-import type {CustomersStackParamList} from '../types/navigation.types';
+import type {
+  AppTabParamList,
+  CustomersStackParamList,
+} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 
 const formatShortDate = (iso: string | null | undefined): string => {
@@ -69,8 +74,13 @@ const initialsOf = (name: string | undefined): string => {
   return (first + last).toUpperCase() || '?';
 };
 
+type NavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<CustomersStackParamList, 'CustomerDetail'>,
+  BottomTabNavigationProp<AppTabParamList>
+>;
+
 export default function CustomerDetailScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp>();
   const route = useRoute<CustomerDetailRouteProp>();
   const haptics = useHaptics();
   const {customerId} = route.params;
@@ -120,17 +130,13 @@ export default function CustomerDetailScreen() {
     [haptics],
   );
 
-  // SaleDetail lives under the Transactions tab (sibling of Customers).
-  // useNavigation() in this screen returns CustomersStack; getParent()
-  // walks up to the AppTabs navigator, which routes 'Transactions' →
-  // TransactionsStack and then nests SaleDetail with the saleId param.
+  // SaleDetail lives under the Transactions tab. The composite nav type
+  // includes the parent BottomTab nav, so navigating across tabs with
+  // nested screen+params is type-safe directly on `navigation`.
   const goToSale = useCallback(
     (saleId: number) => {
       haptics.light();
-      const parent = (navigation as unknown as {
-        getParent?: () => {navigate: (n: string, p: unknown) => void} | undefined;
-      }).getParent?.();
-      parent?.navigate?.('Transactions', {
+      navigation.navigate('Transactions', {
         screen: 'SaleDetail',
         params: {saleId},
       });

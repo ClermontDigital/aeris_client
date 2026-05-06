@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -51,37 +51,69 @@ export default function CartScreen() {
   const [discountInput, setDiscountInput] = useState<string>(
     discountCents > 0 ? (discountCents / 100).toFixed(2) : '',
   );
-  const [discountClampNotice, setDiscountClampNotice] = useState(false);
+  const [discountOverCap, setDiscountOverCap] = useState(false);
+  const overCapHapticFiredRef = useRef(false);
   // If another path resets discountCents (e.g. clear cart), reflect it.
   useEffect(() => {
     setDiscountInput(discountCents > 0 ? (discountCents / 100).toFixed(2) : '');
   }, [discountCents]);
 
+  const handleDiscountChange = useCallback(
+    (text: string) => {
+      setDiscountInput(text);
+      const trimmed = text.trim();
+      if (trimmed === '') {
+        setDiscountOverCap(false);
+        overCapHapticFiredRef.current = false;
+        return;
+      }
+      const dollars = parseFloat(trimmed);
+      if (!Number.isFinite(dollars) || dollars < 0) {
+        setDiscountOverCap(false);
+        overCapHapticFiredRef.current = false;
+        return;
+      }
+      const requestedCents = Math.round(dollars * 100);
+      const state = useCartStore.getState();
+      const cap = state.getSubtotalCents() + state.getTaxCents();
+      if (requestedCents > cap) {
+        if (!overCapHapticFiredRef.current) {
+          haptics.error();
+          overCapHapticFiredRef.current = true;
+        }
+        setDiscountOverCap(true);
+      } else {
+        setDiscountOverCap(false);
+        overCapHapticFiredRef.current = false;
+      }
+    },
+    [haptics],
+  );
+
   const commitDiscount = useCallback(() => {
     const trimmed = discountInput.trim();
     if (trimmed === '') {
       setDiscount(0);
-      setDiscountClampNotice(false);
+      setDiscountOverCap(false);
+      overCapHapticFiredRef.current = false;
       return;
     }
     const dollars = parseFloat(trimmed);
     if (!Number.isFinite(dollars) || dollars < 0) {
       setDiscount(0);
       setDiscountInput('');
-      setDiscountClampNotice(false);
+      setDiscountOverCap(false);
+      overCapHapticFiredRef.current = false;
       return;
     }
     const requested = Math.round(dollars * 100);
     setDiscount(requested);
-    // Read the resulting (post-clamp) value to detect whether the store
-    // had to cap the request.
     const after = useCartStore.getState().discountCents;
     if (after !== requested) {
-      setDiscountClampNotice(true);
       setDiscountInput(after > 0 ? (after / 100).toFixed(2) : '');
-    } else {
-      setDiscountClampNotice(false);
     }
+    setDiscountOverCap(false);
+    overCapHapticFiredRef.current = false;
   }, [discountInput, setDiscount]);
 
   const handleClearCart = useCallback(() => {
@@ -144,6 +176,7 @@ export default function CartScreen() {
         <View style={styles.quantityStepper}>
           <TouchableOpacity
             style={styles.stepperButton}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
             onPress={() => {
               haptics.light();
               updateQuantity(item.product.id, item.quantity - 1);
@@ -153,6 +186,7 @@ export default function CartScreen() {
           <Text style={styles.quantityText}>{item.quantity}</Text>
           <TouchableOpacity
             style={styles.stepperButton}
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
             onPress={() => {
               haptics.light();
               updateQuantity(item.product.id, item.quantity + 1);
@@ -216,21 +250,16 @@ export default function CartScreen() {
             <TextInput
               style={styles.input}
               value={discountInput}
-              onChangeText={text => {
-                // Hide the clamp helper as soon as the user edits — they've
-                // acknowledged the cap and are correcting their value.
-                if (discountClampNotice) setDiscountClampNotice(false);
-                setDiscountInput(text);
-              }}
+              onChangeText={handleDiscountChange}
               onBlur={commitDiscount}
               onSubmitEditing={commitDiscount}
               keyboardType="decimal-pad"
               placeholder="0.00"
               placeholderTextColor={COLORS.textDim}
             />
-            {discountClampNotice ? (
+            {discountOverCap ? (
               <Text style={styles.discountHelper}>
-                Discount can&apos;t exceed total
+                Max {formatCurrency(subtotal + tax)}
               </Text>
             ) : null}
           </View>
@@ -368,10 +397,11 @@ const styles = StyleSheet.create({
     borderColor: COLORS.toolbarBtnBorder,
     borderRadius: BORDER_RADIUS.md,
     overflow: 'hidden',
+    gap: SPACING.xs,
   },
   stepperButton: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.lg,
   },
   stepperButtonText: {
     color: COLORS.text,

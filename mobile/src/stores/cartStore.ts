@@ -75,15 +75,16 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   setCustomer: (id, name) => set({customerId: id, customerName: name}),
-  // Clamp discount into [0, subtotal+tax]. We deliberately use the
-  // pre-discount total here — a negative result would let the cashier
-  // print a sale where the customer owes nothing or even gets cash back,
-  // which the gateway would reject anyway. NaN/negative input defaults
-  // to 0; any over-cap value caps at subtotal+tax so the final total
-  // bottoms at $0.
+  // Discount is taken off the inc-GST grand total (subtotal_ex + tax = line
+  // total inc), so the cap is the sum of the line totals before discount.
+  // Clamping there floors the final total at $0.
   setDiscount: (cents) => {
-    const max = get().getSubtotalCents() + get().getTaxCents();
-    const safeMax = Math.max(0, max);
+    const lineTotalInc = get().items.reduce(
+      (sum, item) =>
+        sum + item.unit_price_cents * item.quantity - item.discount_cents,
+      0,
+    );
+    const safeMax = Math.max(0, lineTotalInc);
     const numeric = Number.isFinite(cents) ? cents : 0;
     const clamped = Math.max(0, Math.min(numeric, safeMax));
     set({discountCents: clamped});
@@ -98,33 +99,40 @@ export const useCartStore = create<CartState>((set, get) => ({
       notes: '',
     }),
 
+  // unit_price_cents is GST-inclusive (Product.price_cents is inc-GST), so
+  // each line total is inc-GST. To match the server (SaleDetailScreen +
+  // ProcessSaleRequest), the cart exposes the same shape: subtotal is the
+  // ex-GST split, tax is the embedded GST, total = subtotal + tax - cart
+  // discount. Computing tax as (lineTotalInc - subtotal) mirrors the
+  // server's single-round `tax = totalInc - round(totalInc/1.1)` exactly,
+  // so subtotal + tax === lineTotalInc with no per-line drift.
   getSubtotalCents: () => {
-    return get().items.reduce(
+    const subtotalFloat = get().items.reduce((sum, item) => {
+      const lineInc =
+        item.unit_price_cents * item.quantity - item.discount_cents;
+      const rate = item.product.tax_rate;
+      if (!rate || !Number.isFinite(rate)) return sum + lineInc;
+      return sum + lineInc / (1 + rate / 100);
+    }, 0);
+    return Math.round(subtotalFloat);
+  },
+
+  getTaxCents: () => {
+    const lineTotalInc = get().items.reduce(
       (sum, item) =>
         sum + item.unit_price_cents * item.quantity - item.discount_cents,
       0,
     );
-  },
-
-  getTaxCents: () => {
-    // Aeris2's ProductResource emits tax_rate as a *percentage* number
-    // (e.g. `tax_rate: 10` for 10% GST). The cart math needs a decimal
-    // multiplier, hence /100. Without this divide, a $10 item with 10%
-    // GST computes to $100 of tax instead of $1.
-    return get().items.reduce(
-      (sum, item) =>
-        sum +
-        Math.round(
-          ((item.unit_price_cents * item.quantity - item.discount_cents) *
-            item.product.tax_rate) /
-            100,
-        ),
-      0,
-    );
+    return lineTotalInc - get().getSubtotalCents();
   },
 
   getTotalCents: () => {
-    return get().getSubtotalCents() + get().getTaxCents() - get().discountCents;
+    const lineTotalInc = get().items.reduce(
+      (sum, item) =>
+        sum + item.unit_price_cents * item.quantity - item.discount_cents,
+      0,
+    );
+    return lineTotalInc - get().discountCents;
   },
 
   getItemCount: () => {

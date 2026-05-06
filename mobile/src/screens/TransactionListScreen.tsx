@@ -106,6 +106,7 @@ export default function TransactionListScreen() {
       } catch (e) {
         const msg =
           e instanceof Error ? e.message : 'Failed to load transactions';
+        haptics.error();
         setError(msg);
       } finally {
         setIsLoading(false);
@@ -113,7 +114,7 @@ export default function TransactionListScreen() {
         setIsLoadingMore(false);
       }
     },
-    [dateFilter],
+    [dateFilter, haptics],
   );
 
   useEffect(() => {
@@ -174,12 +175,32 @@ export default function TransactionListScreen() {
   );
 
   const renderFooter = () => {
-    if (!isLoadingMore) return null;
-    return (
-      <View style={styles.footerLoader}>
-        <ActivityIndicator color={COLORS.accent} size="small" />
-      </View>
-    );
+    if (isLoadingMore) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator color={COLORS.accent} size="small" />
+        </View>
+      );
+    }
+    if (error && transactions.length > 0) {
+      return (
+        <TouchableOpacity
+          style={styles.footerRetry}
+          onPress={() => fetchTransactions(page + 1, true)}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading next page">
+          <Text style={styles.footerRetryText}>Tap to retry</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (transactions.length > 0 && page >= lastPage) {
+      return (
+        <View style={styles.footerEnd}>
+          <Text style={styles.footerEndText}>End of list</Text>
+        </View>
+      );
+    }
+    return null;
   };
 
   const renderEmpty = () => {
@@ -421,5 +442,26 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: SPACING.lg,
     alignItems: 'center',
+  },
+  footerEnd: {
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
+  },
+  footerEndText: {
+    color: COLORS.textDim,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  footerRetry: {
+    paddingVertical: SPACING.lg,
+    alignItems: 'center',
+  },
+  footerRetryText: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });
