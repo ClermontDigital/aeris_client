@@ -13,7 +13,7 @@ const SHARED_SRC = resolve(__dirname, '../shared/src/index.ts');
 export default defineConfig({
   main: {
     build: {
-      outDir: 'dist-electron/main',
+      outDir: 'out/main',
       lib: {
         entry: resolve(__dirname, 'src/main/index.ts'),
         formats: ['cjs'],
@@ -36,7 +36,7 @@ export default defineConfig({
   },
   preload: {
     build: {
-      outDir: 'dist-electron/preload',
+      outDir: 'out/preload',
       lib: {
         entry: resolve(__dirname, 'src/preload/index.ts'),
         formats: ['cjs'],
@@ -56,7 +56,7 @@ export default defineConfig({
     },
     plugins: [react()],
     build: {
-      outDir: resolve(__dirname, 'dist-electron/renderer'),
+      outDir: resolve(__dirname, 'out/renderer'),
       emptyOutDir: true,
       rollupOptions: {
         input: resolve(__dirname, 'src/renderer/index.html'),
