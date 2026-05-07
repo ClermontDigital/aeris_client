@@ -1,4 +1,4 @@
-import {normalizeAddress, normalizeCustomer} from '../services/ApiClient';
+import {normalizeAddress, normalizeCustomer} from '../normalizers';
 
 describe('normalizeAddress', () => {
   it('flattens common Aeris2 + alternate field shapes', () => {
