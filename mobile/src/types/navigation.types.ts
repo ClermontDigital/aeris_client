@@ -26,6 +26,7 @@ export type QuickSaleStackParamList = {
   Scanner: {mode?: 'cart'} | undefined;
   Cart: undefined;
   Checkout: undefined;
+  CustomerPicker: undefined;
 };
 
 export type TransactionsStackParamList = {

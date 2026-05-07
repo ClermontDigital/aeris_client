@@ -41,15 +41,13 @@ const AppTabs: React.FC = () => {
           they don't double-pad. */}
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View style={styles.topBarRow}>
-          <View style={styles.brandSection}>
-            <Image
-              source={require('../../assets/images/app-icon.png')}
-              style={styles.brandLogo}
-              accessibilityIgnoresInvertColors
-              accessibilityLabel="Aeris"
-            />
-          </View>
-          <View style={styles.topBarSpacer} />
+          <Image
+            source={require('../../assets/images/app-icon.png')}
+            style={styles.brandLogo}
+            accessibilityIgnoresInvertColors
+            accessibilityLabel="Aeris"
+            resizeMode="contain"
+          />
           <TouchableOpacity
             onPress={() => {
               haptics.light();
@@ -144,28 +142,27 @@ const AppTabs: React.FC = () => {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.navy},
   topBar: {backgroundColor: COLORS.navy},
+  // Logo is centered by absolute-positioning across the row; the gear sits on
+  // top in the trailing corner so the logo stays visually centred regardless
+  // of locale label widths.
   topBarRow: {
-    flexDirection: 'row',
+    minHeight: 56,
     alignItems: 'center',
-    minHeight: 44,
-    paddingLeft: 16,
-  },
-  brandSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'center',
   },
   brandLogo: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-  },
-  topBarSpacer: {flex: 1},
-  gearBtn: {
     width: 44,
     height: 44,
-    alignItems: 'flex-end',
+    borderRadius: 8,
+  },
+  gearBtn: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 56,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingRight: 16,
   },
 });
 
