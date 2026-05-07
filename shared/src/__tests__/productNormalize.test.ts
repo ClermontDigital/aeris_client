@@ -2,7 +2,7 @@ import {
   normalizeProduct,
   normalizeProductDetail,
   normalizeProductVariant,
-} from '../services/ApiClient';
+} from '../normalizers';
 
 describe('normalizeProduct', () => {
   it('prefers price_cents when present', () => {
