@@ -1,5 +1,6 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
+  AppState,
   View,
   Text,
   ScrollView,
@@ -9,7 +10,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
 import ApiClient from '../services/ApiClient';
@@ -70,6 +71,31 @@ const DashboardScreen: React.FC = () => {
 
   useEffect(() => {
     fetchSummary();
+  }, [fetchSummary]);
+
+  // Refetch when the Dashboard tab regains focus — covers the case where the
+  // user just completed a sale on QuickSale/Checkout and tabs back here. The
+  // first focus right after mount overlaps with the initial fetch above; the
+  // hasMounted guard skips that to avoid a duplicate request.
+  const hasMountedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasMountedRef.current) {
+        hasMountedRef.current = true;
+        return;
+      }
+      fetchSummary();
+    }, [fetchSummary]),
+  );
+
+  // Refetch when the app foregrounds from background — a swipe-back-in after
+  // closing the app (or the OS suspending it) won't re-mount the screen but
+  // the dashboard's totals could be stale by then.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') fetchSummary();
+    });
+    return () => sub.remove();
   }, [fetchSummary]);
 
   const todayString = new Date().toLocaleDateString('en-US', {

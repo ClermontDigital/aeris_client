@@ -10,7 +10,9 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
+import type {CompositeNavigationProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
@@ -18,10 +20,16 @@ import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
 import type {PaymentMethod} from '../types/api.types';
-import type {QuickSaleStackParamList} from '../types/navigation.types';
+import type {
+  AppTabParamList,
+  QuickSaleStackParamList,
+} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 
-type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
+type NavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<QuickSaleStackParamList, 'Checkout'>,
+  BottomTabNavigationProp<AppTabParamList>
+>;
 
 const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   {code: 'cash', name: 'Cash', requires_reference: false},
@@ -38,8 +46,16 @@ interface SaleResult {
 export default function CheckoutScreen() {
   const navigation = useNavigation<NavigationProp>();
   const haptics = useHaptics();
-  const {items, customerId, discountCents, notes, getTotalCents, getItemCount, clear} =
-    useCartStore();
+  const {
+    items,
+    customerId,
+    customerName,
+    discountCents,
+    notes,
+    getTotalCents,
+    getItemCount,
+    clear,
+  } = useCartStore();
 
   const totalCents = getTotalCents();
   const itemCount = getItemCount();
@@ -164,6 +180,18 @@ export default function CheckoutScreen() {
     navigation.navigate('ProductGrid');
   }, [clear, navigation]);
 
+  const handleViewTransaction = useCallback(() => {
+    if (!saleResult) return;
+    haptics.light();
+    // Clear before cross-tab nav: the sale is finalised and the user is
+    // leaving the success screen, so a stale cart shouldn't survive.
+    clear();
+    navigation.navigate('Transactions', {
+      screen: 'SaleDetail',
+      params: {saleId: saleResult.sale_id},
+    });
+  }, [saleResult, haptics, clear, navigation]);
+
   // Success view
   if (saleResult) {
     return (
@@ -192,6 +220,13 @@ export default function CheckoutScreen() {
               )}
             </TouchableOpacity>
             <TouchableOpacity
+              style={styles.viewTransactionButton}
+              onPress={handleViewTransaction}>
+              <Text style={styles.viewTransactionButtonText}>
+                View Transaction
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.newSaleButton}
               onPress={handleNewSale}>
               <Text style={styles.newSaleButtonText}>New Sale</Text>
@@ -205,6 +240,34 @@ export default function CheckoutScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Customer */}
+        <View style={styles.customerRow}>
+          <View style={styles.customerIconWrap}>
+            <Ionicons name="person-outline" size={18} color={COLORS.crimson} />
+          </View>
+          <View style={styles.customerTextWrap}>
+            <Text style={styles.customerLabel}>Customer</Text>
+            <Text style={styles.customerName} numberOfLines={1}>
+              {customerId != null && customerName ? customerName : 'Walk-in'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.customerChangeBtn}
+            onPress={() => {
+              haptics.light();
+              navigation.navigate('CustomerPicker');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Change customer">
+            <Text style={styles.customerChangeText}>Change</Text>
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={COLORS.accent}
+            />
+          </TouchableOpacity>
+        </View>
+
         {/* Order Summary */}
         <View style={styles.summaryHeader}>
           <Text style={styles.summaryTotal}>
@@ -586,5 +649,64 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
+  },
+  viewTransactionButton: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
+  viewTransactionButtonText: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '700',
+  },
+  customerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  customerIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.cream,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.md,
+  },
+  customerTextWrap: {flex: 1},
+  customerLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  customerName: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  customerChangeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
+  customerChangeText: {
+    color: COLORS.accent,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '700',
+    marginRight: 2,
   },
 });

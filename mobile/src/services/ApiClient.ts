@@ -441,15 +441,27 @@ export class ApiClient {
       (sum, i) => sum + i.unit_price_cents * i.quantity - (i.discount_cents ?? 0),
       0,
     );
-    // total_amount / subtotal / tax_amount mirror the LINE totals (pre cart-level
-    // discount). The server's cross-field check is subtotal == sum(line_ex_gst),
-    // so any cart-level discount must stay as the separate top-level
-    // `discount_amount` field — applying it to total_amount here would make the
-    // sent subtotal disagree with the server-computed sum of line ex-GSTs.
+    const paymentsTotalCents = data.payments.reduce(
+      (sum, p) => sum + p.amount_cents,
+      0,
+    );
+    // The server validates two cross-field invariants:
+    //   1. `subtotal == sum(qty * unit_price_ex_gst - discount_ex_gst) ±0.02`
+    //      — line-only, no cart-level discount in this sum. So `subtotal` and
+    //      `tax_amount` are derived from the PRE-cart-discount line totals.
+    //   2. `total_amount == sum(payments[].amount)` — the "total payment
+    //      amount must equal total amount" rule. We derive `total_amount`
+    //      directly from the payments sum so that invariant holds by
+    //      construction regardless of how the caller balances cart-level
+    //      discount vs payment amount.
+    // The cart-level discount carries on the separate top-level
+    // `discount_amount` field; the server reconciles
+    // `subtotal + tax_amount - discount_amount == total_amount`.
     const cartDiscountCents = Math.max(0, data.discount_cents ?? 0);
-    const totalAmount = centsToDollars(lineTotalCents);
-    const subtotal = round2(totalAmount / 1.10);
-    const taxAmount = round2(totalAmount - subtotal);
+    const lineTotalDollars = centsToDollars(lineTotalCents);
+    const subtotal = round2(lineTotalDollars / 1.10);
+    const taxAmount = round2(lineTotalDollars - subtotal);
+    const totalAmount = centsToDollars(paymentsTotalCents);
 
     const payload: Record<string, unknown> = {
       items: data.items.map(i => ({
@@ -1111,7 +1123,12 @@ function asString(v: unknown, fallback = ''): string {
 export function normalizeSale(input: unknown): Sale {
   const raw = (input || {}) as Record<string, unknown>;
   const customer = raw.customer as Record<string, unknown> | undefined;
-  const items = Array.isArray(raw.items) ? (raw.items as unknown[]) : [];
+  const items =
+    (Array.isArray(raw.items) && (raw.items as unknown[])) ||
+    (Array.isArray(raw.line_items) && (raw.line_items as unknown[])) ||
+    (Array.isArray(raw.sale_items) && (raw.sale_items as unknown[])) ||
+    (Array.isArray(raw.lineItems) && (raw.lineItems as unknown[])) ||
+    [];
   const customerName =
     typeof raw.customer_name === 'string'
       ? raw.customer_name
@@ -1164,12 +1181,23 @@ function normalizeSalePayment(input: unknown): SalePayment {
 export function normalizeSaleDetail(input: unknown): SaleDetail {
   const base = normalizeSale(input);
   const raw = (input || {}) as Record<string, unknown>;
-  const items = Array.isArray(raw.items)
-    ? (raw.items as unknown[]).map(normalizeSaleItem)
-    : [];
-  const payments = Array.isArray(raw.payments)
-    ? (raw.payments as unknown[]).map(normalizeSalePayment)
-    : [];
+  // Aeris2 has emitted line items under several keys depending on the
+  // resource shape (`items`, `line_items`, `sale_items`, occasionally
+  // `lineItems`). Receipt normalization already tries the same set; mirror
+  // it here so SaleDetail doesn't show an empty items list when the server
+  // happens to use one of the alternates.
+  const itemsRaw =
+    (Array.isArray(raw.items) && raw.items) ||
+    (Array.isArray(raw.line_items) && raw.line_items) ||
+    (Array.isArray(raw.sale_items) && raw.sale_items) ||
+    (Array.isArray(raw.lineItems) && raw.lineItems) ||
+    [];
+  const items = (itemsRaw as unknown[]).map(normalizeSaleItem);
+  const paymentsRaw =
+    (Array.isArray(raw.payments) && raw.payments) ||
+    (Array.isArray(raw.payment_methods) && raw.payment_methods) ||
+    [];
+  const payments = (paymentsRaw as unknown[]).map(normalizeSalePayment);
   const customer = (raw.customer ?? null) as SaleDetail['customer'];
   return {
     ...base,

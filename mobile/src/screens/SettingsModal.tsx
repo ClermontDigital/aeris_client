@@ -14,6 +14,7 @@ import {
 import Modal from 'react-native-modal';
 import {useSettings} from '../hooks/useSettings';
 import {useAuthStore} from '../stores/authStore';
+import {useAppLockStore} from '../stores/appLockStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {COLORS} from '../constants/theme';
 import type {ConnectionMode} from '../types/api.types';
@@ -28,6 +29,11 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
   const haptics = useHaptics();
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const clearLocalSession = useAuthStore(s => s.clearLocalSession);
+  const hasPin = useAppLockStore(s => s.hasPin);
+  const lockBiometricEnabled = useAppLockStore(s => s.biometricEnabled);
+  const lockBiometricAvailable = useAppLockStore(s => s.biometricAvailable);
+  const setLockBiometricEnabled = useAppLockStore(s => s.setBiometricEnabled);
+  const resetAppLock = useAppLockStore(s => s.reset);
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const [relayUrl, setRelayUrl] = useState(settings.relayUrl ?? '');
   const [mode, setMode] = useState<ConnectionMode>(
@@ -257,6 +263,46 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
             <Switch value={hapticsEnabled} onValueChange={setHapticsEnabled} />
           </View>
 
+          {isAuthenticated && hasPin ? (
+            <View style={styles.lockSection}>
+              <Text style={styles.sectionTitle}>App lock</Text>
+              {lockBiometricAvailable ? (
+                <View style={styles.switchRow}>
+                  <Text style={styles.label}>Unlock with biometrics</Text>
+                  <Switch
+                    value={lockBiometricEnabled}
+                    onValueChange={async v => {
+                      haptics.selection();
+                      await setLockBiometricEnabled(v);
+                    }}
+                  />
+                </View>
+              ) : null}
+              <TouchableOpacity
+                style={styles.resetPinBtn}
+                onPress={() => {
+                  haptics.light();
+                  Alert.alert(
+                    'Reset PIN',
+                    'You will be asked to set a new PIN the next time you unlock the app.',
+                    [
+                      {text: 'Cancel', style: 'cancel'},
+                      {
+                        text: 'Reset',
+                        style: 'destructive',
+                        onPress: async () => {
+                          await resetAppLock();
+                          onClose();
+                        },
+                      },
+                    ],
+                  );
+                }}>
+                <Text style={styles.resetPinText}>Reset PIN</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <View style={styles.buttons}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
               <Text style={styles.cancelText}>Cancel</Text>
@@ -333,6 +379,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoutText: {color: COLORS.white, fontSize: 16, fontWeight: '600'},
+  lockSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.inputBorder,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.navy,
+    marginBottom: 4,
+  },
+  resetPinBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    alignSelf: 'flex-start',
+  },
+  resetPinText: {
+    color: COLORS.crimson,
+    fontSize: 15,
+    fontWeight: '600',
+  },
 });
 
 export default SettingsModal;

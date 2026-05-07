@@ -291,12 +291,13 @@ export default function CartScreen() {
           {discountCents > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Discount</Text>
-              <Text style={[styles.summaryValue, {color: COLORS.danger}]}>
-                -{formatCurrency(discountCents)}
+              <Text style={[styles.summaryValue, styles.summaryDiscountValue]}>
+                −{formatCurrency(discountCents)}
               </Text>
             </View>
           )}
-          <View style={[styles.summaryRow, styles.totalRow]}>
+          <View style={styles.summaryDivider} />
+          <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{formatCurrency(total)}</Text>
           </View>
@@ -442,7 +443,7 @@ const styles = StyleSheet.create({
   },
   inputsSection: {
     paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
+    paddingBottom: SPACING.md,
   },
   inputRow: {
     marginBottom: SPACING.sm,
@@ -472,7 +473,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
   summaryCard: {
-    backgroundColor: COLORS.surfaceHover,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     borderTopLeftRadius: BORDER_RADIUS.xl,
@@ -480,25 +481,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.xl,
+    shadowColor: COLORS.black,
+    shadowOffset: {width: 0, height: -2},
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 4,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: SPACING.sm,
+    alignItems: 'center',
+    paddingVertical: SPACING.xs,
   },
   summaryLabel: {
     color: COLORS.textMuted,
-    fontSize: FONT_SIZE.md,
+    fontSize: FONT_SIZE.sm,
   },
   summaryValue: {
     color: COLORS.text,
-    fontSize: FONT_SIZE.md,
+    fontSize: FONT_SIZE.sm,
+  },
+  summaryDiscountValue: {
+    color: COLORS.warning,
+    fontWeight: '600',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm,
   },
   totalRow: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: SPACING.sm,
-    marginTop: SPACING.xs,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: SPACING.lg,
   },
   totalLabel: {
@@ -507,8 +523,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   totalValue: {
-    color: COLORS.accent,
-    fontSize: FONT_SIZE.xl,
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
   },
   buttonRow: {
