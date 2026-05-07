@@ -1,3 +1,5 @@
+export {RELAY_ACTIONS} from '@aeris/shared';
+
 export const API_ENDPOINTS = {
   AUTH_LOGIN: '/api/v1/auth/login',
   AUTH_LOGOUT: '/api/v1/auth/logout',
@@ -12,26 +14,4 @@ export const API_ENDPOINTS = {
   SALES_LIST: '/api/v1/sales',
   CUSTOMERS_LIST: '/api/v1/customers',
   CUSTOMERS_SEARCH: '/api/v1/customers/search',
-} as const;
-
-export const RELAY_ACTIONS = {
-  AUTH_LOGIN: 'auth.login',
-  AUTH_BIOMETRIC: 'auth.biometric',
-  AUTH_LOGOUT: 'auth.logout',
-  AUTH_REFRESH: 'auth.refresh',
-  DASHBOARD_SUMMARY: 'dashboard.summary',
-  PRODUCTS_LIST: 'products.list',
-  PRODUCTS_SEARCH: 'products.search',
-  PRODUCTS_BARCODE: 'products.barcode',
-  PRODUCTS_DETAIL: 'products.detail',
-  PRODUCTS_CATEGORIES: 'products.categories',
-  POS_PAYMENT_METHODS: 'pos.payment-methods',
-  SALE_CREATE: 'sale.create',
-  TRANSACTIONS_LIST: 'transactions.list',
-  TRANSACTIONS_DETAIL: 'transactions.detail',
-  TRANSACTIONS_RECEIPT: 'transactions.receipt',
-  CUSTOMERS_LIST: 'customers.list',
-  CUSTOMERS_SEARCH: 'customers.search',
-  CUSTOMERS_DETAIL: 'customers.detail',
-  INVENTORY_STOCK: 'inventory.stock',
 } as const;
