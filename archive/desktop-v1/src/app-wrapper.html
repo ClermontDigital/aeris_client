@@ -831,6 +831,82 @@
             25% { transform: translateX(-10px); }
             75% { transform: translateX(10px); }
         }
+
+        /* Aeris v2 upgrade banner — shown once until dismissed */
+        .v2-upgrade-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            background: #fdf0d5;
+            color: #003049;
+            border-bottom: 2px solid #c1121f;
+            padding: 10px 16px;
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            -webkit-app-region: no-drag;
+            flex-shrink: 0;
+            gap: 12px;
+        }
+
+        .v2-upgrade-banner.show {
+            display: flex;
+        }
+
+        .v2-upgrade-banner-message {
+            flex: 1;
+            line-height: 1.4;
+        }
+
+        .v2-upgrade-banner-message strong {
+            color: #003049;
+            font-weight: 600;
+            margin-right: 4px;
+        }
+
+        .v2-upgrade-banner-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .v2-upgrade-banner-download {
+            background: #c1121f;
+            color: #fdf0d5;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Poppins', sans-serif;
+            transition: background 0.2s ease;
+        }
+
+        .v2-upgrade-banner-download:hover {
+            background: #900;
+        }
+
+        .v2-upgrade-banner-dismiss {
+            background: transparent;
+            color: #003049;
+            border: 1px solid rgba(0, 48, 73, 0.3);
+            border-radius: 4px;
+            width: 26px;
+            height: 26px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .v2-upgrade-banner-dismiss:hover {
+            background: rgba(0, 48, 73, 0.1);
+            border-color: #003049;
+        }
     </style>
 </head>
 <body>
@@ -908,7 +984,18 @@
                 </div>
             </div>
         </div>
-        
+
+        <!-- Aeris v2 upgrade banner (one-shot, dismissable) -->
+        <div id="v2-upgrade-banner" class="v2-upgrade-banner" role="region" aria-label="Aeris v2 available">
+            <div class="v2-upgrade-banner-message">
+                <strong>Aeris v2 is now available</strong>— upgrade to the new native client for the latest features and ongoing support.
+            </div>
+            <div class="v2-upgrade-banner-actions">
+                <button type="button" class="v2-upgrade-banner-download" id="v2-upgrade-banner-download">Download</button>
+                <button type="button" class="v2-upgrade-banner-dismiss" id="v2-upgrade-banner-dismiss" aria-label="Dismiss">×</button>
+            </div>
+        </div>
+
         <!-- Privacy Overlay -->
         <div id="privacy-overlay" class="privacy-overlay">
             <div class="privacy-content">
@@ -2806,7 +2893,52 @@
         
         // Initialize toolbar when DOM is ready
         document.addEventListener('DOMContentLoaded', initializeToolbar);
-        
+
+        // -- Aeris v2 upgrade banner ----------------------------------------
+        // One-shot in-app banner pointing v1 users to the v2 release page.
+        // Dismissal persists in electron-store as `v2UpgradeBannerDismissed`.
+        const V2_RELEASES_URL = 'https://github.com/ClermontDigital/aeris_client/releases?q=client-v';
+
+        async function initializeV2UpgradeBanner() {
+            const banner = document.getElementById('v2-upgrade-banner');
+            const downloadBtn = document.getElementById('v2-upgrade-banner-download');
+            const dismissBtn = document.getElementById('v2-upgrade-banner-dismiss');
+            if (!banner || !downloadBtn || !dismissBtn) return;
+            if (!window.electronAPI || !window.electronAPI.getV2BannerDismissed) {
+                // IPC bridge unavailable — fail closed (don't show).
+                return;
+            }
+
+            try {
+                const dismissed = await window.electronAPI.getV2BannerDismissed();
+                if (!dismissed) {
+                    banner.classList.add('show');
+                }
+            } catch (err) {
+                console.error('Failed to read v2 banner dismissal state:', err);
+                return;
+            }
+
+            downloadBtn.addEventListener('click', () => {
+                try {
+                    window.electronAPI.openReleasePage(V2_RELEASES_URL);
+                } catch (err) {
+                    console.error('Failed to open v2 release page:', err);
+                }
+            });
+
+            dismissBtn.addEventListener('click', async () => {
+                banner.classList.remove('show');
+                try {
+                    await window.electronAPI.setV2BannerDismissed(true);
+                } catch (err) {
+                    console.error('Failed to persist v2 banner dismissal:', err);
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', initializeV2UpgradeBanner);
+
     </script>
 </body>
 </html> 
