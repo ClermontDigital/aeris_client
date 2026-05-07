@@ -64,10 +64,10 @@ describe('Routes guard', () => {
       errorKind: null,
     });
     renderAt('/');
-    expect(screen.getByText(/Phase 3 will build the workspace/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
   });
 
-  test('authenticated user at "/" renders Dashboard placeholder', () => {
+  test('authenticated user at "/" renders Dashboard', () => {
     useAuthStore.setState({
       initialized: true,
       isAuthenticated: true,
@@ -77,7 +77,7 @@ describe('Routes guard', () => {
       errorKind: null,
     });
     renderAt('/');
-    expect(screen.getByText(/daily summary, recent transactions/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Dashboard/i })).toBeInTheDocument();
   });
 
   test('locked authenticated user is redirected to /lock', () => {
@@ -104,7 +104,7 @@ describe('Routes guard', () => {
       errorKind: null,
     });
     renderAt('/transactions');
-    expect(screen.getByText(/Phase 3 will build the workspace/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Sign in/i })).toBeInTheDocument();
   });
 
   test('settings screen renders for authenticated user', () => {
