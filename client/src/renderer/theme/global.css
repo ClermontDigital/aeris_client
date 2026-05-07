@@ -1,0 +1,77 @@
+/* Aeris global styles — published as CSS custom properties so plain
+   className/style consumers can reference brand tokens without importing
+   the TS file. Token names mirror tokens.ts. */
+
+:root {
+  --aeris-navy: #003049;
+  --aeris-navy-light: #1d3a52;
+  --aeris-cream: #fdf0d5;
+  --aeris-cream-light: #fff9ec;
+  --aeris-crimson: #c1121f;
+  --aeris-crimson-dark: #900;
+
+  --aeris-text: #003049;
+  --aeris-text-muted: #5b7a8e;
+  --aeris-surface: #ffffff;
+  --aeris-surface-border: rgba(0, 48, 73, 0.1);
+  --aeris-surface-border-hover: rgba(0, 48, 73, 0.2);
+  --aeris-toolbar-bg: #003049;
+  --aeris-toolbar-btn: rgba(255, 255, 255, 0.12);
+  --aeris-toolbar-btn-hover: rgba(255, 255, 255, 0.2);
+
+  --aeris-radius-sm: 4px;
+  --aeris-radius-md: 8px;
+  --aeris-radius-lg: 12px;
+  --aeris-radius-xl: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    'Helvetica Neue',
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--aeris-text);
+  background: var(--aeris-cream);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: var(--aeris-crimson);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
