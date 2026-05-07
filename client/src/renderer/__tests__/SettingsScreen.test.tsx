@@ -10,12 +10,14 @@ import { DEFAULT_SETTINGS } from '../../shared-types/ipc';
 const logoutMock = jest.fn();
 const settingsSetMock = jest.fn();
 const lockNowMock = jest.fn();
+const resetPinMock = jest.fn();
 const getRecentLogsMock = jest.fn();
 
 beforeEach(() => {
   logoutMock.mockReset();
   settingsSetMock.mockReset();
   lockNowMock.mockReset();
+  resetPinMock.mockReset();
   getRecentLogsMock.mockReset();
 
   // jsdom doesn't ship a clipboard implementation by default.
@@ -44,6 +46,7 @@ beforeEach(() => {
         setPin: jest.fn(),
         verifyPin: jest.fn(),
         clearPin: jest.fn(),
+        resetPin: resetPinMock.mockResolvedValue({ ok: true }),
         lockNow: lockNowMock,
         onStateChanged: jest.fn().mockReturnValue(() => undefined),
       },
@@ -114,5 +117,26 @@ describe('SettingsScreen', () => {
     expect(screen.getByText(/Switching workspace will sign you out/i)).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole('button', { name: /Sign out/i }).pop()!);
     expect(logoutMock).toHaveBeenCalled();
+  });
+
+  test('Reset PIN shows a confirmation modal then triggers resetPin', () => {
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole('button', { name: /Reset PIN/i }));
+    expect(screen.getByText(/Resetting your PIN will require setup on next launch/i)).toBeInTheDocument();
+    const confirms = screen.getAllByRole('button', { name: /Reset PIN/i });
+    fireEvent.click(confirms[confirms.length - 1]);
+    expect(resetPinMock).toHaveBeenCalled();
+  });
+
+  test('Reset PIN button is hidden when no PIN is set', () => {
+    useAppLockStore.setState({
+      initialized: true,
+      isPinSet: false,
+      locked: false,
+      attempts: 0,
+      lockedOutUntilMs: null,
+    });
+    render(<SettingsScreen />);
+    expect(screen.queryByRole('button', { name: /Reset PIN/i })).toBeNull();
   });
 });
