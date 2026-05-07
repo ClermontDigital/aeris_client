@@ -1,5 +1,12 @@
 import {create} from 'zustand';
 import type {Product, CartItem} from '../types/api.types';
+import {
+  clampDiscountCents,
+  getItemCount,
+  getSubtotalCents,
+  getTaxCents,
+  getTotalCents,
+} from '@aeris/shared';
 
 interface CartState {
   items: CartItem[];
@@ -75,19 +82,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   setCustomer: (id, name) => set({customerId: id, customerName: name}),
-  // Discount is taken off the inc-GST grand total (subtotal_ex + tax = line
-  // total inc), so the cap is the sum of the line totals before discount.
-  // Clamping there floors the final total at $0.
   setDiscount: (cents) => {
-    const lineTotalInc = get().items.reduce(
-      (sum, item) =>
-        sum + item.unit_price_cents * item.quantity - item.discount_cents,
-      0,
-    );
-    const safeMax = Math.max(0, lineTotalInc);
-    const numeric = Number.isFinite(cents) ? cents : 0;
-    const clamped = Math.max(0, Math.min(numeric, safeMax));
-    set({discountCents: clamped});
+    set({discountCents: clampDiscountCents(get().items, cents)});
   },
   setNotes: (notes) => set({notes}),
   clear: () =>
@@ -99,43 +95,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       notes: '',
     }),
 
-  // unit_price_cents is GST-inclusive (Product.price_cents is inc-GST), so
-  // each line total is inc-GST. To match the server (SaleDetailScreen +
-  // ProcessSaleRequest), the cart exposes the same shape: subtotal is the
-  // ex-GST split, tax is the embedded GST, total = subtotal + tax - cart
-  // discount. Computing tax as (lineTotalInc - subtotal) mirrors the
-  // server's single-round `tax = totalInc - round(totalInc/1.1)` exactly,
-  // so subtotal + tax === lineTotalInc with no per-line drift.
-  getSubtotalCents: () => {
-    const subtotalFloat = get().items.reduce((sum, item) => {
-      const lineInc =
-        item.unit_price_cents * item.quantity - item.discount_cents;
-      const rate = item.product.tax_rate;
-      if (!rate || !Number.isFinite(rate)) return sum + lineInc;
-      return sum + lineInc / (1 + rate / 100);
-    }, 0);
-    return Math.round(subtotalFloat);
-  },
-
-  getTaxCents: () => {
-    const lineTotalInc = get().items.reduce(
-      (sum, item) =>
-        sum + item.unit_price_cents * item.quantity - item.discount_cents,
-      0,
-    );
-    return lineTotalInc - get().getSubtotalCents();
-  },
-
-  getTotalCents: () => {
-    const lineTotalInc = get().items.reduce(
-      (sum, item) =>
-        sum + item.unit_price_cents * item.quantity - item.discount_cents,
-      0,
-    );
-    return lineTotalInc - get().discountCents;
-  },
-
-  getItemCount: () => {
-    return get().items.reduce((sum, item) => sum + item.quantity, 0);
-  },
+  getSubtotalCents: () => getSubtotalCents(get().items),
+  getTaxCents: () => getTaxCents(get().items),
+  getTotalCents: () => getTotalCents(get().items, get().discountCents),
+  getItemCount: () => getItemCount(get().items),
 }));
