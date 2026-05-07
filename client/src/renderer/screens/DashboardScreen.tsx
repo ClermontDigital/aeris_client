@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type { DailySummary } from '@aeris/shared';
 import { useRelayQuery } from '../hooks/useRelayQuery';
 import { Spinner } from '../components/Spinner';
@@ -6,7 +6,7 @@ import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Button } from '../components/Button';
 import { COLORS, SPACING, FONT_SIZE, BORDER_RADIUS } from '../theme/tokens';
-import { formatCents, formatNumber } from '../utils/format';
+import { formatCents, formatNumber, formatDateTime } from '../utils/format';
 
 function StatCard({
   label,
@@ -50,6 +50,13 @@ export function DashboardScreen(): React.ReactElement {
   const { data, loading, errorCode, errorMessage, refetch } =
     useRelayQuery<DailySummary>('dashboard.summary', {});
 
+  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!loading && (data || errorCode)) {
+      setLastRefreshed(new Date().toISOString());
+    }
+  }, [loading, data, errorCode]);
+
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: SPACING.lg }}>
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -67,11 +74,11 @@ export function DashboardScreen(): React.ReactElement {
       ) : null}
 
       {loading && !data ? (
-        <Spinner label="Loading today's summary…" />
+        <Spinner label="Loading dashboard…" />
       ) : data && isEmptySummary(data) ? (
         <EmptyState
-          title="No sales yet today"
-          description="Your first sale will appear here."
+          title="You're all set."
+          description="No sales recorded yet today. Your dashboard will fill in as transactions come through."
         />
       ) : data ? (
         <>
@@ -125,6 +132,19 @@ export function DashboardScreen(): React.ReactElement {
             </section>
           ) : null}
         </>
+      ) : null}
+
+      {lastRefreshed ? (
+        <div
+          aria-live="polite"
+          style={{
+            color: COLORS.textMuted,
+            fontSize: FONT_SIZE.sm,
+            textAlign: 'right',
+          }}
+        >
+          Last refreshed: {formatDateTime(lastRefreshed)}
+        </div>
       ) : null}
     </section>
   );

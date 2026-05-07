@@ -66,7 +66,43 @@ describe('DashboardScreen', () => {
       },
     });
     render(<DashboardScreen />);
-    await waitFor(() => expect(screen.getByText(/No sales yet today/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/You're all set/i)).toBeInTheDocument());
+    expect(screen.getByText(/No sales recorded yet today/i)).toBeInTheDocument();
+  });
+
+  test('shows last refreshed timestamp after a successful load', async () => {
+    relayCallMock.mockResolvedValue({
+      ok: true,
+      data: {
+        date: '2026-05-07',
+        revenue_cents: 0,
+        sales_count: 0,
+        items_sold: 0,
+        average_sale_cents: 0,
+        top_products: [],
+      },
+    });
+    render(<DashboardScreen />);
+    await waitFor(() => expect(screen.getByText(/Last refreshed/i)).toBeInTheDocument());
+  });
+
+  test('loading state advertises "Loading dashboard"', async () => {
+    let resolve!: (v: unknown) => void;
+    relayCallMock.mockReturnValue(new Promise((r) => (resolve = r)));
+    render(<DashboardScreen />);
+    expect(screen.getByText(/Loading dashboard/i)).toBeInTheDocument();
+    resolve({
+      ok: true,
+      data: {
+        date: '2026-05-07',
+        revenue_cents: 0,
+        sales_count: 0,
+        items_sold: 0,
+        average_sale_cents: 0,
+        top_products: [],
+      },
+    });
+    await waitFor(() => expect(screen.queryByText(/Loading dashboard/i)).not.toBeInTheDocument());
   });
 
   test('renders error banner on relay failure', async () => {
