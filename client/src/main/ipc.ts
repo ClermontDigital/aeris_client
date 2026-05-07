@@ -3,6 +3,12 @@ import { IPC_CHANNELS } from '../shared-types/ipc';
 import { settingsStore } from './settingsStore';
 import { registerRelayBridgeIpc } from './relayBridge';
 import { registerAuthIpc, registerAuthWindow } from './authManager';
+import {
+  registerAppLockIpc,
+  registerAppLockWindow,
+  initialize as initAppLock,
+} from './appLockManager';
+import { getRecentLogs } from './logger';
 
 // One-stop IPC registration. Called once after the main window is created.
 // All channel registration is keyed off IPC_CHANNELS so the renderer's
@@ -20,8 +26,18 @@ export function registerIpc(mainWindow: BrowserWindow): void {
     mainWindow.webContents.send(IPC_CHANNELS.SETTINGS_CHANGED, next);
   });
 
+  // Diagnostics: bundle recent log lines for Send Diagnostics flow.
+  ipcMain.handle(IPC_CHANNELS.DIAGNOSTICS_GET_RECENT_LOGS, async (_e, maxLines?: number) => {
+    return getRecentLogs(typeof maxLines === 'number' ? maxLines : 100);
+  });
+
   // Relay bridge + auth.
   registerRelayBridgeIpc();
   registerAuthIpc();
   registerAuthWindow(mainWindow);
+
+  // App lock.
+  registerAppLockIpc();
+  registerAppLockWindow(mainWindow);
+  initAppLock();
 }

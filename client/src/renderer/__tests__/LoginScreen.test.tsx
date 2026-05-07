@@ -26,6 +26,17 @@ beforeEach(() => {
         set: jest.fn(),
         onChanged: jest.fn().mockReturnValue(() => undefined),
       },
+      lock: {
+        getState: jest.fn(),
+        setPin: jest.fn(),
+        verifyPin: jest.fn(),
+        clearPin: jest.fn(),
+        lockNow: jest.fn(),
+        onStateChanged: jest.fn().mockReturnValue(() => undefined),
+      },
+      diagnostics: {
+        getRecentLogs: jest.fn().mockResolvedValue(''),
+      },
     },
   });
   useAuthStore.setState({

@@ -9,6 +9,7 @@ import {
 import { settingsStore } from './settingsStore';
 import { tokenStore } from './tokenStore';
 import { getRelayClient, setOnUnauthorized } from './relayBridge';
+import { clearPin } from './appLockManager';
 import { logger } from './logger';
 
 // authManager is the single source of truth for auth state in main.
@@ -183,6 +184,14 @@ export async function logout(): Promise<AuthState> {
   }
   await clearSession();
   getRelayClient().setAuthToken(null);
+  // The PIN is per-installation but tied to the active user — clear it
+  // on explicit logout so the next user/sign-in flow goes through PIN
+  // setup again.
+  try {
+    clearPin();
+  } catch (e) {
+    logger.warn('[authManager] clearPin during logout failed', e);
+  }
   setState({
     isAuthenticated: false,
     user: null,
