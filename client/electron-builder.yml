@@ -23,7 +23,7 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   gatekeeperAssess: false
-  notarize: false
+  notarize: true
   target:
     - target: dmg
       arch: [x64, arm64]
@@ -31,7 +31,6 @@ mac:
       arch: [x64, arm64]
 
 dmg:
-  sign: false
   contents:
     - x: 410
       y: 150
