@@ -154,9 +154,44 @@ npm run package:linux
 
 | Phase | Scope |
 |------|------|
-| 3 | Auth UI, settings UI, PIN setup + AppLock, Dashboard, Transactions, SaleDetail, Receipt (read-only) |
-| 4 | electron-builder finalisation, code-sign, notarise, auto-update + manual-poll fallback |
+| 3 | Auth UI, settings UI, PIN setup + AppLock, Dashboard, Transactions, SaleDetail, Receipt (read-only) — DONE |
+| 4 | electron-builder finalisation, code-sign, notarise, auto-update + manual-poll fallback — DONE |
 | 5 | Final v1 banner release; archive v1 |
 
 See `/Users/developersteve/.claude/plans/now-i-want-you-effervescent-reddy.md`
 for the full plan.
+
+## Auto-update channel (Phase 4)
+
+- Primary path is `electron-updater` against GitHub Releases tagged
+  `client-vX.Y.Z` on `ClermontDigital/aeris_client`. Wired in
+  `main/autoUpdater.ts`. autoDownload + autoInstallOnAppQuit are on so
+  an update lands on next quit.
+- Manual-fallback poller (peer review revision #5) hits the GitHub
+  releases-latest API once 30 s after launch if `electron-updater` has
+  not surfaced an update. On a newer-than-`app.getVersion()` tag it
+  emits `update:manual-fallback` to the renderer, which can show a
+  Download button that opens `htmlUrl` via `shell.openExternal`.
+- IPC channels:
+  - `update:check-now` — manual user-triggered poll (Settings UI)
+  - `update:open-download` — guarded `shell.openExternal` (http(s) only)
+  - `update:status-changed` — broadcast on every electron-updater event
+  - `update:manual-fallback` — broadcast when fallback fires
+- Renderer UI for the banner is deferred to a follow-up Phase 3+ tweak;
+  the IPC contract + main-side wiring are complete.
+
+## Windows code-sign (open question for 2.0.0)
+
+The `client-build-win` job reads `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD`
+secrets if present and falls through to an unsigned build otherwise.
+Until the team procures a cert, 2.0.0 ships unsigned and Windows users
+see a SmartScreen warning on first launch. Plan: cert procurement
+queued for 2.0.1.
+
+## CI artifact contract
+
+`client-build-{mac,win,linux}` upload artifacts named `aeris-mac`,
+`aeris-windows`, `aeris-linux`. Each bundle includes the platform
+installer(s) plus the corresponding `latest-*.yml` channel manifest +
+`*.blockmap` files — `electron-updater` requires all three on the
+GitHub Release for delta updates to work.
