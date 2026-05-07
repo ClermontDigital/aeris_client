@@ -73,7 +73,7 @@ describe('LoginScreen', () => {
     const ws = screen.getByLabelText(/Workspace/i);
     fireEvent.change(ws, { target: { value: 'a' } });
     fireEvent.blur(ws);
-    expect(screen.getByText(/3–32 characters/i)).toBeInTheDocument();
+    expect(screen.getByText(/3–31 chars/i)).toBeInTheDocument();
   });
 
   test('lowercase-coerces workspace input', () => {
