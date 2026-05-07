@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { COLORS, FONT_SIZE, SPACING } from '../theme/tokens';
+import logoUrl from '../assets/logo.png';
 
 interface NavItem {
   to: string;
@@ -9,6 +10,8 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard' },
+  { to: '/items', label: 'Items' },
+  { to: '/customers', label: 'Customers' },
   { to: '/transactions', label: 'Transactions' },
   { to: '/settings', label: 'Settings' },
 ];
@@ -30,13 +33,16 @@ export function Sidebar(): React.ReactElement {
     >
       <div
         style={{
-          fontSize: FONT_SIZE.xl,
-          fontWeight: 700,
+          display: 'flex',
+          justifyContent: 'center',
           marginBottom: SPACING.lg,
-          letterSpacing: 0.5,
         }}
       >
-        Aeris
+        <img
+          src={logoUrl}
+          alt="Aeris"
+          style={{ width: 96, height: 'auto', display: 'block' }}
+        />
       </div>
       {NAV.map((item) => (
         <NavLink

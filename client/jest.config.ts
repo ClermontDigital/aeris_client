@@ -13,6 +13,7 @@ const config: Config = {
     '^electron-log$': '<rootDir>/__mocks__/electron-log.ts',
     '^electron-log/main$': '<rootDir>/__mocks__/electron-log.ts',
     '^electron-updater$': '<rootDir>/__mocks__/electron-updater.ts',
+    '\\.(png|jpg|jpeg|gif|svg|webp)$': '<rootDir>/__mocks__/fileStub.ts',
   },
   transform: {
     '^.+\\.(ts|tsx)$': [
