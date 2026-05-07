@@ -75,3 +75,85 @@ textarea {
   font-family: inherit;
   font-size: inherit;
 }
+
+/* PIN pad — tactile circular keys with clear hover / press / focus
+   states. Inline-styled in the component would be brittle for the
+   pseudo-classes, so the visual states live here. */
+.pinpad-key {
+  width: 64px;
+  height: 64px;
+  border-radius: 9999px;
+  background: var(--aeris-surface);
+  border: 1px solid var(--aeris-surface-border);
+  color: var(--aeris-text);
+  font-size: 22px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease,
+    box-shadow 120ms ease;
+  box-shadow: 0 1px 2px rgba(0, 48, 73, 0.08);
+  user-select: none;
+}
+.pinpad-key:hover:not(:disabled) {
+  background: var(--aeris-cream-light);
+  border-color: var(--aeris-surface-border-hover);
+  box-shadow: 0 2px 6px rgba(0, 48, 73, 0.12);
+}
+.pinpad-key:active:not(:disabled) {
+  background: var(--aeris-crimson);
+  border-color: var(--aeris-crimson);
+  color: var(--aeris-cream);
+  transform: scale(0.96);
+  box-shadow: 0 1px 2px rgba(0, 48, 73, 0.16);
+}
+.pinpad-key:focus-visible {
+  outline: 2px solid var(--aeris-crimson);
+  outline-offset: 3px;
+}
+.pinpad-key:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Smaller text-only keys for Clear / Backspace — same circle dimensions
+   but a smaller label that doesn't fight the digit weight. */
+.pinpad-key--text {
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--aeris-text-muted);
+}
+.pinpad-key--text:hover:not(:disabled) {
+  color: var(--aeris-text);
+}
+.pinpad-key--icon {
+  font-size: 24px;
+  color: var(--aeris-text-muted);
+}
+.pinpad-key--icon:hover:not(:disabled) {
+  color: var(--aeris-text);
+}
+
+.pinpad-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 2px solid var(--aeris-surface-border-hover);
+  background: transparent;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+.pinpad-dot--filled {
+  background: var(--aeris-crimson);
+  border-color: var(--aeris-crimson);
+  transform: scale(1.05);
+}

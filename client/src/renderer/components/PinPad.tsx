@@ -1,5 +1,5 @@
 import React from 'react';
-import { COLORS, BORDER_RADIUS, FONT_SIZE, SPACING } from '../theme/tokens';
+import { SPACING } from '../theme/tokens';
 
 interface Props {
   value: string;
@@ -10,24 +10,31 @@ interface Props {
   ariaLabel?: string;
 }
 
-const KEYS: Array<{ label: string; value?: string; action?: 'backspace' }> = [
-  { label: '1', value: '1' },
-  { label: '2', value: '2' },
-  { label: '3', value: '3' },
-  { label: '4', value: '4' },
-  { label: '5', value: '5' },
-  { label: '6', value: '6' },
-  { label: '7', value: '7' },
-  { label: '8', value: '8' },
-  { label: '9', value: '9' },
-  { label: '', value: undefined },
-  { label: '0', value: '0' },
-  { label: '⌫', action: 'backspace' },
+type Key =
+  | { kind: 'digit'; value: string }
+  | { kind: 'clear' }
+  | { kind: 'backspace' };
+
+const KEYS: Key[] = [
+  { kind: 'digit', value: '1' },
+  { kind: 'digit', value: '2' },
+  { kind: 'digit', value: '3' },
+  { kind: 'digit', value: '4' },
+  { kind: 'digit', value: '5' },
+  { kind: 'digit', value: '6' },
+  { kind: 'digit', value: '7' },
+  { kind: 'digit', value: '8' },
+  { kind: 'digit', value: '9' },
+  { kind: 'clear' },
+  { kind: 'digit', value: '0' },
+  { kind: 'backspace' },
 ];
 
-// Numeric keypad. Self-contained — touch-friendly buttons, dot indicators
-// for the current entry length, and physical keyboard support so a desk
-// user can type 1234 with the number row.
+// Numeric keypad with a balanced [Clear · 0 · ⌫] bottom row so all three
+// columns carry weight. Hover / press / focus visuals live in
+// theme/global.css under .pinpad-key so the pseudo-class transitions are
+// real CSS, not React state churn. Physical keyboard input is wired up
+// so a desk user can type 1234 with the number row.
 export function PinPad({
   value,
   maxLength,
@@ -45,8 +52,11 @@ export function PinPad({
     if (disabled) return;
     onChange(value.slice(0, -1));
   };
+  const handleClear = () => {
+    if (disabled) return;
+    onChange('');
+  };
 
-  // Keyboard listener so arrows / numbers / backspace / enter all work.
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (disabled) return;
@@ -56,6 +66,9 @@ export function PinPad({
       } else if (e.key === 'Backspace') {
         e.preventDefault();
         handleBackspace();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleClear();
       } else if (e.key === 'Enter' && onSubmit) {
         e.preventDefault();
         onSubmit();
@@ -67,56 +80,76 @@ export function PinPad({
   }, [value, disabled]);
 
   return (
-    <div role="group" aria-label={ariaLabel} style={{ display: 'flex', flexDirection: 'column', gap: SPACING.md, alignItems: 'center' }}>
-      {/* dots */}
-      <div style={{ display: 'flex', gap: SPACING.sm }} aria-hidden>
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: SPACING.lg,
+        alignItems: 'center',
+      }}
+    >
+      <div
+        style={{ display: 'flex', gap: 12 }}
+        aria-hidden
+        aria-live="polite"
+        aria-atomic="true"
+      >
         {Array.from({ length: maxLength }).map((_, i) => (
           <div
             key={i}
-            style={{
-              width: 14,
-              height: 14,
-              borderRadius: BORDER_RADIUS.full,
-              border: `2px solid ${COLORS.surfaceBorder}`,
-              background: i < value.length ? COLORS.accent : 'transparent',
-            }}
+            className={`pinpad-dot${i < value.length ? ' pinpad-dot--filled' : ''}`}
           />
         ))}
       </div>
-      {/* keypad grid */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 72px)',
-          gap: SPACING.sm,
+          gridTemplateColumns: 'repeat(3, 64px)',
+          gap: 14,
+          justifyContent: 'center',
         }}
       >
         {KEYS.map((k, idx) => {
-          if (!k.value && !k.action) {
-            return <div key={idx} />;
+          if (k.kind === 'digit') {
+            return (
+              <button
+                key={idx}
+                type="button"
+                className="pinpad-key"
+                onClick={() => handleDigit(k.value)}
+                aria-label={`Digit ${k.value}`}
+                disabled={disabled}
+              >
+                {k.value}
+              </button>
+            );
           }
-          const onClick = k.action === 'backspace' ? handleBackspace : () => handleDigit(k.value as string);
-          const label = k.action === 'backspace' ? 'Backspace' : `Digit ${k.value}`;
+          if (k.kind === 'clear') {
+            return (
+              <button
+                key={idx}
+                type="button"
+                className="pinpad-key pinpad-key--text"
+                onClick={handleClear}
+                aria-label="Clear PIN"
+                disabled={disabled || value.length === 0}
+              >
+                Clear
+              </button>
+            );
+          }
           return (
             <button
               key={idx}
               type="button"
-              onClick={onClick}
-              aria-label={label}
-              disabled={disabled}
-              style={{
-                width: 72,
-                height: 72,
-                borderRadius: BORDER_RADIUS.full,
-                background: COLORS.surface,
-                border: `1px solid ${COLORS.surfaceBorder}`,
-                color: COLORS.text,
-                fontSize: FONT_SIZE.xl,
-                fontWeight: 600,
-                cursor: disabled ? 'not-allowed' : 'pointer',
-              }}
+              className="pinpad-key pinpad-key--icon"
+              onClick={handleBackspace}
+              aria-label="Backspace"
+              disabled={disabled || value.length === 0}
             >
-              {k.label}
+              ⌫
             </button>
           );
         })}

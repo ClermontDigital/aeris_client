@@ -147,27 +147,89 @@ export function registerRelayBridgeIpc(): void {
   );
 }
 
-// The RelayClient exposes typed helpers for known actions, but the bridge
-// is intentionally a thin pass-through so the renderer can call any
-// action by name (mirrors mobile's pattern). For Phase 2 the client only
-// needs auth + dashboard; Phase 3 will expand to dispatch by the action
-// constants.
+// Route well-known actions through RelayClient's typed methods so the
+// renderer receives the unwrapped + normalized payload. The previous
+// pass-through to relayRpc returned raw envelopes like
+// `{data: [...], meta: {...}}` — screens expecting normalized arrays
+// stayed stuck on "Loading…". Unknown actions still fall through to the
+// raw relayRpc so future actions can be added without changing this
+// file before the typed surface catches up.
 async function callDispatch(
   c: RelayClient,
   action: string,
   params: unknown,
   options?: RelayCallOptions,
 ): Promise<unknown> {
-  // Use the private relayRpc by way of the public action methods where
-  // possible. For the catch-all path we type-cast to access the protected
-  // method — this is intentionally co-located with the bridge so the
-  // unsafe access is contained.
-  const anyClient = c as unknown as {
-    relayRpc: (
-      action: string,
-      params: unknown,
-      options?: { idempotencyKey?: string },
-    ) => Promise<unknown>;
-  };
-  return anyClient.relayRpc(action, params ?? {}, options);
+  const p = (params ?? {}) as Record<string, unknown>;
+  switch (action) {
+    case 'dashboard.summary':
+      return c.getDailySummary(p.location_id as number | undefined);
+
+    case 'products.list':
+      return c.listProducts(
+        (p.page as number | undefined) ?? 1,
+        (p.per_page as number | undefined) ?? (p.perPage as number | undefined) ?? 20,
+      );
+    case 'products.search':
+      return c.searchProducts(
+        (p.query as string) ?? (p.q as string) ?? '',
+        (p.page as number | undefined) ?? 1,
+        (p.per_page as number | undefined) ?? (p.perPage as number | undefined) ?? 20,
+      );
+    case 'products.detail':
+      return c.getProductDetail((p.id as number) ?? (p.product_id as number));
+    case 'products.barcode':
+      return c.getProductByBarcode(p.barcode as string);
+    case 'products.categories':
+      return c.getCategories();
+    case 'inventory.stock':
+      return c.getStock(
+        (p.product_id as number) ?? (p.id as number),
+        p.location_id as number | undefined,
+      );
+
+    case 'customers.list':
+      return c.listCustomers(
+        (p.page as number | undefined) ?? 1,
+        (p.per_page as number | undefined) ?? (p.perPage as number | undefined) ?? 20,
+      );
+    case 'customers.search':
+      return c.searchCustomers(
+        (p.query as string) ?? (p.q as string) ?? '',
+        (p.page as number | undefined) ?? 1,
+        (p.per_page as number | undefined) ?? (p.perPage as number | undefined) ?? 20,
+      );
+    case 'customers.detail':
+      return c.getCustomerDetail((p.id as number) ?? (p.customer_id as number));
+
+    case 'transactions.list':
+      return c.getTransactions({
+        page: p.page as number | undefined,
+        per_page:
+          (p.per_page as number | undefined) ?? (p.perPage as number | undefined),
+        from_date: p.from_date as string | undefined,
+        to_date: p.to_date as string | undefined,
+        status: p.status as string | undefined,
+      });
+    case 'transactions.detail':
+      return c.getTransactionDetail((p.id as number) ?? (p.sale_id as number));
+    case 'transactions.receipt':
+      return c.getReceipt((p.id as number) ?? (p.sale_id as number));
+
+    case 'pos.payment-methods':
+      return c.getPaymentMethods();
+
+    default: {
+      // Catch-all for actions not yet bound to a typed method. Renderer
+      // takes the raw envelope data shape and normalizes inline.
+      const anyClient = c as unknown as {
+        relayRpc: (
+          a: string,
+          pp: unknown,
+          opts?: { idempotencyKey?: string },
+        ) => Promise<unknown>;
+      };
+      return anyClient.relayRpc(action, p, options);
+    }
+  }
 }
