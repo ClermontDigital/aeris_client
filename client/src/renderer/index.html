@@ -3,16 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <!--
-      Strict CSP — connect-src 'none' means the renderer process cannot
-      make ANY outbound network requests. All relay traffic flows
-      through the main process via the relay:call IPC. style-src allows
-      'unsafe-inline' so React's inline styles work; script-src is
-      'self'-only so no remote scripts load.
+      CSP is injected here by Vite's transformIndexHtml hook (see
+      electron-vite.config.ts). Production gets a strict policy with
+      `connect-src 'none'` so the renderer can NEVER make outbound
+      network requests — all relay traffic flows through main via the
+      relay:call IPC. Dev mode allows the localhost HMR connection and
+      inline/eval scripts that Vite + react-refresh require.
     -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; connect-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;"
-    />
+    <!--CSP_PLACEHOLDER-->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aeris</title>
   </head>
