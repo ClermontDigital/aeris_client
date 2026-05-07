@@ -63,6 +63,7 @@ const aeris: AerisBridge = {
     checkNow: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK_NOW),
     openDownload: (url) =>
       ipcRenderer.invoke(IPC_CHANNELS.UPDATE_OPEN_DOWNLOAD, url),
+    installNow: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_INSTALL_NOW),
     onStatusChanged: (cb) => {
       const handler = (_e: unknown, status: unknown) =>
         cb(status as Parameters<AerisBridge['update']['onStatusChanged']>[0] extends (s: infer S) => void ? S : never);

@@ -56,6 +56,13 @@ beforeEach(() => {
       diagnostics: {
         getRecentLogs: jest.fn().mockResolvedValue(''),
       },
+      update: {
+        checkNow: jest.fn(),
+        openDownload: jest.fn(),
+        installNow: jest.fn(),
+        onStatusChanged: jest.fn().mockReturnValue(() => undefined),
+        onManualFallback: jest.fn().mockReturnValue(() => undefined),
+      },
     },
   });
 });

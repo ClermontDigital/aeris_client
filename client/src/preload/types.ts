@@ -58,6 +58,7 @@ export interface AerisBridge {
   update: {
     checkNow(): Promise<CheckNowResult>;
     openDownload(url: string): Promise<{ ok: boolean; message?: string }>;
+    installNow(): Promise<{ ok: boolean; message?: string }>;
     onStatusChanged(cb: (status: UpdateStatus) => void): () => void;
     onManualFallback(cb: (status: UpdateStatus) => void): () => void;
   };
