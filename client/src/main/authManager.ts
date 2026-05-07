@@ -52,7 +52,21 @@ export function getState(): AuthState {
   return state;
 }
 
-export async function initialize(): Promise<void> {
+// Captured so that auth:get-state can await an in-flight initialize()
+// before responding. Without this, the renderer's first read can race
+// against the relay validation call and receive {initialized: false},
+// then miss the subsequent state-changed event and stay stuck on the
+// "Starting Aeris…" splash forever.
+let initializePromise: Promise<void> | null = null;
+
+export function initialize(): Promise<void> {
+  if (!initializePromise) {
+    initializePromise = doInitialize();
+  }
+  return initializePromise;
+}
+
+async function doInitialize(): Promise<void> {
   // Pull persisted session.
   const settings = settingsStore.get();
   state = {
@@ -208,13 +222,17 @@ export async function handleUnauthorized(): Promise<void> {
 }
 
 export function registerAuthIpc(): void {
-  ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATE, () => getState());
+  ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATE, async () => {
+    if (initializePromise) await initializePromise;
+    return getState();
+  });
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, (_e, req: LoginRequest) => login(req));
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, () => logout());
 }
 
 // Test-only.
 export function _resetForTests(): void {
+  initializePromise = null;
   state = {
     initialized: false,
     isAuthenticated: false,
