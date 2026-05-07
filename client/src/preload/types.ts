@@ -6,10 +6,12 @@ import type {
   AppLockState,
   AppSettings,
   AuthState,
+  CheckNowResult,
   LoginRequest,
   RelayCallOptions,
   RelayCallResult,
   SetPinResult,
+  UpdateStatus,
   VerifyPinResult,
 } from '../shared-types/ipc';
 
@@ -50,6 +52,13 @@ export interface AerisBridge {
 
   diagnostics: {
     getRecentLogs(maxLines?: number): Promise<string>;
+  };
+
+  update: {
+    checkNow(): Promise<CheckNowResult>;
+    openDownload(url: string): Promise<{ ok: boolean; message?: string }>;
+    onStatusChanged(cb: (status: UpdateStatus) => void): () => void;
+    onManualFallback(cb: (status: UpdateStatus) => void): () => void;
   };
 }
 
