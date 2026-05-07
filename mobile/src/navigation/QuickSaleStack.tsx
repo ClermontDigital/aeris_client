@@ -4,6 +4,7 @@ import QuickSaleScreen from '../screens/QuickSaleScreen';
 import BarcodeScannerScreen from '../screens/BarcodeScannerScreen';
 import CartScreen from '../screens/CartScreen';
 import CheckoutScreen from '../screens/CheckoutScreen';
+import CustomerPickerScreen from '../screens/CustomerPickerScreen';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
 
 const Stack = createNativeStackNavigator<QuickSaleStackParamList>();
@@ -14,6 +15,7 @@ const QuickSaleStack: React.FC = () => (
     <Stack.Screen name="Scanner" component={BarcodeScannerScreen} />
     <Stack.Screen name="Cart" component={CartScreen} />
     <Stack.Screen name="Checkout" component={CheckoutScreen} />
+    <Stack.Screen name="CustomerPicker" component={CustomerPickerScreen} />
   </Stack.Navigator>
 );
 

@@ -1,5 +1,5 @@
-import React, {useEffect} from 'react';
-import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState} from 'react-native';
+import React, {useEffect, useRef} from 'react';
+import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState, AppStateStatus} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {NavigationContainer} from '@react-navigation/native';
 import {activateKeepAwakeAsync} from 'expo-keep-awake';
@@ -7,8 +7,11 @@ import * as NavigationBar from 'expo-navigation-bar';
 import {useSettingsStore} from './stores/settingsStore';
 import {useAuthStore} from './stores/authStore';
 import {useProductCacheStore} from './stores/productCacheStore';
+import {useAppLockStore} from './stores/appLockStore';
 import ApiClient from './services/ApiClient';
 import RootNavigator from './navigation/RootNavigator';
+import AppLockScreen from './screens/AppLockScreen';
+import PinSetupScreen from './screens/PinSetupScreen';
 import {COLORS} from './constants/theme';
 
 interface ErrorBoundaryState {
@@ -65,12 +68,18 @@ const App: React.FC = () => {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const expiresAt = useAuthStore(s => s.expiresAt);
   const refreshSession = useAuthStore(s => s.refreshSession);
+  const initAppLock = useAppLockStore(s => s.init);
+  const lockNow = useAppLockStore(s => s.lockNow);
+  const isLocked = useAppLockStore(s => s.isLocked);
+  const hasPin = useAppLockStore(s => s.hasPin);
+  const lockInitialized = useAppLockStore(s => s.initialized);
 
   useEffect(() => {
     activateKeepAwakeAsync();
     initSettings();
     restoreSession();
     restoreCache();
+    initAppLock();
 
     // Wire 401s in ApiClient back into the auth store so a stale token
     // takes the user to the login screen instead of leaving them logged-in
@@ -87,7 +96,38 @@ const App: React.FC = () => {
     return () => {
       ApiClient.setOnUnauthorized(null);
     };
-  }, [initSettings, restoreSession, restoreCache, clearLocalSession]);
+  }, [initSettings, restoreSession, restoreCache, clearLocalSession, initAppLock]);
+
+  // Cold-start lock: as soon as we know the user is authed AND has a PIN
+  // configured, drop the lock overlay over the app. Re-runs cheaply because
+  // lockNow is a no-op when hasPin is false.
+  useEffect(() => {
+    if (isAuthenticated && hasPin) {
+      lockNow();
+    }
+    // Only fire on the boundary changes; lockNow itself is stable.
+  }, [isAuthenticated, hasPin, lockNow]);
+
+  // Foreground-from-background lock with a 5-second debounce so transient
+  // OS interruptions (Apple Pay sheet, control-centre, incoming call banner)
+  // don't trigger an unwanted lock.
+  const backgroundedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'background') {
+        backgroundedAtRef.current = Date.now();
+        return;
+      }
+      if (state === 'active') {
+        const stamped = backgroundedAtRef.current;
+        backgroundedAtRef.current = null;
+        if (stamped == null) return;
+        if (Date.now() - stamped < 5_000) return;
+        lockNow();
+      }
+    });
+    return () => sub.remove();
+  }, [lockNow]);
 
   // Configure ApiClient whenever connection-relevant settings change
   useEffect(() => {
@@ -142,6 +182,12 @@ const App: React.FC = () => {
     return () => sub.remove();
   }, [isAuthenticated, expiresAt, refreshSession]);
 
+  // While the lock store is still resolving its async secure-store reads,
+  // hide the navigator behind a navy splash so we never flash protected
+  // content to a returning user before the lock overlay has a chance to
+  // mount. Unauthed users skip the gate (login/setup is allowed pre-init).
+  const showSplash = isAuthenticated && !lockInitialized;
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
@@ -167,9 +213,23 @@ const App: React.FC = () => {
         >
           <RootNavigator />
         </NavigationContainer>
+        {showSplash && <View style={styles.splash} pointerEvents="auto" />}
+        {isAuthenticated && lockInitialized && !hasPin && <PinSetupScreen />}
+        {isAuthenticated && lockInitialized && hasPin && isLocked && <AppLockScreen />}
       </SafeAreaProvider>
     </ErrorBoundary>
   );
 };
+
+const styles = StyleSheet.create({
+  splash: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: COLORS.navy,
+  },
+});
 
 export default App;

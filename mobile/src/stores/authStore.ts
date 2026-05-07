@@ -1,6 +1,7 @@
 import {create} from 'zustand';
 import ApiClient, {RelayError} from '../services/ApiClient';
 import {SecureStorage} from '../services/StorageService';
+import {useAppLockStore} from './appLockStore';
 import type {User} from '../types/api.types';
 
 const AUTH_TOKEN_KEY = 'aeris_auth_token';
@@ -127,6 +128,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
     await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
+    // Clear app-lock PIN + biometric pref so the next user starts fresh
+    // and isn't gated by the previous user's PIN at the lock screen.
+    try {
+      await useAppLockStore.getState().reset();
+    } catch (e) {
+      console.warn('Failed to clear app lock on logout:', e);
+    }
     set({
       user: null,
       token: null,
