@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { UpdateBanner } from './UpdateBanner';
 import { COLORS, SPACING } from '../theme/tokens';
 
 export function AppShell(): React.ReactElement {
@@ -22,6 +23,7 @@ export function AppShell(): React.ReactElement {
           minWidth: 0,
         }}
       >
+        <UpdateBanner />
         <TopBar />
         <main
           style={{

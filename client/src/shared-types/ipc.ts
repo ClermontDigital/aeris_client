@@ -32,6 +32,7 @@ export const IPC_CHANNELS = {
 
   UPDATE_CHECK_NOW: 'update:check-now',
   UPDATE_OPEN_DOWNLOAD: 'update:open-download',
+  UPDATE_INSTALL_NOW: 'update:install-now',
   UPDATE_STATUS_CHANGED: 'update:status-changed',
   UPDATE_MANUAL_FALLBACK: 'update:manual-fallback',
 } as const;

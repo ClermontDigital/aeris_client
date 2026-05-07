@@ -184,6 +184,15 @@ function registerIpc(): void {
     await shell.openExternal(url);
     return { ok: true };
   });
+  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL_NOW, async () => {
+    try {
+      autoUpdater.quitAndInstall();
+      return { ok: true };
+    } catch (err) {
+      const message = (err as Error)?.message ?? 'install-now failed';
+      return { ok: false, message };
+    }
+  });
   ipcRegistered = true;
 }
 
