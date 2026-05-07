@@ -1,0 +1,16 @@
+{
+  "name": "aeris-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Aeris Client monorepo: shared contract layer, mobile (Expo), and client (Electron v2). Archive (desktop-v1) is excluded from workspaces and built only on-demand.",
+  "workspaces": [
+    "shared",
+    "mobile",
+    "client"
+  ],
+  "scripts": {
+    "test:all": "npm test --workspaces --if-present",
+    "typecheck": "tsc --build",
+    "clean": "npm run clean --workspaces --if-present && rimraf node_modules"
+  }
+}

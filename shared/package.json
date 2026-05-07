@@ -1,0 +1,26 @@
+{
+  "name": "@aeris/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Aeris contract layer shared between mobile/ (Expo) and client/ (Electron v2). Contains relay client, types, normalizers, cart math, and action constants. No platform-specific code.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "react-native": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "rimraf dist tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
+    "test": "jest --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "~5.9.0"
+  }
+}
