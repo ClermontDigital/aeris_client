@@ -7,9 +7,10 @@ interface Props {
   title?: string;
   children: React.ReactNode;
   width?: number;
+  actions?: React.ReactNode;
 }
 
-export function Modal({ open, onClose, title, children, width = 480 }: Props): React.ReactElement | null {
+export function Modal({ open, onClose, title, children, width = 480, actions }: Props): React.ReactElement | null {
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -54,6 +55,11 @@ export function Modal({ open, onClose, title, children, width = 480 }: Props): R
           <h2 style={{ marginTop: 0, marginBottom: SPACING.md, fontSize: FONT_SIZE.xl }}>{title}</h2>
         ) : null}
         {children}
+        {actions ? (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: SPACING.sm, marginTop: SPACING.lg }}>
+            {actions}
+          </div>
+        ) : null}
       </div>
     </div>
   );
