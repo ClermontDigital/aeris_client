@@ -75,7 +75,7 @@ Renderer mirrors via `auth:get-state` + the `auth:state-changed` event.
 ```
 client/
   package.json                  # name "aeris-client", version 2.0.0
-  electron-vite.config.ts       # main + preload + renderer split
+  electron.vite.config.ts       # main + preload + renderer split
   electron-builder.yml          # SKELETON — Phase 4 finalises sign/notary/updater
   build/entitlements.mac.plist  # macOS hardened runtime entitlements
   src/
