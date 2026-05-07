@@ -5,6 +5,10 @@ import { LoginScreen } from '../screens/LoginScreen';
 import { AppLockScreen } from '../screens/AppLockScreen';
 import { PinSetupScreen } from '../screens/PinSetupScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
+import { ItemsScreen } from '../screens/ItemsScreen';
+import { ProductDetailScreen } from '../screens/ProductDetailScreen';
+import { CustomersScreen } from '../screens/CustomersScreen';
+import { CustomerDetailScreen } from '../screens/CustomerDetailScreen';
 import { TransactionListScreen } from '../screens/TransactionListScreen';
 import { SaleDetailScreen } from '../screens/SaleDetailScreen';
 import { ReceiptViewerScreen } from '../screens/ReceiptViewerScreen';
@@ -57,6 +61,10 @@ export function Routes(): React.ReactElement {
       <Route path="/lock" element={<LockGuard />} />
       <Route element={<ProtectedShell />}>
         <Route path="/" element={<DashboardScreen />} />
+        <Route path="/items" element={<ItemsScreen />} />
+        <Route path="/items/:id" element={<ProductDetailScreen />} />
+        <Route path="/customers" element={<CustomersScreen />} />
+        <Route path="/customers/:id" element={<CustomerDetailScreen />} />
         <Route path="/transactions" element={<TransactionListScreen />} />
         <Route path="/transactions/:id" element={<SaleDetailScreen />} />
         <Route path="/transactions/:id/receipt" element={<ReceiptViewerScreen />} />
