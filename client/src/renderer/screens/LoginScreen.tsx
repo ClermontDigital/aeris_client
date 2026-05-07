@@ -1,11 +1,19 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { validateWorkspaceCode } from '@aeris/shared';
 import { useAuthStore } from '../stores/authStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { Button } from '../components/Button';
 import { TextField } from '../components/TextField';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { COLORS, SPACING, BORDER_RADIUS, FONT_SIZE } from '../theme/tokens';
+
+// Inlined to honour the renderer's "no @aeris/shared runtime imports"
+// rule. Mirrors shared/src/constants/config.ts verbatim.
+const WORKSPACE_RE = /^[a-z0-9][a-z0-9-]{2,30}$/;
+function validateWorkspaceCode(s: string): string | null {
+  if (!s) return 'Workspace required.';
+  if (!WORKSPACE_RE.test(s)) return 'Workspace: lowercase letters, digits, dashes (3–31 chars).';
+  return null;
+}
 
 // errorKind → human copy. Mirrors mobile/src/stores/authStore.ts mapping
 // so that "session expired" / "wrong creds" / "offline" read identically

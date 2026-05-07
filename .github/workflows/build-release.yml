@@ -249,8 +249,29 @@ jobs:
         path: mobile/coverage/
         retention-days: 7
 
+  # ------------------------------------------------------------------
+  # Mobile typecheck — root tsc --build does not include mobile (it's
+  # not a composite project), so a shared/** change can break mobile
+  # types and slip past CI. This job runs `tsc --noEmit` against
+  # mobile/ directly. Gates the EAS build so a typecheck failure short-
+  # circuits the cloud build.
+  # ------------------------------------------------------------------
+  mobile-typecheck:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.mobile_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    - run: npm ci --workspaces --include-workspace-root
+    - run: npx tsc --noEmit
+      working-directory: mobile
+
   build-mobile-ios:
-    needs: [detect-changes, test-mobile]
+    needs: [detect-changes, test-mobile, mobile-typecheck]
     if: needs.detect-changes.outputs.mobile_changed == 'true'
     runs-on: ubuntu-latest
     defaults:
@@ -273,7 +294,7 @@ jobs:
       run: eas build --platform ios --profile production --non-interactive --auto-submit
 
   build-mobile-android:
-    needs: [detect-changes, test-mobile]
+    needs: [detect-changes, test-mobile, mobile-typecheck]
     if: needs.detect-changes.outputs.mobile_changed == 'true'
     runs-on: ubuntu-latest
     defaults:
