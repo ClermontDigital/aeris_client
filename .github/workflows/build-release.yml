@@ -89,6 +89,9 @@ jobs:
         cache: 'npm'
     - run: npm ci --workspaces --include-workspace-root
       working-directory: .
+    # Lockstep typecheck for shared + client (peer review revision #4).
+    - run: npx tsc --build
+      working-directory: .
     - run: npm test
     - run: npm run test:coverage --if-present
     - uses: actions/upload-artifact@v4
@@ -113,14 +116,18 @@ jobs:
         cache: 'npm'
     - run: npm ci --workspaces --include-workspace-root
       working-directory: .
-    - name: Build for macOS
+    - name: electron-vite production bundle
+      run: npm run build
+    - name: Package signed + notarised dmg/zip
       env:
-        CI: false
-        GITHUB_ACTIONS: false
         CSC_LINK: ${{ secrets.CSC_LINK }}
         CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      run: npm run build:mac
-    - name: Notarize macOS DMGs
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: npm run package:mac
+    - name: Notarize macOS DMGs (manual fallback if builder didn't notarize)
       continue-on-error: true
       env:
         APPLE_ID: '${{ secrets.APPLE_ID }}'
@@ -140,8 +147,12 @@ jobs:
         done
     - uses: actions/upload-artifact@v4
       with:
-        name: client-macos
-        path: client/dist/*.dmg
+        name: aeris-mac
+        path: |
+          client/dist/*.dmg
+          client/dist/*.zip
+          client/dist/*.blockmap
+          client/dist/latest-mac.yml
         retention-days: 30
 
   client-build-win:
@@ -159,15 +170,25 @@ jobs:
         cache: 'npm'
     - run: npm ci --workspaces --include-workspace-root
       working-directory: .
-    - name: Build for Windows
+    - name: electron-vite production bundle
+      run: npm run build
+    # Windows code-sign cert availability is the open question for 2.0.0.
+    # If WIN_CSC_LINK is configured the package step signs; otherwise the
+    # build proceeds unsigned (electron-builder logs a warning, no error).
+    # SmartScreen will warn end users until 2.0.1 ships with a cert.
+    - name: Package nsis installer
       env:
-        CI: false
-        GITHUB_ACTIONS: false
-      run: npm run build:win
+        CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: npm run package:win
     - uses: actions/upload-artifact@v4
       with:
-        name: client-windows
-        path: client/dist/*.exe
+        name: aeris-windows
+        path: |
+          client/dist/*.exe
+          client/dist/*.blockmap
+          client/dist/latest.yml
         retention-days: 30
 
   client-build-linux:
@@ -187,17 +208,19 @@ jobs:
       working-directory: .
     - name: Install Linux build dependencies
       run: sudo apt-get update && sudo apt-get install -y libarchive-tools
-    - name: Build for Linux
+    - name: electron-vite production bundle
+      run: npm run build
+    - name: Package AppImage + deb
       env:
-        CI: false
-        GITHUB_ACTIONS: false
-      run: npm run build:linux
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: npm run package:linux
     - uses: actions/upload-artifact@v4
       with:
-        name: client-linux
+        name: aeris-linux
         path: |
           client/dist/*.AppImage
           client/dist/*.deb
+          client/dist/latest-linux.yml
         retention-days: 30
 
   # ------------------------------------------------------------------
@@ -383,17 +406,20 @@ jobs:
         echo "tag_name=client-v$VERSION" >> $GITHUB_OUTPUT
     - uses: actions/download-artifact@v4
       with:
-        name: client-macos
+        name: aeris-mac
         path: ./release-assets/
     - uses: actions/download-artifact@v4
       with:
-        name: client-windows
+        name: aeris-windows
         path: ./release-assets/
     - uses: actions/download-artifact@v4
       with:
-        name: client-linux
+        name: aeris-linux
         path: ./release-assets/
     - run: ls -la ./release-assets/
+    # electron-updater consumes latest-mac.yml / latest.yml / latest-linux.yml
+    # plus the artifacts they reference, so all three plus the *.blockmap
+    # files must land on the release.
     - uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
