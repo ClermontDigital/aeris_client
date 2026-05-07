@@ -38,6 +38,13 @@ const cspPlugin = (): Plugin => ({
 
 export default defineConfig({
   main: {
+    resolve: {
+      // Same alias trick the renderer uses — bundle @aeris/shared from
+      // its TS source so we don't need a separate build step. Node can't
+      // require() the unbuilt src/index.ts at runtime, so the package
+      // must NOT be external.
+      alias: [{ find: /^@aeris\/shared$/, replacement: SHARED_SRC }],
+    },
     build: {
       outDir: 'out/main',
       lib: {
@@ -45,17 +52,11 @@ export default defineConfig({
         formats: ['cjs'],
       },
       rollupOptions: {
-        // Mark @aeris/shared as external so Node `require()` resolves it
-        // from node_modules at runtime (CJS dist/). This dodges Vite's
-        // static export-* analysis on the dist file.
-        external: [
-          'electron',
-          'electron-store',
-          'electron-log',
-          'electron-log/main',
-          'electron-updater',
-          '@aeris/shared',
-        ],
+        // Only Electron itself stays external. All deps (including the
+        // ESM-only `electron-store`, `electron-updater`, `electron-log`,
+        // and the workspace `@aeris/shared`) must be bundled — Rollup
+        // converts ESM→CJS so the CJS main process can consume them.
+        external: ['electron'],
         output: { entryFileNames: 'index.js' },
       },
     },
