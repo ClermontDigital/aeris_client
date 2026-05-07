@@ -246,6 +246,7 @@ export function registerAppLockIpc(): void {
   ipcMain.handle(IPC_CHANNELS.LOCK_SET_PIN, (_e, pin: string) => setPin(pin));
   ipcMain.handle(IPC_CHANNELS.LOCK_VERIFY_PIN, (_e, pin: string) => verifyPin(pin));
   ipcMain.handle(IPC_CHANNELS.LOCK_CLEAR_PIN, () => clearPin());
+  ipcMain.handle(IPC_CHANNELS.LOCK_RESET_PIN, () => clearPin());
   ipcMain.handle(IPC_CHANNELS.LOCK_NOW, () => {
     lockNow();
     return { ok: true };

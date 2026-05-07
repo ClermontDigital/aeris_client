@@ -44,9 +44,12 @@ export function SettingsScreen(): React.ReactElement {
   const setSettings = useSettingsStore((s) => s.set);
   const logout = useAuthStore((s) => s.logout);
   const lockNow = useAppLockStore((s) => s.lockNow);
+  const resetPin = useAppLockStore((s) => s.resetPin);
+  const isPinSet = useAppLockStore((s) => s.isPinSet);
   const [version, setVersion] = useState<string>('…');
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [confirmWorkspaceSwitch, setConfirmWorkspaceSwitch] = useState(false);
+  const [confirmPinReset, setConfirmPinReset] = useState(false);
   const [diagnosticsToast, setDiagnosticsToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -130,6 +133,16 @@ export function SettingsScreen(): React.ReactElement {
         <Button variant="secondary" onClick={() => void lockNow()} style={{ alignSelf: 'flex-start' }}>
           Lock now
         </Button>
+
+        {isPinSet ? (
+          <Button
+            variant="secondary"
+            onClick={() => setConfirmPinReset(true)}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            Reset PIN
+          </Button>
+        ) : null}
       </Section>
 
       <Section title="About">
@@ -181,6 +194,30 @@ export function SettingsScreen(): React.ReactElement {
         }
       >
         You will be returned to the login screen.
+      </Modal>
+
+      <Modal
+        open={confirmPinReset}
+        onClose={() => setConfirmPinReset(false)}
+        title="Reset your PIN?"
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmPinReset(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setConfirmPinReset(false);
+                void resetPin();
+              }}
+            >
+              Reset PIN
+            </Button>
+          </>
+        }
+      >
+        Resetting your PIN will require setup on next launch.
       </Modal>
 
       <Modal

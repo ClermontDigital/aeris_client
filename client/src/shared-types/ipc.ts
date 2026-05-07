@@ -22,6 +22,7 @@ export const IPC_CHANNELS = {
   LOCK_SET_PIN: 'lock:set-pin',
   LOCK_VERIFY_PIN: 'lock:verify-pin',
   LOCK_CLEAR_PIN: 'lock:clear-pin',
+  LOCK_RESET_PIN: 'lock:reset-pin',
   LOCK_NOW: 'lock:lock-now',
   LOCK_STATE_CHANGED: 'lock:state-changed',
 

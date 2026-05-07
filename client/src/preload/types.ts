@@ -46,6 +46,7 @@ export interface AerisBridge {
     setPin(pin: string): Promise<SetPinResult>;
     verifyPin(pin: string): Promise<VerifyPinResult>;
     clearPin(): Promise<{ ok: boolean }>;
+    resetPin(): Promise<{ ok: boolean }>;
     lockNow(): Promise<{ ok: boolean }>;
     onStateChanged(cb: (state: AppLockState) => void): () => void;
   };
