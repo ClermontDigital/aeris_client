@@ -1,9 +1,11 @@
 import log from 'electron-log/main';
+import fs from 'fs';
+import path from 'path';
 
 // Centralised logger. electron-log writes to the platform log path
 // (~/Library/Logs/Aeris/main.log on macOS, %USERPROFILE%\AppData\Roaming\Aeris\logs on Windows).
-// Phase 3 will wire a "Send Diagnostics" button that bundles the last 100
-// lines of these logs.
+// The Send Diagnostics button calls getRecentLogs() to bundle the last
+// N lines for support.
 
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
@@ -31,5 +33,41 @@ export const logger = {
   error: (...args: unknown[]) => log.error(...args.map(redact)),
   debug: (...args: unknown[]) => log.debug(...args.map(redact)),
 };
+
+// Tail the last `maxLines` lines of the active log file. Returns "" when
+// no file transport exists yet (e.g. very early in app boot or in tests
+// where electron-log is mocked).
+export async function getRecentLogs(maxLines = 100): Promise<string> {
+  try {
+    const file = (log.transports.file as unknown as { getFile?: () => { path: string } | undefined })
+      .getFile?.();
+    const filePath = file?.path;
+    if (!filePath) return '';
+    const buf = await fs.promises.readFile(filePath, 'utf8');
+    const lines = buf.split('\n');
+    const tail = lines.slice(-maxLines).join('\n');
+    // Defensive: re-redact in case anything slipped through earlier.
+    return typeof tail === 'string' ? (redact(tail) as string) : '';
+  } catch (e) {
+    log.warn('[logger] getRecentLogs failed', e);
+    return '';
+  }
+}
+
+// Resolve to the active log file path (or null if unknown). Useful for
+// tests + the rare admin case of "open log folder".
+export function getLogFilePath(): string | null {
+  try {
+    const file = (log.transports.file as unknown as { getFile?: () => { path: string } | undefined })
+      .getFile?.();
+    return file?.path ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Re-export path so callers can compose log-folder paths without
+// importing 'path' twice.
+export { path };
 
 export default logger;

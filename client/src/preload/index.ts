@@ -38,6 +38,25 @@ const aeris: AerisBridge = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.SETTINGS_CHANGED, handler);
     },
   },
+
+  lock: {
+    getState: () => ipcRenderer.invoke(IPC_CHANNELS.LOCK_GET_STATE),
+    setPin: (pin) => ipcRenderer.invoke(IPC_CHANNELS.LOCK_SET_PIN, pin),
+    verifyPin: (pin) => ipcRenderer.invoke(IPC_CHANNELS.LOCK_VERIFY_PIN, pin),
+    clearPin: () => ipcRenderer.invoke(IPC_CHANNELS.LOCK_CLEAR_PIN),
+    lockNow: () => ipcRenderer.invoke(IPC_CHANNELS.LOCK_NOW),
+    onStateChanged: (cb) => {
+      const handler = (_e: unknown, next: unknown) =>
+        cb(next as Parameters<AerisBridge['lock']['onStateChanged']>[0] extends (s: infer S) => void ? S : never);
+      ipcRenderer.on(IPC_CHANNELS.LOCK_STATE_CHANGED, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.LOCK_STATE_CHANGED, handler);
+    },
+  },
+
+  diagnostics: {
+    getRecentLogs: (maxLines) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET_RECENT_LOGS, maxLines),
+  },
 };
 
 contextBridge.exposeInMainWorld('aeris', aeris);

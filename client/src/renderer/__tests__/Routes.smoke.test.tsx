@@ -27,6 +27,23 @@ beforeEach(() => {
         set: jest.fn(),
         onChanged: jest.fn().mockReturnValue(() => undefined),
       },
+      lock: {
+        getState: jest.fn().mockResolvedValue({
+          initialized: true,
+          isPinSet: false,
+          locked: false,
+          attempts: 0,
+          lockedOutUntilMs: null,
+        }),
+        setPin: jest.fn(),
+        verifyPin: jest.fn(),
+        clearPin: jest.fn(),
+        lockNow: jest.fn(),
+        onStateChanged: jest.fn().mockReturnValue(() => undefined),
+      },
+      diagnostics: {
+        getRecentLogs: jest.fn().mockResolvedValue(''),
+      },
     },
   });
 });
@@ -41,7 +58,7 @@ afterEach(() => {
     workspaceCode: '',
     errorKind: null,
   });
-  useAppLockStore.setState({ locked: false, pinConfigured: false });
+  useAppLockStore.setState({ initialized: true, isPinSet: false, locked: false, attempts: 0, lockedOutUntilMs: null });
   useSettingsStore.setState({ settings: DEFAULT_SETTINGS });
 });
 
@@ -76,6 +93,7 @@ describe('Routes guard', () => {
       workspaceCode: 'demo',
       errorKind: null,
     });
+    useAppLockStore.setState({ initialized: true, isPinSet: true, locked: false, attempts: 0, lockedOutUntilMs: null });
     renderAt('/');
     expect(screen.getByRole('heading', { name: /Dashboard/i })).toBeInTheDocument();
   });
@@ -89,9 +107,23 @@ describe('Routes guard', () => {
       workspaceCode: 'demo',
       errorKind: null,
     });
-    useAppLockStore.setState({ locked: true, pinConfigured: true });
+    useAppLockStore.setState({ initialized: true, isPinSet: true, locked: true, attempts: 0, lockedOutUntilMs: null });
     renderAt('/');
-    expect(screen.getByText(/Locked/i)).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /Unlock PIN keypad/i })).toBeInTheDocument();
+  });
+
+  test('authenticated user without a PIN sees PinSetup', () => {
+    useAuthStore.setState({
+      initialized: true,
+      isAuthenticated: true,
+      user: { id: 1, email: 'a@b.c' },
+      expiresAt: null,
+      workspaceCode: 'demo',
+      errorKind: null,
+    });
+    useAppLockStore.setState({ initialized: true, isPinSet: false, locked: false, attempts: 0, lockedOutUntilMs: null });
+    renderAt('/');
+    expect(screen.getByText(/Set a PIN/i)).toBeInTheDocument();
   });
 
   test('unauthenticated user trying /transactions falls through to LoginScreen', () => {
@@ -116,6 +148,7 @@ describe('Routes guard', () => {
       workspaceCode: 'demo',
       errorKind: null,
     });
+    useAppLockStore.setState({ initialized: true, isPinSet: true, locked: false, attempts: 0, lockedOutUntilMs: null });
     renderAt('/settings');
     expect(screen.getByRole('heading', { name: /Settings/i })).toBeInTheDocument();
   });

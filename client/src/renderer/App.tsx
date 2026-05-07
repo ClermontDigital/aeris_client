@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
+import { useAppLockStore } from './stores/appLockStore';
 import { Routes } from './router/Routes';
 import { Spinner } from './components/Spinner';
 import { COLORS } from './theme/tokens';
@@ -9,11 +10,13 @@ export function App(): React.ReactElement {
   const initialized = useAuthStore((s) => s.initialized);
   const init = useAuthStore((s) => s.init);
   const initSettings = useSettingsStore((s) => s.init);
+  const initLock = useAppLockStore((s) => s.init);
 
   useEffect(() => {
     void init();
     void initSettings();
-  }, [init, initSettings]);
+    void initLock();
+  }, [init, initSettings, initLock]);
 
   if (!initialized) {
     return (
