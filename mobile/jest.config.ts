@@ -6,6 +6,11 @@ const config: Config = {
   testMatch: ['**/__tests__/**/*.test.{ts,tsx}', '**/*.{test,spec}.{ts,tsx}'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    // Resolve @aeris/shared to TS source so jest-expo's babel transform
+    // handles it; the dist build emits CommonJS that doesn't satisfy
+    // jest-expo's react-native preset (interopRequireDefault chain).
+    '^@aeris/shared$': '<rootDir>/../shared/src/index.ts',
+    '^@aeris/shared/(.*)$': '<rootDir>/../shared/src/$1',
   },
   transformIgnorePatterns: [
     'node_modules/(?!(expo|expo-.*|@expo|react-native|@react-native|react-native-webview|react-native-modal|@react-native-community/netinfo|react-native-safe-area-context|react-native-reanimated|react-native-screens|react-native-gesture-handler|@react-navigation|zustand)/)',

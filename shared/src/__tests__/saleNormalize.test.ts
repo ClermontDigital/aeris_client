@@ -1,4 +1,4 @@
-import {normalizeSale, normalizeSaleDetail} from '../services/ApiClient';
+import {normalizeSale, normalizeSaleDetail} from '../normalizers';
 
 describe('normalizeSale', () => {
   it('prefers _cents fields when present', () => {
