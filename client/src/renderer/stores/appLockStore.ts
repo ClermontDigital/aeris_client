@@ -10,6 +10,7 @@ interface AppLockStore extends AppLockState {
   setPin: (pin: string) => Promise<SetPinResult>;
   verifyPin: (pin: string) => Promise<VerifyPinResult>;
   clearPin: () => Promise<void>;
+  resetPin: () => Promise<void>;
   lockNow: () => Promise<void>;
 }
 
@@ -47,6 +48,10 @@ export const useAppLockStore = create<AppLockStore>((set) => ({
 
   clearPin: async () => {
     await window.aeris.lock.clearPin();
+  },
+
+  resetPin: async () => {
+    await window.aeris.lock.resetPin();
   },
 
   lockNow: async () => {

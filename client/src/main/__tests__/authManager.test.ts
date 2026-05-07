@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { initRelayBridge, getRelayClient } from '../relayBridge';
 import * as authManager from '../authManager';
+import * as appLockManager from '../appLockManager';
 import { settingsStore } from '../settingsStore';
 import { tokenStore } from '../tokenStore';
 import StoreMock from 'electron-store';
@@ -12,6 +13,7 @@ describe('authManager', () => {
     tokenStore._resetCache();
     (ipcMain as unknown as { __reset: () => void }).__reset();
     authManager._resetForTests();
+    appLockManager._resetForTests();
     await initRelayBridge();
   });
 
@@ -97,5 +99,26 @@ describe('authManager', () => {
     expect(next.isAuthenticated).toBe(false);
     expect(await tokenStore.getToken()).toBeNull();
     expect(c.getAuthToken()).toBeNull();
+  });
+
+  test('logout preserves the PIN across login cycles', async () => {
+    const c = getRelayClient();
+    jest.spyOn(c, 'login').mockResolvedValue({
+      access_token: 'tok-abc',
+      token_type: 'Bearer',
+      expires_at: '2030-01-01',
+      user: { id: 1, name: 'Me', email: 'me@aeris', role: 'cashier', location_id: null },
+    });
+    jest.spyOn(c, 'logout').mockResolvedValue(undefined);
+
+    await authManager.login({ workspaceCode: 'demo', email: 'me@aeris', password: 'pw' });
+    appLockManager.setPin('1234');
+    expect(appLockManager.getAppLockState().isPinSet).toBe(true);
+
+    await authManager.logout();
+    expect(appLockManager.getAppLockState().isPinSet).toBe(true);
+
+    await authManager.login({ workspaceCode: 'demo', email: 'me@aeris', password: 'pw' });
+    expect(appLockManager.getAppLockState().isPinSet).toBe(true);
   });
 });
