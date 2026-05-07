@@ -28,6 +28,11 @@ export const IPC_CHANNELS = {
   DIAGNOSTICS_GET_RECENT_LOGS: 'diagnostics:get-recent-logs',
 
   APP_VERSION: 'app:version',
+
+  UPDATE_CHECK_NOW: 'update:check-now',
+  UPDATE_OPEN_DOWNLOAD: 'update:open-download',
+  UPDATE_STATUS_CHANGED: 'update:status-changed',
+  UPDATE_MANUAL_FALLBACK: 'update:manual-fallback',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -121,4 +126,35 @@ export interface VerifyPinResult {
   ok: boolean;
   attemptsRemaining?: number;
   lockedOutUntilMs?: number | null;
+}
+
+// --- auto-update ------------------------------------------------------------
+
+// Mirrors electron-updater's high-level lifecycle plus our manual-fallback
+// state. Renderer surfaces the status as a non-blocking banner.
+export type UpdateStatusKind =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+  | 'manual-fallback';
+
+export interface UpdateStatus {
+  kind: UpdateStatusKind;
+  version?: string;
+  // Percent 0..100 when downloading.
+  progress?: number;
+  // Human-readable error message (kind === 'error').
+  message?: string;
+  // GitHub release HTML URL — only set on `manual-fallback` so the
+  // renderer can shell.openExternal a Download button.
+  htmlUrl?: string;
+}
+
+export interface CheckNowResult {
+  ok: boolean;
+  message?: string;
 }

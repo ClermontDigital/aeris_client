@@ -12,6 +12,7 @@ const config: Config = {
     '^electron-store$': '<rootDir>/__mocks__/electron-store.ts',
     '^electron-log$': '<rootDir>/__mocks__/electron-log.ts',
     '^electron-log/main$': '<rootDir>/__mocks__/electron-log.ts',
+    '^electron-updater$': '<rootDir>/__mocks__/electron-updater.ts',
   },
   transform: {
     '^.+\\.(ts|tsx)$': [

@@ -57,6 +57,24 @@ const aeris: AerisBridge = {
     getRecentLogs: (maxLines) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET_RECENT_LOGS, maxLines),
   },
+
+  update: {
+    checkNow: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK_NOW),
+    openDownload: (url) =>
+      ipcRenderer.invoke(IPC_CHANNELS.UPDATE_OPEN_DOWNLOAD, url),
+    onStatusChanged: (cb) => {
+      const handler = (_e: unknown, status: unknown) =>
+        cb(status as Parameters<AerisBridge['update']['onStatusChanged']>[0] extends (s: infer S) => void ? S : never);
+      ipcRenderer.on(IPC_CHANNELS.UPDATE_STATUS_CHANGED, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_STATUS_CHANGED, handler);
+    },
+    onManualFallback: (cb) => {
+      const handler = (_e: unknown, status: unknown) =>
+        cb(status as Parameters<AerisBridge['update']['onManualFallback']>[0] extends (s: infer S) => void ? S : never);
+      ipcRenderer.on(IPC_CHANNELS.UPDATE_MANUAL_FALLBACK, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_MANUAL_FALLBACK, handler);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('aeris', aeris);

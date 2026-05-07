@@ -4,6 +4,7 @@ import { registerIpc } from './ipc';
 import { initRelayBridge } from './relayBridge';
 import { initialize as initAuth } from './authManager';
 import { attachAutoLock } from './autoLock';
+import { initAutoUpdater } from './autoUpdater';
 import { logger } from './logger';
 
 // Single-instance lock — only one Aeris window across the app's lifetime.
@@ -30,6 +31,7 @@ app.whenReady().then(async () => {
   // via auth:get-state and listen on auth:state-changed for updates.
   void initAuth();
   await loadRenderer(mainWindow);
+  initAutoUpdater(mainWindow);
   logger.info('[main] window ready');
 });
 
