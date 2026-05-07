@@ -6,9 +6,11 @@ import type { AuthState as MainAuthState, LoginRequest } from '../../shared-type
 // and subscribes to auth:state-changed for live updates.
 
 interface AuthStore extends MainAuthState {
+  isLoading: boolean;
   init: () => Promise<void>;
   login: (req: LoginRequest) => Promise<void>;
   logout: () => Promise<void>;
+  clearError: () => void;
 }
 
 const initialState: MainAuthState = {
@@ -24,6 +26,7 @@ let unsubscribe: (() => void) | null = null;
 
 export const useAuthStore = create<AuthStore>((set) => ({
   ...initialState,
+  isLoading: false,
 
   init: async () => {
     if (unsubscribe) return; // idempotent
@@ -35,12 +38,19 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   login: async (req) => {
-    const next = await window.aeris.auth.login(req);
-    set({ ...next });
+    set({ isLoading: true });
+    try {
+      const next = await window.aeris.auth.login(req);
+      set({ ...next, isLoading: false });
+    } catch (e) {
+      set({ isLoading: false, errorKind: 'unknown' });
+    }
   },
 
   logout: async () => {
     const next = await window.aeris.auth.logout();
     set({ ...next });
   },
+
+  clearError: () => set({ errorKind: null }),
 }));
