@@ -3,11 +3,14 @@
 // global `window.aeris`.
 
 import type {
+  AppLockState,
   AppSettings,
   AuthState,
   LoginRequest,
   RelayCallOptions,
   RelayCallResult,
+  SetPinResult,
+  VerifyPinResult,
 } from '../shared-types/ipc';
 
 export interface AerisBridge {
@@ -34,6 +37,19 @@ export interface AerisBridge {
     get(): Promise<AppSettings>;
     set(patch: Partial<AppSettings>): Promise<AppSettings>;
     onChanged(cb: (next: AppSettings) => void): () => void;
+  };
+
+  lock: {
+    getState(): Promise<AppLockState>;
+    setPin(pin: string): Promise<SetPinResult>;
+    verifyPin(pin: string): Promise<VerifyPinResult>;
+    clearPin(): Promise<{ ok: boolean }>;
+    lockNow(): Promise<{ ok: boolean }>;
+    onStateChanged(cb: (state: AppLockState) => void): () => void;
+  };
+
+  diagnostics: {
+    getRecentLogs(maxLines?: number): Promise<string>;
   };
 }
 

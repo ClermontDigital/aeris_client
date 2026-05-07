@@ -18,6 +18,15 @@ export const IPC_CHANNELS = {
   SETTINGS_SET: 'settings:set',
   SETTINGS_CHANGED: 'settings:changed',
 
+  LOCK_GET_STATE: 'lock:get-state',
+  LOCK_SET_PIN: 'lock:set-pin',
+  LOCK_VERIFY_PIN: 'lock:verify-pin',
+  LOCK_CLEAR_PIN: 'lock:clear-pin',
+  LOCK_NOW: 'lock:lock-now',
+  LOCK_STATE_CHANGED: 'lock:state-changed',
+
+  DIAGNOSTICS_GET_RECENT_LOGS: 'diagnostics:get-recent-logs',
+
   APP_VERSION: 'app:version',
 } as const;
 
@@ -92,3 +101,24 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoLockMs: 5 * 60 * 1000, // 5 minutes
   lockEnabled: true,
 };
+
+// --- app lock ---------------------------------------------------------------
+
+export interface AppLockState {
+  initialized: boolean;
+  isPinSet: boolean;
+  locked: boolean;
+  attempts: number;
+  lockedOutUntilMs: number | null;
+}
+
+export interface SetPinResult {
+  ok: boolean;
+  message?: string;
+}
+
+export interface VerifyPinResult {
+  ok: boolean;
+  attemptsRemaining?: number;
+  lockedOutUntilMs?: number | null;
+}

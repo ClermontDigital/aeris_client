@@ -53,6 +53,15 @@ export const shell = {
   openExternal: jest.fn(),
 };
 
+export const powerMonitor = {
+  getSystemIdleTime: jest.fn().mockReturnValue(0),
+};
+
+export const clipboard = {
+  writeText: jest.fn(),
+  readText: jest.fn().mockReturnValue(''),
+};
+
 export const contextBridge = {
   exposeInMainWorld: jest.fn(),
 };
