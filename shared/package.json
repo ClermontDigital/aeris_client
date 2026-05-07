@@ -3,10 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "description": "Aeris contract layer shared between mobile/ (Expo) and client/ (Electron v2). Contains relay client, types, normalizers, cart math, and action constants. No platform-specific code.",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
+  "main": "src/index.ts",
   "react-native": "src/index.ts",
-  "types": "dist/index.d.ts",
+  "types": "src/index.ts",
   "files": [
     "dist",
     "src"
