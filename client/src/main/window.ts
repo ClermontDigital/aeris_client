@@ -49,7 +49,14 @@ export function createMainWindow(): BrowserWindow {
     }
   });
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    // Auto-open devtools in dev so renderer console errors are visible
+    // without the user hunting for the menu shortcut.
+    if (process.env['ELECTRON_RENDERER_URL']) {
+      win.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
 
   return win;
 }
