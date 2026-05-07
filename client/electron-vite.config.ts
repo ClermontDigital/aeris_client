@@ -27,6 +27,7 @@ export default defineConfig({
           'electron-store',
           'electron-log',
           'electron-log/main',
+          'electron-updater',
           '@aeris/shared',
         ],
         output: { entryFileNames: 'index.js' },
