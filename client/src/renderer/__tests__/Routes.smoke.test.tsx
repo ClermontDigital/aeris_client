@@ -15,7 +15,19 @@ beforeEach(() => {
     configurable: true,
     value: {
       app: { version: jest.fn().mockResolvedValue('2.0.0-test') },
-      relay: { call: jest.fn() },
+      relay: {
+        call: jest.fn().mockResolvedValue({
+          ok: true,
+          data: {
+            date: '2026-05-07',
+            revenue_cents: 0,
+            sales_count: 0,
+            items_sold: 0,
+            average_sale_cents: 0,
+            top_products: [],
+          },
+        }),
+      },
       auth: {
         getState: jest.fn(),
         login: jest.fn(),
