@@ -17,5 +17,12 @@ export const RELAY_ACTIONS = {
   CUSTOMERS_LIST: 'customers.list',
   CUSTOMERS_SEARCH: 'customers.search',
   CUSTOMERS_DETAIL: 'customers.detail',
+  CUSTOMERS_CREATE: 'customers.create',
+  CUSTOMERS_UPDATE: 'customers.update',
+  CUSTOMERS_DELETE: 'customers.delete',
+  PRODUCTS_CREATE: 'products.create',
+  PRODUCTS_UPDATE: 'products.update',
   INVENTORY_STOCK: 'inventory.stock',
+  INVENTORY_ADJUST_STOCK: 'inventory.adjust-stock',
+  SALES_DAILY_SUMMARY: 'sales.daily-summary',
 } as const;

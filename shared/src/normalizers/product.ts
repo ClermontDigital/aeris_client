@@ -38,7 +38,9 @@ export function normalizeProduct(input: unknown): Product {
     sku: asString(raw.sku),
     barcode: typeof raw.barcode === 'string' ? raw.barcode : null,
     price_cents: pickCents(raw, 'price_cents', 'price'),
-    tax_rate: asNumber(raw.tax_rate, 0),
+    // Default missing tax_rate to 10 to match Aeris2's StoreProductRequest
+    // server default; an explicit 0 (GST-free) is preserved by asNumber.
+    tax_rate: asNumber(raw.tax_rate, 10),
     stock_on_hand: asNumber(raw.stock_on_hand ?? raw.stock_quantity, 0),
     category_id: categoryId,
     category_name: categoryName,

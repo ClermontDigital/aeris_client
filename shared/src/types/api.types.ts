@@ -195,6 +195,122 @@ export interface CartItem {
   discount_cents: number;
 }
 
+// Inputs for the customer create/update endpoints. Mirror StoreCustomerRequest
+// validation rules — first_name OR company is required, every other field is
+// optional. Cents are converted to dollars at the boundary by RelayClient.
+export interface CustomerCreateInput {
+  first_name?: string | null;
+  last_name?: string | null;
+  company?: string | null;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+  date_of_birth?: string | null;
+  gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say' | null;
+  customer_group?: 'retail' | 'wholesale' | 'vip' | 'trade' | null;
+  abn?: string | null;
+  payment_terms?: string | null;
+  credit_limit_cents?: number | null;
+  notes?: string | null;
+  is_active?: boolean;
+  // Address fields land on the customer_addresses table on save.
+  address?: string | null;
+  address_line_2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postcode?: string | null;
+  country?: string | null;
+}
+
+// Update input is a partial of create — server is fine with any subset.
+export type CustomerUpdateInput = Partial<CustomerCreateInput>;
+
+// StoreProductRequest fields. base_price/cost_price travel as dollars (numeric)
+// on the wire; the typed input keeps cents and converts at the boundary so
+// callers never deal in float dollars. category_id is required server-side.
+export interface ProductCreateInput {
+  name: string;
+  sku: string;
+  category_id: number;
+  base_price_cents: number;
+  barcode?: string | null;
+  description?: string | null;
+  short_description?: string | null;
+  cost_price_cents?: number | null;
+  supplier_id?: number | null;
+  unit_type?: string | null;
+  gst_applicable?: boolean;
+  gst_category?: string | null;
+  track_stock?: boolean;
+  stock_quantity?: number;
+  reorder_level?: number | null;
+  reorder_point?: number | null;
+  reorder_quantity?: number | null;
+  maximum_level?: number | null;
+  location_id?: number | null;
+  is_active?: boolean;
+  tax_rate?: number | null;
+  weight?: number | null;
+  dimensions?: string | null;
+  image_url?: string | null;
+  notes?: string | null;
+}
+
+// All fields optional; sku is unique server-side so include only when changing.
+export type ProductUpdateInput = Partial<ProductCreateInput>;
+
+// adjustment is signed (negative for shrinkage). reason is a closed enum
+// matching AdjustStockRequest's Rule::in() list.
+export type StockAdjustmentReason =
+  | 'count_correction'
+  | 'damaged_goods'
+  | 'expired_goods'
+  | 'theft_loss'
+  | 'found_stock'
+  | 'supplier_error'
+  | 'manual_adjustment'
+  | 'return_to_stock'
+  | 'other';
+
+export interface StockAdjustmentInput {
+  product_id: number;
+  adjustment: number;
+  reason: StockAdjustmentReason;
+  notes?: string | null;
+  location_id?: number | null;
+}
+
+// InventoryController::adjustStock returns {data: {product_id, previous_quantity,
+// new_quantity, adjustment, reason}}. We expose those fields verbatim.
+export interface StockAdjustment {
+  product_id: number;
+  previous_quantity: number;
+  new_quantity: number;
+  adjustment: number;
+  reason: string;
+}
+
+// SalesAPIController::dailySummary returns the rich Z-report payload (vs the
+// lighter DashboardSummary surface). Money fields come back in dollars.
+export interface DailyZReport {
+  date: string;
+  user_id: number | null;
+  total_sales: number;
+  completed_sales: number;
+  pending_sales: number;
+  total_revenue_cents: number;
+  total_gst_cents: number;
+  total_discount_cents: number;
+  unique_customers: number;
+  total_items_sold: number;
+  average_sale_cents: number;
+  payment_method_breakdown: Record<string, number>; // method → cents (money)
+  sales_by_staff: Record<string, number>; // staff name → count of completed sales
+  hourly_breakdown: Record<string, number>; // hour ('00'..'23') → count of completed sales
+  sales_by_status: Record<string, number>; // status → count of sales
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   meta: {

@@ -16,3 +16,5 @@ export {normalizeProduct, normalizeProductDetail, normalizeProductVariant} from 
 export {normalizeSale, normalizeSaleDetail} from './sale';
 export {normalizeAddress, normalizeCustomer} from './customer';
 export {normalizeReceipt} from './receipt';
+export {normalizeStockAdjustment} from './inventory';
+export {normalizeZReport} from './zReport';
