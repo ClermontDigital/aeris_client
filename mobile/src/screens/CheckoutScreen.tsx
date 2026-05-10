@@ -7,6 +7,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
@@ -14,11 +16,18 @@ import type {CompositeNavigationProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
+import ErrorBanner from '../components/ErrorBanner';
 import type {PaymentMethod} from '../types/api.types';
 import type {
   AppTabParamList,
@@ -131,6 +140,9 @@ export default function CheckoutScreen() {
         product_id: item.product.id,
         quantity: item.quantity,
         unit_price_cents: item.unit_price_cents,
+        // Thread per-line tax_rate so RelayClient.createSale flags
+        // gst_applicable correctly for GST-free SKUs.
+        tax_rate: item.product.tax_rate,
         discount_cents: item.discount_cents || undefined,
       }));
 
@@ -239,11 +251,20 @@ export default function CheckoutScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled">
         {/* Customer */}
         <View style={styles.customerRow}>
           <View style={styles.customerIconWrap}>
-            <Ionicons name="person-outline" size={18} color={COLORS.crimson} />
+            <Ionicons
+              name="person-outline"
+              size={ICON_SIZE.action}
+              color={COLORS.crimson}
+            />
           </View>
           <View style={styles.customerTextWrap}>
             <Text style={styles.customerLabel}>Customer</Text>
@@ -262,7 +283,7 @@ export default function CheckoutScreen() {
             <Text style={styles.customerChangeText}>Change</Text>
             <Ionicons
               name="chevron-forward"
-              size={16}
+              size={ICON_SIZE.action}
               color={COLORS.accent}
             />
           </TouchableOpacity>
@@ -288,7 +309,7 @@ export default function CheckoutScreen() {
             accessibilityLabel="Retry loading payment methods">
             <Ionicons
               name="cloud-offline-outline"
-              size={14}
+              size={ICON_SIZE.action}
               color={COLORS.warning}
               style={styles.methodsFallbackIcon}
             />
@@ -298,27 +319,32 @@ export default function CheckoutScreen() {
           </TouchableOpacity>
         ) : null}
         <View style={styles.methodGrid}>
-          {paymentMethods.map(method => (
-            <TouchableOpacity
-              key={method.code}
-              style={[
-                styles.methodButton,
-                selectedMethod === method.code && styles.methodButtonActive,
-              ]}
-              onPress={() => {
-                setSelectedMethod(method.code);
-                setAmountTendered('');
-              }}>
-              <Text
+          {paymentMethods.map(method => {
+            const selected = selectedMethod === method.code;
+            return (
+              <TouchableOpacity
+                key={method.code}
                 style={[
-                  styles.methodButtonText,
-                  selectedMethod === method.code &&
-                    styles.methodButtonTextActive,
-                ]}>
-                {method.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                  styles.methodButton,
+                  selected && styles.methodButtonActive,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Payment method ${method.name}`}
+                accessibilityState={{selected}}
+                onPress={() => {
+                  setSelectedMethod(method.code);
+                  setAmountTendered('');
+                }}>
+                <Text
+                  style={[
+                    styles.methodButtonText,
+                    selected && styles.methodButtonTextActive,
+                  ]}>
+                  {method.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Cash: Amount Tendered */}
@@ -351,11 +377,14 @@ export default function CheckoutScreen() {
         )}
 
         {/* Error */}
-        {error && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{error}</Text>
+        {error ? (
+          <View style={styles.errorWrap}>
+            <ErrorBanner
+              message={error}
+              onDismiss={() => setError(null)}
+            />
           </View>
-        )}
+        ) : null}
 
         {/* Complete Sale Button */}
         <TouchableOpacity
@@ -372,6 +401,7 @@ export default function CheckoutScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -447,6 +477,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  keyboardView: {
+    flex: 1,
+  },
   scrollContent: {
     padding: SPACING.md,
   },
@@ -463,6 +496,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   summaryItems: {
     color: COLORS.textMuted,
@@ -539,6 +573,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: SPACING.sm,
+    fontVariant: ['tabular-nums'],
   },
   changeDisplay: {
     flexDirection: 'row',
@@ -557,21 +592,16 @@ const styles = StyleSheet.create({
     color: COLORS.success,
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   insufficientText: {
     color: COLORS.warning,
     fontSize: FONT_SIZE.sm,
     textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
-  errorBanner: {
-    backgroundColor: COLORS.danger,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.md,
+  errorWrap: {
     marginBottom: SPACING.md,
-  },
-  errorText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
   },
   completeSaleButton: {
     backgroundColor: COLORS.crimson, // brand primary CTA (was COLORS.success — green looked like Stripe)
@@ -618,12 +648,14 @@ const styles = StyleSheet.create({
     color: COLORS.accent,
     fontSize: FONT_SIZE.xl,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   saleTotal: {
     color: COLORS.accent,
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
     marginTop: SPACING.sm,
+    fontVariant: ['tabular-nums'],
   },
   successActions: {
     gap: SPACING.md,

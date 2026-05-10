@@ -6,6 +6,8 @@ import {
   Image,
   TouchableOpacity,
   Alert,
+  BackHandler,
+  Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
@@ -55,6 +57,15 @@ const AppLockScreen: React.FC = () => {
       tryBiometric();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Block Android hardware back while the lock overlay is mounted — without
+  // this the back button propagates to the navigator below and pops/exits
+  // the app while still locked.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
   }, []);
 
   const handleSubmit = useCallback(

@@ -98,14 +98,13 @@ const App: React.FC = () => {
     };
   }, [initSettings, restoreSession, restoreCache, clearLocalSession, initAppLock]);
 
-  // Cold-start lock: as soon as we know the user is authed AND has a PIN
-  // configured, drop the lock overlay over the app. Re-runs cheaply because
-  // lockNow is a no-op when hasPin is false.
+  // (isAuthenticated, hasPin) flip from false→true exactly once per session;
+  // lockNow itself bails out when hasPin is false, so this useEffect is safe
+  // to re-run.
   useEffect(() => {
     if (isAuthenticated && hasPin) {
       lockNow();
     }
-    // Only fire on the boundary changes; lockNow itself is stable.
   }, [isAuthenticated, hasPin, lockNow]);
 
   // Foreground-from-background lock with a 5-second debounce so transient
@@ -152,7 +151,13 @@ const App: React.FC = () => {
     if (!isAuthenticated || !expiresAt) return;
     const REFRESH_LEAD_MS = 120_000; // 2 minutes
     const msUntilRefresh = Date.parse(expiresAt) - Date.now() - REFRESH_LEAD_MS;
-    if (Number.isNaN(msUntilRefresh)) return;
+    if (Number.isNaN(msUntilRefresh)) {
+      // Malformed ISO would silently disable refresh forever — log so the
+      // server-side bug shows up in Sentry / device logs. User still falls
+      // through to the natural-401 path which is acceptable.
+      console.warn('[refresh] could not parse expiresAt:', expiresAt);
+      return;
+    }
     if (msUntilRefresh <= 0) {
       // Already past the lead — fire immediately. refreshSession handles
       // its own dedupe and error logging.
@@ -214,8 +219,16 @@ const App: React.FC = () => {
           <RootNavigator />
         </NavigationContainer>
         {showSplash && <View style={styles.splash} pointerEvents="auto" />}
-        {isAuthenticated && lockInitialized && !hasPin && <PinSetupScreen />}
-        {isAuthenticated && lockInitialized && hasPin && isLocked && <AppLockScreen />}
+        {isAuthenticated && lockInitialized && !hasPin && (
+          <View style={styles.overlay} pointerEvents="auto">
+            <PinSetupScreen />
+          </View>
+        )}
+        {isAuthenticated && lockInitialized && hasPin && isLocked && (
+          <View style={styles.overlay} pointerEvents="auto">
+            <AppLockScreen />
+          </View>
+        )}
       </SafeAreaProvider>
     </ErrorBoundary>
   );
@@ -229,6 +242,16 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: COLORS.navy,
+  },
+  // PIN setup / app-lock are full-screen overlays. Without absolute fill
+  // they share layout space with the NavigationContainer below and the
+  // dashboard bleeds through.
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });
 

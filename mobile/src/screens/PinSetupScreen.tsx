@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {View, Text, StyleSheet, Alert, TouchableOpacity} from 'react-native';
+import {View, Text, StyleSheet, Alert, TouchableOpacity, BackHandler, Platform} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import PinPad from '../components/PinPad';
 import {useAppLockStore} from '../stores/appLockStore';
@@ -36,6 +36,15 @@ const PinSetupScreen: React.FC<Props> = ({onDone}) => {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Block Android hardware back while PIN setup is mounted — the overlay
+  // sits on top of the navigator and the back button must not let the user
+  // skip past it into protected screens.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
   }, []);
 
   const promptBiometricThenFinish = useCallback(() => {

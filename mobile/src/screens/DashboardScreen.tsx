@@ -16,10 +16,20 @@ import {Ionicons} from '@expo/vector-icons';
 import ApiClient from '../services/ApiClient';
 import type {DailySummary} from '../types/api.types';
 import type {AppTabParamList} from '../types/navigation.types';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+  SHADOW,
+} from '../constants/theme';
 import {useAuthStore} from '../stores/authStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {formatCurrency} from '../utils/format';
+import StatCard from '../components/StatCard';
+import EmptyState from '../components/EmptyState';
+import ErrorBanner from '../components/ErrorBanner';
 
 type Nav = BottomTabNavigationProp<AppTabParamList, 'Dashboard'>;
 
@@ -133,13 +143,8 @@ const DashboardScreen: React.FC = () => {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
         <View style={styles.centered}>
-          <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={() => fetchSummary()}>
-              <Text style={styles.retryText}>Retry</Text>
-            </TouchableOpacity>
+          <View style={styles.fullErrorWrap}>
+            <ErrorBanner message={error} onRetry={() => fetchSummary()} />
           </View>
         </View>
       </SafeAreaView>
@@ -174,8 +179,12 @@ const DashboardScreen: React.FC = () => {
         </View>
 
         {error ? (
-          <View style={styles.inlineError}>
-            <Text style={styles.inlineErrorText}>{error}</Text>
+          <View style={styles.bannerWrap}>
+            <ErrorBanner
+              message={error}
+              onRetry={() => fetchSummary()}
+              onDismiss={() => setError(null)}
+            />
           </View>
         ) : null}
 
@@ -187,7 +196,7 @@ const DashboardScreen: React.FC = () => {
           <View style={styles.heroFootnote}>
             <Ionicons
               name="trending-up"
-              size={14}
+              size={ICON_SIZE.action - 4}
               color={COLORS.textMuted}
               style={styles.heroFootnoteIcon}
             />
@@ -200,9 +209,15 @@ const DashboardScreen: React.FC = () => {
         </View>
 
         <View style={styles.statsGrid}>
-          <StatCard label="Transactions" value={String(salesCount)} />
-          <StatCard label="Items Sold" value={String(itemsSold)} />
-          <StatCard label="Avg Sale" value={formatCurrency(avgSale)} />
+          <View style={styles.statCell}>
+            <StatCard label="Transactions" value={String(salesCount)} />
+          </View>
+          <View style={styles.statCell}>
+            <StatCard label="Items Sold" value={String(itemsSold)} />
+          </View>
+          <View style={styles.statCell}>
+            <StatCard label="Avg Sale" value={formatCurrency(avgSale)} />
+          </View>
         </View>
 
         <Text style={styles.sectionLabel}>Quick Actions</Text>
@@ -258,17 +273,11 @@ const DashboardScreen: React.FC = () => {
             ))}
           </View>
         ) : (
-          <View style={styles.emptyCard}>
-            <Ionicons
-              name="bag-handle-outline"
-              size={28}
-              color={COLORS.textDim}
-            />
-            <Text style={styles.emptyTitle}>No sales yet today</Text>
-            <Text style={styles.emptySubtext}>
-              Your first sale will appear here.
-            </Text>
-          </View>
+          <EmptyState
+            title="No sales yet today"
+            description="Your first sale will appear here."
+            icon="bag-handle-outline"
+          />
         )}
 
         {lastUpdated ? (
@@ -285,13 +294,6 @@ const DashboardScreen: React.FC = () => {
   );
 };
 
-const StatCard: React.FC<{label: string; value: string}> = ({label, value}) => (
-  <View style={styles.statCard}>
-    <Text style={styles.statValue}>{value}</Text>
-    <Text style={styles.statLabel}>{label}</Text>
-  </View>
-);
-
 const QuickAction: React.FC<{
   icon: React.ComponentProps<typeof Ionicons>['name'];
   label: string;
@@ -304,7 +306,7 @@ const QuickAction: React.FC<{
     accessibilityRole="button"
     accessibilityLabel={label}>
     <View style={styles.quickActionIconWrap}>
-      <Ionicons name={icon} size={22} color={COLORS.crimson} />
+      <Ionicons name={icon} size={ICON_SIZE.hero} color={COLORS.crimson} />
     </View>
     <Text style={styles.quickActionLabel}>{label}</Text>
   </TouchableOpacity>
@@ -326,30 +328,12 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     marginTop: SPACING.md,
   },
-  errorCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    padding: SPACING.lg,
-    alignItems: 'center',
+  fullErrorWrap: {
+    alignSelf: 'stretch',
+    paddingHorizontal: SPACING.md,
   },
-  errorText: {
-    color: COLORS.danger,
-    fontSize: FONT_SIZE.md,
-    textAlign: 'center',
+  bannerWrap: {
     marginBottom: SPACING.md,
-  },
-  retryButton: {
-    backgroundColor: COLORS.accent,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
-    borderRadius: BORDER_RADIUS.lg,
-  },
-  retryText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '700',
   },
   scrollView: {
     flex: 1,
@@ -376,19 +360,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: SPACING.xs,
   },
-  inlineError: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.danger,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.sm,
-    marginBottom: SPACING.md,
-  },
-  inlineErrorText: {
-    color: COLORS.danger,
-    fontSize: FONT_SIZE.sm,
-    textAlign: 'center',
-  },
   sectionLabel: {
     fontSize: FONT_SIZE.sm,
     fontWeight: '600',
@@ -405,11 +376,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.surfaceBorder,
     padding: SPACING.lg,
     marginBottom: SPACING.md,
-    shadowColor: COLORS.black,
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
+    ...SHADOW.card,
   },
   heroLabel: {
     fontSize: FONT_SIZE.sm,
@@ -424,6 +391,7 @@ const styles = StyleSheet.create({
     color: COLORS.crimson,
     fontWeight: '700',
     letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'],
   },
   heroFootnote: {
     flexDirection: 'row',
@@ -440,35 +408,8 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     marginBottom: SPACING.lg,
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.sm,
-    alignItems: 'center',
-    shadowColor: COLORS.black,
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  statValue: {
-    fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
-    color: COLORS.text,
-    marginBottom: SPACING.xs,
-    letterSpacing: -0.3,
-  },
-  statLabel: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
+  // Cell wraps StatCard so flex:1 sizing lives outside the shared component.
+  statCell: {flex: 1},
   quickActions: {
     flexDirection: 'row',
     gap: SPACING.sm,
@@ -483,11 +424,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.xs,
     alignItems: 'center',
-    shadowColor: COLORS.black,
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
+    ...SHADOW.card,
   },
   quickActionIconWrap: {
     width: 40,
@@ -510,11 +447,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     paddingHorizontal: SPACING.md,
-    shadowColor: COLORS.black,
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
+    ...SHADOW.card,
   },
   productRow: {
     flexDirection: 'row',
@@ -539,6 +472,7 @@ const styles = StyleSheet.create({
     color: COLORS.crimson,
     fontSize: FONT_SIZE.sm,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   productInfo: {
     flex: 1,
@@ -553,37 +487,20 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
     marginTop: 2,
+    fontVariant: ['tabular-nums'],
   },
   productRevenue: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
-  },
-  emptyCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    padding: SPACING.lg,
-    alignItems: 'center',
-  },
-  emptyTitle: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '600',
-    marginTop: SPACING.sm,
-  },
-  emptySubtext: {
-    color: COLORS.textDim,
-    fontSize: FONT_SIZE.sm,
-    marginTop: SPACING.xs,
-    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
   lastUpdated: {
     color: COLORS.textDim,
     fontSize: FONT_SIZE.xs,
     textAlign: 'center',
     marginTop: SPACING.lg,
+    fontVariant: ['tabular-nums'],
   },
 });
 

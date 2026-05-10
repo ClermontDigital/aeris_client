@@ -1,7 +1,7 @@
 import React from 'react';
 import {View, TouchableOpacity, Text, StyleSheet} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
-import {COLORS, FONT_SIZE, BORDER_RADIUS, SPACING} from '../constants/theme';
+import {COLORS, FONT_SIZE, BORDER_RADIUS, SPACING, BUTTON_SIZE} from '../constants/theme';
 
 interface ToolbarProps {
   canGoBack: boolean;
@@ -81,13 +81,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.toolbarBg,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
-    height: 44,
+    height: BUTTON_SIZE.lg,
   },
   navGroup: {flexDirection: 'row', gap: SPACING.xs},
   actionGroup: {flexDirection: 'row', gap: SPACING.xs},
   button: {
-    width: 36,
-    height: 36,
+    width: BUTTON_SIZE.sm,
+    height: BUTTON_SIZE.sm,
     borderRadius: BORDER_RADIUS.md, // matches web "rounded-lg" pill language
     backgroundColor: COLORS.toolbarBtn,
     borderWidth: 1,

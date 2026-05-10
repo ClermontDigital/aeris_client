@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,19 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {Ionicons} from '@expo/vector-icons';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import StatCard from '../components/StatCard';
+import EmptyState from '../components/EmptyState';
+import ErrorBanner from '../components/ErrorBanner';
 import type {Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
@@ -64,6 +74,11 @@ function getStatusColor(status: Sale['status']): string {
     default:
       return COLORS.textDim;
   }
+}
+
+function isToday(iso: string): boolean {
+  const today = new Date().toISOString().split('T')[0];
+  return iso.startsWith(today);
 }
 
 export default function TransactionListScreen() {
@@ -149,11 +164,30 @@ export default function TransactionListScreen() {
     [navigation, haptics],
   );
 
+  // Stat strip aggregates derived client-side from the visible page.
+  const stats = useMemo(() => {
+    const todayTx = transactions.filter(t => isToday(t.created_at));
+    const todayCount = todayTx.length;
+    const todayRevenueCents = todayTx.reduce(
+      (sum, t) => sum + (t.total_cents || 0),
+      0,
+    );
+    const visibleCount = transactions.length;
+    const visibleSum = transactions.reduce(
+      (sum, t) => sum + (t.total_cents || 0),
+      0,
+    );
+    const avgCents = visibleCount > 0 ? Math.round(visibleSum / visibleCount) : 0;
+    return {todayCount, todayRevenueCents, avgCents};
+  }, [transactions]);
+
   const renderTransaction = ({item}: {item: Sale}) => (
     <TouchableOpacity
       style={styles.transactionRow}
       onPress={() => handleRowPress(item)}
-      activeOpacity={0.7}>
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`Sale ${item.sale_number}, ${formatDateTime(item.created_at)}, ${formatCurrency(item.total_cents)}. Tap to view.`}>
       <View style={styles.rowLeft}>
         <Text style={styles.saleNumber}>{item.sale_number}</Text>
         <Text style={styles.saleDate}>{formatDateTime(item.created_at)}</Text>
@@ -171,6 +205,12 @@ export default function TransactionListScreen() {
           <Text style={styles.statusText}>{item.status}</Text>
         </View>
       </View>
+      <Ionicons
+        name="chevron-forward"
+        size={ICON_SIZE.action}
+        color={COLORS.textMuted}
+        style={styles.rowChevron}
+      />
     </TouchableOpacity>
   );
 
@@ -205,24 +245,25 @@ export default function TransactionListScreen() {
 
   const renderEmpty = () => {
     if (isLoading) return null;
+    const description =
+      dateFilter === 'today'
+        ? 'No sales recorded today'
+        : dateFilter === 'week'
+          ? 'No sales this week'
+          : 'No transaction history';
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>No transactions found</Text>
-        <Text style={styles.emptySubtext}>
-          {dateFilter === 'today'
-            ? 'No sales recorded today'
-            : dateFilter === 'week'
-            ? 'No sales this week'
-            : 'No transaction history'}
-        </Text>
-      </View>
+      <EmptyState
+        icon="receipt-outline"
+        title="No transactions found"
+        description={description}
+      />
     );
   };
 
-  const FILTERS: {key: DateFilter; label: string}[] = [
-    {key: 'today', label: 'Today'},
-    {key: 'week', label: 'This Week'},
-    {key: 'all', label: 'All'},
+  const FILTERS: {key: DateFilter; label: string; icon: keyof typeof Ionicons.glyphMap}[] = [
+    {key: 'today', label: 'Today', icon: 'today-outline'},
+    {key: 'week', label: 'This Week', icon: 'calendar-outline'},
+    {key: 'all', label: 'All', icon: 'list-outline'},
   ];
 
   return (
@@ -232,36 +273,70 @@ export default function TransactionListScreen() {
         <Text style={styles.headerTitle}>Transactions</Text>
       </View>
 
-      {/* Date Filter */}
+      {/* Stat strip — derived from the currently-loaded page so the values
+          stay coherent with the visible list rows. */}
+      <View style={styles.statStrip}>
+        <View style={styles.statCell}>
+          <StatCard
+            label="Today"
+            value={String(stats.todayCount)}
+            sublabel="sales"
+          />
+        </View>
+        <View style={styles.statCell}>
+          <StatCard
+            label="Today Revenue"
+            value={formatCurrency(stats.todayRevenueCents)}
+          />
+        </View>
+        <View style={styles.statCell}>
+          <StatCard
+            label="Avg Sale"
+            value={formatCurrency(stats.avgCents)}
+            sublabel="visible"
+          />
+        </View>
+      </View>
+
+      {/* Date Filter — pill style mirroring desktop's .aeris-nav-active */}
       <View style={styles.filterRow}>
-        {FILTERS.map(f => (
-          <TouchableOpacity
-            key={f.key}
-            style={[
-              styles.filterButton,
-              dateFilter === f.key && styles.filterButtonActive,
-            ]}
-            onPress={() => handleFilterChange(f.key)}>
-            <Text
+        {FILTERS.map(f => {
+          const active = dateFilter === f.key;
+          return (
+            <TouchableOpacity
+              key={f.key}
               style={[
-                styles.filterButtonText,
-                dateFilter === f.key && styles.filterButtonTextActive,
-              ]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+                styles.filterButton,
+                active && styles.filterButtonActive,
+              ]}
+              onPress={() => handleFilterChange(f.key)}
+              accessibilityRole="button"
+              accessibilityLabel={`Filter ${f.label}`}
+              accessibilityState={{selected: active}}>
+              <Ionicons
+                name={f.icon}
+                size={ICON_SIZE.action}
+                color={active ? COLORS.cream : COLORS.textMuted}
+                style={styles.filterIcon}
+              />
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  active && styles.filterButtonTextActive,
+                ]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Error */}
-      {error && (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => fetchTransactions(1)}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+      {error ? (
+        <View style={styles.errorWrap}>
+          <ErrorBanner message={error} onRetry={() => fetchTransactions(1)} />
         </View>
-      )}
+      ) : null}
 
       {/* Loading */}
       {isLoading && !isRefreshing && (
@@ -312,55 +387,53 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
   },
+  statStrip: {
+    flexDirection: 'row',
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+    gap: SPACING.sm,
+  },
+  statCell: {flex: 1},
   filterRow: {
     flexDirection: 'row',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
   },
+  // Pill: inactive transparent + muted text + surface border;
+  // active solid crimson + cream text + crimson border (mirrors
+  // desktop's .aeris-nav-active state).
   filterButton: {
     flex: 1,
+    flexDirection: 'row',
     paddingVertical: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
-    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: BORDER_RADIUS.lg,
+    backgroundColor: COLORS.transparent,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     alignItems: 'center',
+    justifyContent: 'center',
+    // Apple HIG / Material both require 44pt minimum tap target. The visual
+    // padding stays at SPACING.sm — minHeight just enforces the floor.
+    minHeight: 44,
   },
   filterButtonActive: {
     backgroundColor: COLORS.crimson,
     borderColor: COLORS.crimson,
   },
+  filterIcon: {marginRight: SPACING.xs},
   filterButtonText: {
-    color: COLORS.text,
+    color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     fontWeight: '600',
   },
   filterButtonTextActive: {
-    color: COLORS.white,
+    color: COLORS.cream,
   },
-  errorBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.danger,
+  errorWrap: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    marginHorizontal: SPACING.md,
-    marginTop: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  errorText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
-    flex: 1,
-  },
-  retryText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
-    marginLeft: SPACING.md,
-    textDecorationLine: 'underline',
+    paddingTop: SPACING.sm,
   },
   loader: {
     marginTop: SPACING.xl,
@@ -377,7 +450,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
     marginBottom: SPACING.sm,
   },
   rowLeft: {
@@ -388,11 +462,13 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
   saleDate: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
     marginTop: 2,
+    fontVariant: ['tabular-nums'],
   },
   customerName: {
     color: COLORS.textLight,
@@ -413,7 +489,9 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
     marginBottom: SPACING.xs,
+    fontVariant: ['tabular-nums'],
   },
+  rowChevron: {marginLeft: SPACING.sm},
   statusChip: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 2,
@@ -424,20 +502,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     fontWeight: '600',
     textTransform: 'capitalize',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingTop: SPACING.xxl,
-  },
-  emptyText: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    color: COLORS.textDim,
-    fontSize: FONT_SIZE.sm,
-    marginTop: SPACING.sm,
   },
   footerLoader: {
     paddingVertical: SPACING.lg,

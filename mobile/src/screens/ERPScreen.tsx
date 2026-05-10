@@ -1,11 +1,12 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {View, Text, StyleSheet, BackHandler, Alert, Platform} from 'react-native';
+import {View, StyleSheet, BackHandler, Alert, Platform} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {WebViewNavigation} from 'react-native-webview';
 import Toolbar from '../components/Toolbar';
 import WebViewContainer from '../components/WebViewContainer';
 import LoadingOverlay from '../components/LoadingOverlay';
 import OfflineBanner from '../components/OfflineBanner';
+import EmptyState from '../components/EmptyState';
 import SettingsModal from './SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useAuthStore} from '../stores/authStore';
@@ -13,7 +14,7 @@ import {useWebView} from '../hooks/useWebView';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import ConnectionService from '../services/ConnectionService';
 import PrintService from '../services/PrintService';
-import {COLORS, SPACING, FONT_SIZE} from '../constants/theme';
+import {COLORS} from '../constants/theme';
 
 const ERPScreen: React.FC = () => {
   const baseUrl = useSettingsStore(s => s.settings.baseUrl);
@@ -96,14 +97,11 @@ const ERPScreen: React.FC = () => {
       {isRelayMode ? (
         // ERP web shell talks to the deployment directly; in relay mode the
         // architecture forbids that, so route the user to the native tabs.
-        <View style={styles.relayPlaceholder}>
-          <Text style={styles.placeholderTitle}>ERP web view unavailable</Text>
-          <Text style={styles.placeholderBody}>
-            The full ERP shell is only available in direct (LAN) mode. While
-            you are connected through the Aeris relay, please use the POS,
-            Scanner, and Transactions tabs for day-to-day work.
-          </Text>
-        </View>
+        <EmptyState
+          icon="cloud-offline-outline"
+          title="ERP web view unavailable"
+          description="The full ERP shell is only available in direct (LAN) mode. While you are connected through the Aeris relay, please use the POS, Scanner, and Transactions tabs for day-to-day work."
+        />
       ) : (
         <View style={styles.webviewContainer}>
           <WebViewContainer
@@ -143,26 +141,6 @@ const styles = StyleSheet.create({
   webviewContainer: {
     flex: 1,
     position: 'relative',
-  },
-  relayPlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: SPACING.xl,
-    backgroundColor: COLORS.background,
-  },
-  placeholderTitle: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
-    marginBottom: SPACING.md,
-    textAlign: 'center',
-  },
-  placeholderBody: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.md,
-    textAlign: 'center',
-    lineHeight: 22,
   },
 });
 

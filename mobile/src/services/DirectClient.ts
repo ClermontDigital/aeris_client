@@ -230,6 +230,9 @@ export class DirectClient {
       quantity: number;
       unit_price_cents: number;
       discount_cents?: number;
+      // tax_rate is a percent integer (10 = 10% GST). Mirrors RelayClient
+      // so direct-mode deployments tax 0%-GST lines correctly.
+      tax_rate?: number;
     }>;
     payments: Array<{
       method: string;
@@ -258,13 +261,17 @@ export class DirectClient {
     const totalAmount = centsToDollars(paymentsTotalCents);
 
     const payload: Record<string, unknown> = {
-      items: data.items.map(i => ({
-        product_id: i.product_id,
-        quantity: i.quantity,
-        unit_price: centsToDollars(i.unit_price_cents),
-        gst_applicable: true,
-        discount_amount: i.discount_cents ? centsToDollars(i.discount_cents) : 0,
-      })),
+      items: data.items.map(i => {
+        // tax_rate undefined → 10% default (matches Aeris2 server default).
+        const rate = i.tax_rate ?? 10;
+        return {
+          product_id: i.product_id,
+          quantity: i.quantity,
+          unit_price: centsToDollars(i.unit_price_cents),
+          gst_applicable: rate > 0,
+          discount_amount: i.discount_cents ? centsToDollars(i.discount_cents) : 0,
+        };
+      }),
       payments: data.payments.map(p => ({
         method: p.method,
         amount: centsToDollars(p.amount_cents),

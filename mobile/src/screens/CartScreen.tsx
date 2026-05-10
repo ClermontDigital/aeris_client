@@ -7,14 +7,23 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Ionicons} from '@expo/vector-icons';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
+import EmptyState from '../components/EmptyState';
 import type {CartItem} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
@@ -177,46 +186,62 @@ export default function CartScreen() {
           <TouchableOpacity
             style={styles.stepperButton}
             hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            accessibilityRole="button"
+            accessibilityLabel="Decrease quantity"
             onPress={() => {
               haptics.light();
               updateQuantity(item.product.id, item.quantity - 1);
             }}>
-            <Text style={styles.stepperButtonText}>-</Text>
+            <Ionicons
+              name="remove"
+              size={ICON_SIZE.action}
+              color={COLORS.text}
+            />
           </TouchableOpacity>
           <Text style={styles.quantityText}>{item.quantity}</Text>
           <TouchableOpacity
             style={styles.stepperButton}
             hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            accessibilityRole="button"
+            accessibilityLabel="Increase quantity"
             onPress={() => {
               haptics.light();
               updateQuantity(item.product.id, item.quantity + 1);
             }}>
-            <Text style={styles.stepperButtonText}>+</Text>
+            <Ionicons name="add" size={ICON_SIZE.action} color={COLORS.text} />
           </TouchableOpacity>
         </View>
         <TouchableOpacity
           style={styles.deleteButton}
+          accessibilityRole="button"
+          accessibilityLabel="Remove item"
           onPress={() => {
             haptics.light();
             handleSwipeDelete(item.product.id);
           }}>
-          <Text style={styles.deleteButtonText}>X</Text>
+          <Ionicons
+            name="trash-outline"
+            size={ICON_SIZE.action}
+            color={COLORS.danger}
+          />
         </TouchableOpacity>
       </View>
     );
   };
 
   const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>Your cart is empty</Text>
-      <Text style={styles.emptySubtext}>
-        Add products from the Quick Sale screen
-      </Text>
-    </View>
+    <EmptyState
+      icon="cart-outline"
+      title="Your cart is empty"
+      description="Add products from the Quick Sale screen"
+    />
   );
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -224,7 +249,11 @@ export default function CartScreen() {
           onPress={handleBackToProducts}
           accessibilityRole="button"
           accessibilityLabel="Back to products">
-          <Ionicons name="chevron-back" size={20} color={COLORS.text} />
+          <Ionicons
+            name="chevron-back"
+            size={ICON_SIZE.action}
+            color={COLORS.text}
+          />
           <Text style={styles.backText}>Products</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Cart</Text>
@@ -240,6 +269,7 @@ export default function CartScreen() {
         keyExtractor={item => String(item.product.id)}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={renderEmpty}
+        keyboardShouldPersistTaps="handled"
       />
 
       {/* Discount & Notes */}
@@ -317,6 +347,7 @@ export default function CartScreen() {
           </View>
         </View>
       )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -325,6 +356,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  keyboardView: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -389,6 +423,7 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: FONT_SIZE.sm,
     marginTop: SPACING.xs,
+    fontVariant: ['tabular-nums'],
   },
   quantityStepper: {
     flexDirection: 'row',
@@ -402,12 +437,7 @@ const styles = StyleSheet.create({
   },
   stepperButton: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.lg,
-  },
-  stepperButtonText: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    paddingVertical: SPACING.md,
   },
   quantityText: {
     color: COLORS.text,
@@ -415,31 +445,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     minWidth: 28,
     textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
   deleteButton: {
     marginLeft: SPACING.sm,
     padding: SPACING.sm,
-  },
-  deleteButtonText: {
-    color: COLORS.danger,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '700',
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: SPACING.xxl,
-  },
-  emptyText: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    color: COLORS.textDim,
-    fontSize: FONT_SIZE.sm,
-    marginTop: SPACING.sm,
   },
   inputsSection: {
     paddingHorizontal: SPACING.md,
@@ -500,6 +510,7 @@ const styles = StyleSheet.create({
   summaryValue: {
     color: COLORS.text,
     fontSize: FONT_SIZE.sm,
+    fontVariant: ['tabular-nums'],
   },
   summaryDiscountValue: {
     color: COLORS.warning,
@@ -526,6 +537,7 @@ const styles = StyleSheet.create({
     color: COLORS.crimson,
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   buttonRow: {
     flexDirection: 'row',

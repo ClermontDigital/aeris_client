@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback, useMemo, useRef} from 'react';
 import {
   View,
   Text,
@@ -13,17 +13,27 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {Product} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
+import StatCard from '../components/StatCard';
+import EmptyState from '../components/EmptyState';
+import ErrorBanner from '../components/ErrorBanner';
 
 type Nav = NativeStackNavigationProp<ItemsStackParamList>;
 
 const PER_PAGE = 50;
 const SEARCH_DEBOUNCE_MS = 300;
+const LOW_STOCK_THRESHOLD = 10;
 
 const ItemsScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
@@ -92,10 +102,24 @@ const ItemsScreen: React.FC = () => {
     }
   }, [isLoadingMore, page, lastPage, search, fetchPage]);
 
+  // Stat strip metrics derive from currently-loaded pages — relay meta
+  // doesn't expose aggregate stock counts.
+  const stats = useMemo(() => {
+    let lowStock = 0;
+    let outOfStock = 0;
+    for (const it of items) {
+      if (it.stock_on_hand === 0) outOfStock += 1;
+      else if (it.stock_on_hand < LOW_STOCK_THRESHOLD) lowStock += 1;
+    }
+    return {total: items.length, lowStock, outOfStock};
+  }, [items]);
+
   const renderItem = ({item}: {item: Product}) => (
     <TouchableOpacity
       style={styles.row}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, ${formatCurrency(item.price_cents)}, ${item.stock_on_hand} on hand. Tap to view.`}
       onPress={() => {
         haptics.light();
         navigation.navigate('ProductDetail', {productId: item.id});
@@ -121,6 +145,12 @@ const ItemsScreen: React.FC = () => {
             : `${item.stock_on_hand} on hand`}
         </Text>
       </View>
+      <Ionicons
+        name="chevron-forward"
+        size={ICON_SIZE.action}
+        color={COLORS.textMuted}
+        style={styles.chevron}
+      />
     </TouchableOpacity>
   );
 
@@ -156,11 +186,15 @@ const ItemsScreen: React.FC = () => {
   const renderEmpty = () => {
     if (isLoading) return null;
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>
-          {search ? 'No items match your search' : 'No items found'}
-        </Text>
-      </View>
+      <EmptyState
+        title={search ? 'No items match your search' : 'No items found'}
+        description={
+          search
+            ? 'Try a different name or SKU.'
+            : 'Add your first product on the Aeris web console.'
+        }
+        icon="cube-outline"
+      />
     );
   };
 
@@ -172,10 +206,36 @@ const ItemsScreen: React.FC = () => {
         <Text style={styles.headerTitle}>Items</Text>
       </View>
 
+      <View style={styles.statsStrip}>
+        <View style={styles.statCell}>
+          <StatCard
+            label="Total"
+            value={String(stats.total)}
+            icon="cube-outline"
+          />
+        </View>
+        <View style={styles.statCell}>
+          <StatCard
+            label="Low Stock"
+            value={String(stats.lowStock)}
+            icon="alert-circle-outline"
+            tone={stats.lowStock > 0 ? 'warning' : 'default'}
+          />
+        </View>
+        <View style={styles.statCell}>
+          <StatCard
+            label="Out"
+            value={String(stats.outOfStock)}
+            icon="close-circle-outline"
+            tone={stats.outOfStock > 0 ? 'danger' : 'default'}
+          />
+        </View>
+      </View>
+
       <View style={styles.searchRow}>
         <Ionicons
           name="search"
-          size={18}
+          size={ICON_SIZE.action}
           color={COLORS.textMuted}
           style={styles.searchIcon}
         />
@@ -191,7 +251,11 @@ const ItemsScreen: React.FC = () => {
         />
         {search ? (
           <TouchableOpacity onPress={() => setSearch('')} style={styles.clearBtn}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+            <Ionicons
+              name="close-circle"
+              size={ICON_SIZE.action}
+              color={COLORS.textMuted}
+            />
           </TouchableOpacity>
         ) : null}
         <TouchableOpacity
@@ -203,16 +267,21 @@ const ItemsScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Scan barcode"
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <Ionicons name="barcode-outline" size={22} color={COLORS.crimson} />
+          <Ionicons
+            name="barcode-outline"
+            size={ICON_SIZE.hero}
+            color={COLORS.crimson}
+          />
         </TouchableOpacity>
       </View>
 
       {error ? (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => fetchPage(1, false, search)}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+        <View style={styles.bannerWrap}>
+          <ErrorBanner
+            message={error}
+            onRetry={() => fetchPage(1, false, search)}
+            onDismiss={() => setError(null)}
+          />
         </View>
       ) : null}
 
@@ -260,6 +329,17 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
   },
+  statsStrip: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  statCell: {flex: 1},
+  bannerWrap: {
+    paddingHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -280,37 +360,21 @@ const styles = StyleSheet.create({
   },
   clearBtn: {paddingHorizontal: SPACING.xs},
   scanBtn: {paddingLeft: SPACING.sm},
-  errorBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.danger,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    marginHorizontal: SPACING.md,
-    marginBottom: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  errorText: {color: COLORS.white, fontSize: FONT_SIZE.sm, flex: 1},
-  retryText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
-    marginLeft: SPACING.md,
-    textDecorationLine: 'underline',
-  },
   loader: {marginTop: SPACING.xl},
   listContent: {
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.xxl,
   },
+  // Compact-row look: vertical SPACING.sm, horizontal SPACING.md
   row: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.md,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
     marginBottom: SPACING.sm,
   },
   rowLeft: {flex: 1, marginRight: SPACING.md},
@@ -325,13 +389,16 @@ const styles = StyleSheet.create({
     color: COLORS.crimson,
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   rowStock: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
     marginTop: 2,
+    fontVariant: ['tabular-nums'],
   },
   rowStockOut: {color: COLORS.warning},
+  chevron: {marginLeft: SPACING.sm},
   footerLoader: {paddingVertical: SPACING.lg, alignItems: 'center'},
   footerEnd: {paddingVertical: SPACING.lg, alignItems: 'center'},
   footerEndText: {
@@ -350,12 +417,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     fontWeight: '700',
     textDecorationLine: 'underline',
-  },
-  emptyContainer: {alignItems: 'center', paddingTop: SPACING.xxl},
-  emptyText: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '500',
   },
 });
 

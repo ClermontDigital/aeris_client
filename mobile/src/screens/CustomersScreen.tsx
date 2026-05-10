@@ -13,12 +13,21 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {Customer} from '../types/api.types';
 import type {CustomersStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
+import StatCard from '../components/StatCard';
+import EmptyState from '../components/EmptyState';
+import ErrorBanner from '../components/ErrorBanner';
 
 type Nav = NativeStackNavigationProp<CustomersStackParamList>;
 
@@ -103,10 +112,25 @@ const CustomersScreen: React.FC = () => {
 
   const visible = useMemo(() => localFilter(items, search), [items, search]);
 
+  // Stat strip metrics derive from currently-loaded pages.
+  const stats = useMemo(() => {
+    let withEmail = 0;
+    let withPhone = 0;
+    for (const c of items) {
+      if (c.email && c.email.trim()) withEmail += 1;
+      if ((c.phone && c.phone.trim()) || (c.mobile && c.mobile.trim())) {
+        withPhone += 1;
+      }
+    }
+    return {total: items.length, withEmail, withPhone};
+  }, [items]);
+
   const renderItem = ({item}: {item: Customer}) => (
     <TouchableOpacity
       style={styles.row}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name || item.email || 'Customer'}, ${item.email ? item.email + ', ' : ''}${item.phone || ''}. Tap to view.`}
       onPress={() => {
         haptics.light();
         navigation.navigate('CustomerDetail', {customerId: item.id});
@@ -134,7 +158,7 @@ const CustomersScreen: React.FC = () => {
         ) : null}
         <Ionicons
           name="chevron-forward"
-          size={18}
+          size={ICON_SIZE.action}
           color={COLORS.textMuted}
           style={styles.chevron}
         />
@@ -154,11 +178,15 @@ const CustomersScreen: React.FC = () => {
   const renderEmpty = () => {
     if (isLoading) return null;
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>
-          {search ? 'No customers match your search' : 'No customers found'}
-        </Text>
-      </View>
+      <EmptyState
+        title={search ? 'No customers match your search' : 'No customers found'}
+        description={
+          search
+            ? 'Try a different name, email, or phone number.'
+            : 'Customers added in the Aeris web console will appear here.'
+        }
+        icon="people-outline"
+      />
     );
   };
 
@@ -170,10 +198,34 @@ const CustomersScreen: React.FC = () => {
         <Text style={styles.headerTitle}>Customers</Text>
       </View>
 
+      <View style={styles.statsStrip}>
+        <View style={styles.statCell}>
+          <StatCard
+            label="Total"
+            value={String(stats.total)}
+            icon="people-outline"
+          />
+        </View>
+        <View style={styles.statCell}>
+          <StatCard
+            label="With Email"
+            value={String(stats.withEmail)}
+            icon="mail-outline"
+          />
+        </View>
+        <View style={styles.statCell}>
+          <StatCard
+            label="With Phone"
+            value={String(stats.withPhone)}
+            icon="call-outline"
+          />
+        </View>
+      </View>
+
       <View style={styles.searchRow}>
         <Ionicons
           name="search"
-          size={18}
+          size={ICON_SIZE.action}
           color={COLORS.textMuted}
           style={styles.searchIcon}
         />
@@ -189,17 +241,22 @@ const CustomersScreen: React.FC = () => {
         />
         {search ? (
           <TouchableOpacity onPress={() => setSearch('')} style={styles.clearBtn}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+            <Ionicons
+              name="close-circle"
+              size={ICON_SIZE.action}
+              color={COLORS.textMuted}
+            />
           </TouchableOpacity>
         ) : null}
       </View>
 
       {error ? (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => fetchPage(1, false)}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
+        <View style={styles.bannerWrap}>
+          <ErrorBanner
+            message={error}
+            onRetry={() => fetchPage(1, false)}
+            onDismiss={() => setError(null)}
+          />
         </View>
       ) : null}
 
@@ -245,6 +302,17 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
   },
+  statsStrip: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  statCell: {flex: 1},
+  bannerWrap: {
+    paddingHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -260,37 +328,20 @@ const styles = StyleSheet.create({
   searchIcon: {marginRight: SPACING.sm},
   searchInput: {flex: 1, color: COLORS.text, fontSize: FONT_SIZE.md},
   clearBtn: {paddingHorizontal: SPACING.xs},
-  errorBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.danger,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    marginHorizontal: SPACING.md,
-    marginBottom: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  errorText: {color: COLORS.white, fontSize: FONT_SIZE.sm, flex: 1},
-  retryText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
-    marginLeft: SPACING.md,
-    textDecorationLine: 'underline',
-  },
   loader: {marginTop: SPACING.xl},
   listContent: {
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.xxl,
   },
+  // Compact-row look: vertical SPACING.sm, horizontal SPACING.md
   row: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.md,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
     marginBottom: SPACING.sm,
   },
   rowLeft: {flex: 1, marginRight: SPACING.md},
@@ -299,7 +350,12 @@ const styles = StyleSheet.create({
   rowRight: {flexDirection: 'row', alignItems: 'center'},
   balanceCol: {alignItems: 'flex-end'},
   chevron: {marginLeft: SPACING.sm},
-  rowBalance: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  rowBalance: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
   rowBalanceOwed: {color: COLORS.crimson},
   rowBalanceLabel: {
     color: COLORS.textMuted,
@@ -307,12 +363,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   footerLoader: {paddingVertical: SPACING.lg, alignItems: 'center'},
-  emptyContainer: {alignItems: 'center', paddingTop: SPACING.xxl},
-  emptyText: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '500',
-  },
 });
 
 export default CustomersScreen;
