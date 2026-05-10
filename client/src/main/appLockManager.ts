@@ -1,8 +1,9 @@
-import { ipcMain, BrowserWindow, safeStorage } from 'electron';
+import { BrowserWindow, ipcMain, safeStorage } from 'electron';
 import crypto from 'crypto';
 import Store from 'electron-store';
 import { IPC_CHANNELS, AppLockState } from '../shared-types/ipc';
 import { logger } from './logger';
+import { safeHandle } from './senderGuard';
 
 // PIN-protected app lock. Hash is salted scrypt; the salt is stored
 // alongside the hash. When safeStorage is available the {salt, hash}
@@ -90,8 +91,16 @@ function decryptRecord(stored: string): PinRecord | null {
   }
 }
 
-function hashPin(pin: string, salt: string): string {
-  return crypto.scryptSync(pin, salt, SCRYPT_KEYLEN).toString('hex');
+// Async scrypt so a 50–150 ms hash doesn't pin the main thread (#H5).
+// Concurrent relay:call from the renderer would otherwise stall during a
+// PIN set/verify on lower-end machines.
+function hashPin(pin: string, salt: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(pin, salt, SCRYPT_KEYLEN, (err, derived) => {
+      if (err) reject(err);
+      else resolve((derived as Buffer).toString('hex'));
+    });
+  });
 }
 
 function readPinRecord(): PinRecord | null {
@@ -161,12 +170,14 @@ function isValidPin(pin: string): boolean {
   return /^\d{4,6}$/.test(pin);
 }
 
-export function setPin(pin: string): { ok: boolean; message?: string } {
+export async function setPin(
+  pin: string,
+): Promise<{ ok: boolean; message?: string }> {
   if (!isValidPin(pin)) {
     return { ok: false, message: 'PIN must be 4–6 digits.' };
   }
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = hashPin(pin, salt);
+  const hash = await hashPin(pin, salt);
   set('pinRecord', encryptRecord({ salt, hash }));
   set('attempts', 0);
   set('lockedOutUntilMs', null);
@@ -178,12 +189,13 @@ export function setPin(pin: string): { ok: boolean; message?: string } {
   return { ok: true };
 }
 
-export function verifyPin(pin: string): {
+export async function verifyPin(pin: string): Promise<{
   ok: boolean;
   attemptsRemaining?: number;
   lockedOutUntilMs?: number | null;
-} {
-  // Refuse during cooldown.
+}> {
+  // Refuse during cooldown — checked before hashing so the lockout
+  // cooldown gate stays cheap and unaffected by the async hash.
   const cooldownUntil = readLockoutUntil();
   if (cooldownUntil) {
     return { ok: false, attemptsRemaining: 0, lockedOutUntilMs: cooldownUntil };
@@ -192,7 +204,7 @@ export function verifyPin(pin: string): {
   if (!record) {
     return { ok: false, attemptsRemaining: 0 };
   }
-  const candidate = hashPin(pin, record.salt);
+  const candidate = await hashPin(pin, record.salt);
   if (candidate === record.hash) {
     set('attempts', 0);
     set('lockedOutUntilMs', null);
@@ -242,12 +254,15 @@ export function unlock(): void {
 }
 
 export function registerAppLockIpc(): void {
-  ipcMain.handle(IPC_CHANNELS.LOCK_GET_STATE, () => getAppLockState());
-  ipcMain.handle(IPC_CHANNELS.LOCK_SET_PIN, (_e, pin: string) => setPin(pin));
-  ipcMain.handle(IPC_CHANNELS.LOCK_VERIFY_PIN, (_e, pin: string) => verifyPin(pin));
-  ipcMain.handle(IPC_CHANNELS.LOCK_CLEAR_PIN, () => clearPin());
-  ipcMain.handle(IPC_CHANNELS.LOCK_RESET_PIN, () => clearPin());
-  ipcMain.handle(IPC_CHANNELS.LOCK_NOW, () => {
+  safeHandle(IPC_CHANNELS.LOCK_GET_STATE, () => getAppLockState());
+  safeHandle(IPC_CHANNELS.LOCK_SET_PIN, async (_e, pin) =>
+    setPin(pin as string),
+  );
+  safeHandle(IPC_CHANNELS.LOCK_VERIFY_PIN, async (_e, pin) =>
+    verifyPin(pin as string),
+  );
+  safeHandle(IPC_CHANNELS.LOCK_CLEAR_PIN, () => clearPin());
+  safeHandle(IPC_CHANNELS.LOCK_NOW, () => {
     lockNow();
     return { ok: true };
   });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PaginatedResponse, Sale } from '@aeris/shared';
 import { useRelayQuery } from '../hooks/useRelayQuery';
@@ -6,8 +6,9 @@ import { Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Button } from '../components/Button';
+import { StatCard } from '../components/StatCard';
 import { COLORS, SPACING, FONT_SIZE, BORDER_RADIUS } from '../theme/tokens';
-import { formatCents, formatDateTime } from '../utils/format';
+import { formatCents, formatDateTime, formatNumber } from '../utils/format';
 
 const PER_PAGE = 20;
 
@@ -49,6 +50,27 @@ export function TransactionListScreen(): React.ReactElement {
   const isEmpty = !loading && sales.length === 0 && !errorCode;
   const lastPage = meta?.last_page ?? 1;
 
+  // Stat-strip uses the user's local "today" — relay meta doesn't yet
+  // expose daily aggregates, so we derive from the visible page.
+  const stats = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    let todayCount = 0;
+    let todayRevenueCents = 0;
+    let pageRevenueCents = 0;
+    for (const s of sales) {
+      if (s.status === 'completed') {
+        pageRevenueCents += s.total_cents;
+        if (typeof s.created_at === 'string' && s.created_at.slice(0, 10) === today) {
+          todayCount += 1;
+          todayRevenueCents += s.total_cents;
+        }
+      }
+    }
+    const completedCount = sales.filter((s) => s.status === 'completed').length;
+    const avgSaleCents = completedCount > 0 ? Math.round(pageRevenueCents / completedCount) : 0;
+    return { todayCount, todayRevenueCents, avgSaleCents };
+  }, [sales]);
+
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: SPACING.md }}>
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -57,6 +79,12 @@ export function TransactionListScreen(): React.ReactElement {
           Refresh
         </Button>
       </header>
+
+      <div className="aeris-stat-strip">
+        <StatCard label="Today's sales" value={formatNumber(stats.todayCount)} />
+        <StatCard label="Today's revenue" value={formatCents(stats.todayRevenueCents)} />
+        <StatCard label="Avg sale (page)" value={formatCents(stats.avgSaleCents)} />
+      </div>
 
       {errorCode && errorMessage ? (
         <ErrorBanner
@@ -81,34 +109,43 @@ export function TransactionListScreen(): React.ReactElement {
             overflow: 'hidden',
           }}
         >
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table className="aeris-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: COLORS.creamLight, color: COLORS.text }}>
-                <th style={{ textAlign: 'left', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Sale #</th>
-                <th style={{ textAlign: 'left', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Customer</th>
-                <th style={{ textAlign: 'left', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Date</th>
-                <th style={{ textAlign: 'right', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Total</th>
-                <th style={{ textAlign: 'left', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Status</th>
+                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>Sale #</th>
+                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>Customer</th>
+                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>Date</th>
+                <th style={{ textAlign: 'right', fontSize: FONT_SIZE.sm }}>Total</th>
+                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>Status</th>
               </tr>
             </thead>
             <tbody>
               {sales.map((s) => (
                 <tr
                   key={s.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => navigate(`/transactions/${s.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`/transactions/${s.id}`);
+                    }
+                  }}
+                  className="aeris-row-clickable"
                   style={{ cursor: 'pointer', borderTop: `1px solid ${COLORS.surfaceBorder}` }}
                 >
-                  <td style={{ padding: SPACING.sm, color: COLORS.text }}>{s.sale_number}</td>
-                  <td style={{ padding: SPACING.sm, color: COLORS.text }}>
+                  <td style={{ color: COLORS.text }}>{s.sale_number}</td>
+                  <td style={{ color: COLORS.text }}>
                     {s.customer_name ?? 'Walk-in'}
                   </td>
-                  <td style={{ padding: SPACING.sm, color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
+                  <td style={{ color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
                     {formatDateTime(s.created_at)}
                   </td>
-                  <td style={{ padding: SPACING.sm, color: COLORS.text, textAlign: 'right' }}>
+                  <td style={{ color: COLORS.text, textAlign: 'right' }}>
                     {formatCents(s.total_cents)}
                   </td>
-                  <td style={{ padding: SPACING.sm }}>
+                  <td>
                     <StatusChip status={s.status} />
                   </td>
                 </tr>

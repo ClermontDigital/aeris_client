@@ -8,6 +8,7 @@ import type {
   AuthState,
   CheckNowResult,
   LoginRequest,
+  PrintReceiptResult,
   RelayCallOptions,
   RelayCallResult,
   SetPinResult,
@@ -46,13 +47,18 @@ export interface AerisBridge {
     setPin(pin: string): Promise<SetPinResult>;
     verifyPin(pin: string): Promise<VerifyPinResult>;
     clearPin(): Promise<{ ok: boolean }>;
-    resetPin(): Promise<{ ok: boolean }>;
     lockNow(): Promise<{ ok: boolean }>;
     onStateChanged(cb: (state: AppLockState) => void): () => void;
   };
 
   diagnostics: {
     getRecentLogs(maxLines?: number): Promise<string>;
+  };
+
+  print: {
+    receipt(saleId: number): Promise<PrintReceiptResult>;
+    testPage(): Promise<PrintReceiptResult>;
+    zReport(date?: string): Promise<PrintReceiptResult>;
   };
 
   update: {

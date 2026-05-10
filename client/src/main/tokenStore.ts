@@ -59,9 +59,26 @@ function isEncryptionAvailable(): boolean {
   return cachedEncryptionAvailable;
 }
 
+// Thrown when safeStorage.encryptString fails (corrupt keychain, missing
+// secret-service daemon flipping mid-session, ...). authManager catches
+// it and surfaces an 'unknown' errorKind so login doesn't silently
+// "succeed" with a token we never persisted.
+export class TokenEncryptError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TokenEncryptError';
+  }
+}
+
 function encrypt(value: string): string {
   if (isEncryptionAvailable()) {
-    return safeStorage.encryptString(value).toString('base64');
+    try {
+      return safeStorage.encryptString(value).toString('base64');
+    } catch (e) {
+      const message = (e as Error)?.message ?? String(e);
+      logger.error('[tokenStore] safeStorage.encryptString failed', message);
+      throw new TokenEncryptError(message);
+    }
   }
   return value;
 }

@@ -1,16 +1,12 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Printer } from 'lucide-react';
 import type { ReceiptData } from '@aeris/shared';
 import { useRelayQuery } from '../hooks/useRelayQuery';
 import { Spinner } from '../components/Spinner';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Button } from '../components/Button';
 import { COLORS, SPACING, FONT_SIZE, BORDER_RADIUS } from '../theme/tokens';
-
-// v1 limitation: receipt is read-only — no print path. Adding a print
-// path requires plumbing through Electron's printToPDF + printer
-// discovery, which is deferred to v1.5+ alongside the mobile receipt
-// print path.
 
 export function ReceiptViewerScreen(): React.ReactElement {
   const params = useParams<{ id: string }>();
@@ -22,13 +18,69 @@ export function ReceiptViewerScreen(): React.ReactElement {
     { sale_id: saleId, id: saleId },
   );
 
+  const [printing, setPrinting] = useState(false);
+  const [printToast, setPrintToast] = useState<{
+    kind: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const printToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (printToastTimerRef.current) {
+        clearTimeout(printToastTimerRef.current);
+        printToastTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const onPrint = async () => {
+    if (!Number.isFinite(saleId) || saleId <= 0) return;
+    setPrinting(true);
+    try {
+      const res = await window.aeris.print.receipt(saleId);
+      setPrintToast(
+        res.ok
+          ? { kind: 'success', text: 'Receipt sent to the printer.' }
+          : { kind: 'error', text: res.message || 'Print failed.' },
+      );
+      if (printToastTimerRef.current) clearTimeout(printToastTimerRef.current);
+      printToastTimerRef.current = setTimeout(() => {
+        setPrintToast(null);
+        printToastTimerRef.current = null;
+      }, 4000);
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: SPACING.md }}>
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Button variant="ghost" onClick={() => navigate(`/transactions/${saleId}`)}>
           ← Back
         </Button>
+        <Button
+          variant="primary"
+          onClick={() => void onPrint()}
+          disabled={!data || printing}
+          loading={printing}
+        >
+          <Printer size={18} style={{ marginRight: 6, verticalAlign: '-2px' }} />
+          Print
+        </Button>
       </header>
+      {printToast ? (
+        <div
+          role="status"
+          style={{
+            color: printToast.kind === 'success' ? COLORS.success : COLORS.danger,
+            fontSize: FONT_SIZE.sm,
+          }}
+        >
+          {printToast.text}
+        </div>
+      ) : null}
 
       {errorCode && errorMessage ? <ErrorBanner message={errorMessage} /> : null}
       {loading && !data ? <Spinner label="Loading receipt…" /> : null}
@@ -113,10 +165,6 @@ export function ReceiptViewerScreen(): React.ReactElement {
               Served by {data.served_by}
             </div>
           ) : null}
-
-          <div style={{ marginTop: SPACING.md, color: COLORS.textDim, fontSize: FONT_SIZE.xs, textAlign: 'center' }}>
-            Read-only — printing coming in a later release.
-          </div>
         </article>
       ) : null}
     </section>

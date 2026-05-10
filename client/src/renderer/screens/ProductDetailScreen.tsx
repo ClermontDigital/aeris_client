@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ProductDetail } from '@aeris/shared';
 import { useRelayQuery } from '../hooks/useRelayQuery';
@@ -6,6 +6,7 @@ import { Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Button } from '../components/Button';
+import { StockAdjustmentModal } from '../components/StockAdjustmentModal';
 import { COLORS, SPACING, FONT_SIZE, BORDER_RADIUS } from '../theme/tokens';
 import { formatCents, formatNumber } from '../utils/format';
 
@@ -23,18 +24,40 @@ export function ProductDetailScreen(): React.ReactElement {
   const navigate = useNavigate();
   const productId = Number(params.id);
 
-  const { data, loading, errorCode, errorMessage } = useRelayQuery<ProductDetail | null>(
+  const { data, loading, errorCode, errorMessage, refetch } = useRelayQuery<ProductDetail | null>(
     'products.detail',
     { product_id: productId, id: productId },
   );
 
+  const [adjustOpen, setAdjustOpen] = useState(false);
+
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: SPACING.md }}>
-      <header>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Button variant="ghost" onClick={() => navigate('/items')}>
           ← Back to items
         </Button>
+        {data ? (
+          <div style={{ display: 'flex', gap: SPACING.sm }}>
+            <Button variant="secondary" onClick={() => setAdjustOpen(true)}>
+              Adjust stock
+            </Button>
+            <Button onClick={() => navigate(`/items/${productId}/edit`)}>Edit</Button>
+          </div>
+        ) : null}
       </header>
+
+      {data ? (
+        <StockAdjustmentModal
+          open={adjustOpen}
+          onClose={() => setAdjustOpen(false)}
+          productId={productId}
+          currentStock={data.stock_on_hand}
+          onComplete={() => {
+            void refetch();
+          }}
+        />
+      ) : null}
 
       {errorCode && errorMessage ? (
         <ErrorBanner

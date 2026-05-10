@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Customer } from '@aeris/shared';
 import { useRelayQuery } from '../hooks/useRelayQuery';
@@ -6,6 +6,8 @@ import { Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Button } from '../components/Button';
+import { Modal } from '../components/Modal';
+import { relayCall } from '../services/relay';
 import { COLORS, SPACING, FONT_SIZE, BORDER_RADIUS } from '../theme/tokens';
 import { formatCents, formatDate } from '../utils/format';
 
@@ -28,13 +30,68 @@ export function CustomerDetailScreen(): React.ReactElement {
     { customer_id: customerId, id: customerId },
   );
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    setDeleteError(null);
+    setDeleting(true);
+    try {
+      const result = await relayCall('customers.delete', { id: customerId });
+      if (!result.ok) {
+        setDeleteError(result.message);
+        return;
+      }
+      navigate('/customers');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: SPACING.md }}>
-      <header>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Button variant="ghost" onClick={() => navigate('/customers')}>
           ← Back to customers
         </Button>
+        {data ? (
+          <div style={{ display: 'flex', gap: SPACING.sm }}>
+            <Button
+              variant="danger"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              Delete
+            </Button>
+            <Button onClick={() => navigate(`/customers/${customerId}/edit`)}>Edit</Button>
+          </div>
+        ) : null}
       </header>
+
+      <Modal
+        open={confirmingDelete}
+        onClose={deleting ? undefined : () => setConfirmingDelete(false)}
+        title="Delete customer?"
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setConfirmingDelete(false)}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={() => void handleDelete()} loading={deleting}>
+              Delete
+            </Button>
+          </>
+        }
+      >
+        {deleteError ? <ErrorBanner message={deleteError} /> : null}
+        <p style={{ margin: 0, color: COLORS.text }}>
+          This will remove the customer record. Past sales remain intact.
+        </p>
+      </Modal>
 
       {errorCode && errorMessage ? (
         <ErrorBanner

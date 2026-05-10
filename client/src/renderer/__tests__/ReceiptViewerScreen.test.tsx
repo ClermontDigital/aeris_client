@@ -44,6 +44,10 @@ beforeEach(() => {
         onStateChanged: jest.fn().mockReturnValue(() => undefined),
       },
       diagnostics: { getRecentLogs: jest.fn() },
+      print: {
+        receipt: jest.fn().mockResolvedValue({ ok: true }),
+        testPage: jest.fn().mockResolvedValue({ ok: true }),
+      },
     },
   });
 });
@@ -72,11 +76,29 @@ describe('ReceiptViewerScreen', () => {
     expect(screen.getByText(/Served by Alice/)).toBeInTheDocument();
   });
 
-  test('shows "printing coming in a later release" subtitle', async () => {
+  test('Print button fires window.aeris.print.receipt with the saleId', async () => {
     relayCallMock.mockResolvedValue({ ok: true, data: SAMPLE_RECEIPT });
-    renderAt();
+    const printSpy = jest.fn().mockResolvedValue({ ok: true });
+    (window.aeris.print as unknown as { receipt: jest.Mock }).receipt = printSpy;
+    renderAt(42);
+    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Print/i }));
+    await waitFor(() => expect(printSpy).toHaveBeenCalledWith(42));
     await waitFor(() =>
-      expect(screen.getByText(/printing coming in a later release/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Receipt sent to the printer/i)).toBeInTheDocument(),
+    );
+  });
+
+  test('Print button surfaces an error toast when print fails', async () => {
+    relayCallMock.mockResolvedValue({ ok: true, data: SAMPLE_RECEIPT });
+    (window.aeris.print as unknown as { receipt: jest.Mock }).receipt = jest
+      .fn()
+      .mockResolvedValue({ ok: false, message: 'No printer' });
+    renderAt(42);
+    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Print/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/No printer/i)).toBeInTheDocument(),
     );
   });
 

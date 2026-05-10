@@ -1,5 +1,6 @@
 import { BrowserWindow, shell } from 'electron';
 import path from 'path';
+import { logger } from './logger';
 
 // Window factory. Renderer security is locked down per the plan:
 // - contextIsolation: true (no shared globals between main / renderer)
@@ -31,21 +32,33 @@ export function createMainWindow(): BrowserWindow {
 
   // Open external links in the system browser, never in the app shell.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    if (/^https?:\/\//.test(url)) {
+      // Promise rejection should not crash the main process (#L1).
+      void shell
+        .openExternal(url)
+        .catch((e) => logger.warn('[window] openExternal failed', e));
+    }
     return { action: 'deny' };
   });
 
+  // Localhost is only ever a valid renderer origin in dev (Vite dev
+  // server). Packaged builds load file:// and must reject loopback URLs.
+  const isDev = !!process.env['ELECTRON_RENDERER_URL'];
   win.webContents.on('will-navigate', (e, url) => {
     // Block in-window navigation to anywhere except the loaded app URL.
     // The renderer is a SPA — react-router handles in-app navigation
     // without firing will-navigate.
-    if (
-      !url.startsWith('file://') &&
-      !url.startsWith('http://localhost:') &&
-      !url.startsWith('http://127.0.0.1:')
-    ) {
+    const allowed =
+      url.startsWith('file://') ||
+      (isDev &&
+        (url.startsWith('http://localhost:') ||
+          url.startsWith('http://127.0.0.1:')));
+    if (!allowed) {
       e.preventDefault();
-      shell.openExternal(url);
+      // Same defensive pattern as the windowOpenHandler above (#L1).
+      void shell
+        .openExternal(url)
+        .catch((err) => logger.warn('[window] openExternal failed', err));
     }
   });
 

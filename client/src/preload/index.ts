@@ -44,7 +44,6 @@ const aeris: AerisBridge = {
     setPin: (pin) => ipcRenderer.invoke(IPC_CHANNELS.LOCK_SET_PIN, pin),
     verifyPin: (pin) => ipcRenderer.invoke(IPC_CHANNELS.LOCK_VERIFY_PIN, pin),
     clearPin: () => ipcRenderer.invoke(IPC_CHANNELS.LOCK_CLEAR_PIN),
-    resetPin: () => ipcRenderer.invoke(IPC_CHANNELS.LOCK_RESET_PIN),
     lockNow: () => ipcRenderer.invoke(IPC_CHANNELS.LOCK_NOW),
     onStateChanged: (cb) => {
       const handler = (_e: unknown, next: unknown) =>
@@ -57,6 +56,12 @@ const aeris: AerisBridge = {
   diagnostics: {
     getRecentLogs: (maxLines) =>
       ipcRenderer.invoke(IPC_CHANNELS.DIAGNOSTICS_GET_RECENT_LOGS, maxLines),
+  },
+
+  print: {
+    receipt: (saleId) => ipcRenderer.invoke(IPC_CHANNELS.PRINT_RECEIPT, saleId),
+    testPage: () => ipcRenderer.invoke(IPC_CHANNELS.PRINT_TEST),
+    zReport: (date) => ipcRenderer.invoke(IPC_CHANNELS.PRINT_ZREPORT, date),
   },
 
   update: {
