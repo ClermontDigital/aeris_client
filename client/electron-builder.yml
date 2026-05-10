@@ -3,6 +3,14 @@ productName: Aeris
 copyright: Copyright (c) 2026 Clermont Digital
 artifactName: ${productName}-${version}-${arch}.${ext}
 
+# Pin the electron runtime version explicitly. With npm workspaces the
+# `electron` module hoists to the repo-root node_modules, but
+# electron-builder looks under client/node_modules/electron and otherwise
+# fails CI with "Cannot compute electron version from installed node
+# modules". Keep this in lockstep with client/package.json's electron
+# devDependency.
+electronVersion: 33.4.11
+
 directories:
   output: dist
   buildResources: build
