@@ -5,15 +5,22 @@ import type {
   BiometricCredential,
   Category,
   Customer,
+  CustomerCreateInput,
+  CustomerUpdateInput,
   DailySummary,
+  DailyZReport,
   PaginatedResponse,
   PaymentMethod,
   Product,
+  ProductCreateInput,
   ProductDetail,
+  ProductUpdateInput,
   ReceiptData,
   RelayEnvelope,
   Sale,
   SaleDetail,
+  StockAdjustment,
+  StockAdjustmentInput,
   StockSnapshot,
 } from '../types/api.types';
 import {
@@ -24,6 +31,8 @@ import {
   normalizeReceipt,
   normalizeSale,
   normalizeSaleDetail,
+  normalizeStockAdjustment,
+  normalizeZReport,
   unwrapList,
   unwrapResource,
 } from '../normalizers';
@@ -254,6 +263,9 @@ export class RelayClient {
       quantity: number;
       unit_price_cents: number;
       discount_cents?: number;
+      // tax_rate is a percent integer (10 = 10% GST). Defaults to 10 when
+      // undefined to match Aeris2 StoreProductRequest::prepareForValidation.
+      tax_rate?: number;
     }>;
     payments: Array<{
       method: string;
@@ -269,8 +281,8 @@ export class RelayClient {
     // ProcessSaleRequest validates required dollar fields (unit_price,
     // amount, subtotal, total_amount) and runs a cross-field math check
     // that demands subtotal == sum(qty * unit_price_ex_gst - discount_ex_gst)
-    // ±0.02. Items are flagged gst_applicable: true so the server splits
-    // inc-GST → ex-GST itself (AU 10%).
+    // ±0.02. gst_applicable is derived per-line from item.tax_rate so a
+    // 0% product doesn't get split as 1.10/inc by the server.
     const round2 = (n: number) => Math.round(n * 100) / 100;
     const centsToDollars = (c: number) => round2(c / 100);
 
@@ -301,13 +313,17 @@ export class RelayClient {
     const totalAmount = centsToDollars(paymentsTotalCents);
 
     const payload: Record<string, unknown> = {
-      items: data.items.map(i => ({
-        product_id: i.product_id,
-        quantity: i.quantity,
-        unit_price: centsToDollars(i.unit_price_cents),
-        gst_applicable: true,
-        discount_amount: i.discount_cents ? centsToDollars(i.discount_cents) : 0,
-      })),
+      items: data.items.map(i => {
+        // tax_rate undefined → 10% default (matches Aeris2 server default).
+        const rate = i.tax_rate ?? 10;
+        return {
+          product_id: i.product_id,
+          quantity: i.quantity,
+          unit_price: centsToDollars(i.unit_price_cents),
+          gst_applicable: rate > 0,
+          discount_amount: i.discount_cents ? centsToDollars(i.discount_cents) : 0,
+        };
+      }),
       payments: data.payments.map(p => ({
         method: p.method,
         amount: centsToDollars(p.amount_cents),
@@ -463,6 +479,156 @@ export class RelayClient {
         throw e;
       }
     });
+  }
+
+  // Server-side dedupe on this action isn't yet wired; sending the
+  // Idempotency-Key is defence-in-depth so a double-clicked Save won't
+  // create two rows once the gateway lights up dedupe for create paths.
+  async createCustomer(input: CustomerCreateInput): Promise<Customer> {
+    const idempotencyKey = generateUuid();
+    const payload = this.toCustomerWirePayload(input);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.CUSTOMERS_CREATE,
+          payload,
+          {idempotencyKey},
+        );
+        return normalizeCustomer(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  async updateCustomer(id: number, patch: CustomerUpdateInput): Promise<Customer> {
+    const raw = await this.relayRpc<unknown>(RELAY_ACTIONS.CUSTOMERS_UPDATE, {
+      ...this.toCustomerWirePayload(patch),
+      customer_id: id,
+      id,
+    });
+    return normalizeCustomer(unwrapResource(raw));
+  }
+
+  // CustomerController::destroy returns 204 on success — the dispatcher
+  // converts that to {data: null}. Surface a stable {ok: true} sentinel.
+  async deleteCustomer(id: number): Promise<{ok: true}> {
+    await this.relayRpc<unknown>(RELAY_ACTIONS.CUSTOMERS_DELETE, {
+      customer_id: id,
+      id,
+    });
+    return {ok: true};
+  }
+
+  // --- Products (write) ---
+  // Defence-in-depth idempotency key — see createCustomer note above.
+  async createProduct(input: ProductCreateInput): Promise<Product> {
+    const idempotencyKey = generateUuid();
+    const payload = this.toProductWirePayload(input);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.PRODUCTS_CREATE,
+          payload,
+          {idempotencyKey},
+        );
+        return normalizeProduct(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  async updateProduct(id: number, patch: ProductUpdateInput): Promise<Product> {
+    const raw = await this.relayRpc<unknown>(RELAY_ACTIONS.PRODUCTS_UPDATE, {
+      ...this.toProductWirePayload(patch),
+      product_id: id,
+      id,
+    });
+    return normalizeProduct(unwrapResource(raw));
+  }
+
+  // --- Inventory (write) ---
+  // Adjusting stock records a StockMovement; sending the same Idempotency-Key
+  // on a retried request lets the gateway dedupe rather than double-adjust.
+  async adjustStock(input: StockAdjustmentInput): Promise<StockAdjustment> {
+    const idempotencyKey = generateUuid();
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.INVENTORY_ADJUST_STOCK,
+          {
+            product_id: input.product_id,
+            adjustment: input.adjustment,
+            reason: input.reason,
+            ...(input.notes ? {notes: input.notes} : {}),
+            ...(input.location_id !== undefined && input.location_id !== null
+              ? {location_id: input.location_id}
+              : {}),
+          },
+          {idempotencyKey},
+        );
+        return normalizeStockAdjustment(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  // --- Sales (Z-report) ---
+  async getDailyZReport(
+    date?: string,
+    locationId?: number,
+  ): Promise<DailyZReport> {
+    return withReadRetry(async () => {
+      const raw = await this.relayRpc<unknown>(
+        RELAY_ACTIONS.SALES_DAILY_SUMMARY,
+        {date, location_id: locationId},
+      );
+      return normalizeZReport(unwrapResource(raw));
+    });
+  }
+
+  // --- Wire-shape converters ---
+  // Passthrough-everything-except-cents so a new typed field automatically
+  // flows to the server without needing a converter touch-up. Cents-named
+  // fields are stripped and re-emitted under their dollar-shape names.
+  private toCustomerWirePayload(
+    input: CustomerCreateInput | CustomerUpdateInput,
+  ): Record<string, unknown> {
+    const {credit_limit_cents, ...rest} = input;
+    const out: Record<string, unknown> = {...rest};
+    if (credit_limit_cents !== undefined && credit_limit_cents !== null) {
+      out.credit_limit = Math.round(credit_limit_cents) / 100;
+    }
+    return out;
+  }
+
+  // Same passthrough-with-cents-stripped pattern as toCustomerWirePayload.
+  private toProductWirePayload(
+    input: ProductCreateInput | ProductUpdateInput,
+  ): Record<string, unknown> {
+    const {base_price_cents, cost_price_cents, ...rest} = input;
+    const out: Record<string, unknown> = {...rest};
+    if (base_price_cents !== undefined && base_price_cents !== null) {
+      out.base_price = Math.round(base_price_cents) / 100;
+    }
+    if (cost_price_cents !== undefined && cost_price_cents !== null) {
+      out.cost_price = Math.round(cost_price_cents) / 100;
+    }
+    return out;
   }
 
   // --- Relay RPC ---
