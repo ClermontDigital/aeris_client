@@ -25,7 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       shared_changed: ${{ steps.filter.outputs.shared }}
+      # mobile-only paths fire test-mobile + EAS build jobs
       mobile_changed: ${{ steps.filter.outputs.mobile }}
+      # mobile + shared fires the cheap mobile-typecheck (type-drift catcher)
+      mobile_or_shared_changed: ${{ steps.filter.outputs.mobile_or_shared }}
       client_changed: ${{ steps.filter.outputs.client }}
       archive_changed: ${{ steps.filter.outputs.archive }}
     steps:
@@ -40,6 +43,8 @@ jobs:
           shared:
             - 'shared/**'
           mobile:
+            - 'mobile/**'
+          mobile_or_shared:
             - 'mobile/**'
             - 'shared/**'
           client:
@@ -258,7 +263,7 @@ jobs:
   # ------------------------------------------------------------------
   mobile-typecheck:
     needs: detect-changes
-    if: needs.detect-changes.outputs.mobile_changed == 'true'
+    if: needs.detect-changes.outputs.mobile_or_shared_changed == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
