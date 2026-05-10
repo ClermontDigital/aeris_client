@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      CSP is injected here by Vite's transformIndexHtml hook (see
+      electron-vite.config.ts). Production gets a strict policy with
+      `connect-src 'none'` so the renderer can NEVER make outbound
+      network requests — all relay traffic flows through main via the
+      relay:call IPC. Dev mode allows the localhost HMR connection and
+      inline/eval scripts that Vite + react-refresh require.
+    -->
+    <!--CSP_PLACEHOLDER-->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aeris</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

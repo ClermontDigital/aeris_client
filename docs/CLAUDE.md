@@ -1,150 +1,135 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code (claude.ai/code) and future agents working
+in this repository.
 
-## Project Overview
+## Project shape
 
-Aeris Client is a multi-platform application suite for the Aeris ERP system:
-- **Desktop** (`desktop/`): Electron app for Windows/macOS — WebView wrapper with session management, printing
-- **Mobile** (`mobile/`): Expo SDK 55 / React Native app for iOS/Android — native POS screens + WebView for advanced ERP features
+`aeris_client/` is an npm-workspace monorepo. Three active packages
+plus one archived:
 
-The apps connect to an Aeris ERP server (default: `aeris.local`, configurable). The mobile app can also connect via the Aeris Marketplace relay for secure access to on-prem deployments.
+- `shared/` (`@aeris/shared`) — contract layer for both apps:
+  RelayClient, types, normalizers.
+- `client/` — **Aeris v2**, the relay-native Electron 33 desktop
+  client (React + Vite + Zustand + react-router HashRouter). Native
+  UI; no WebView. Talks to the Aeris ERP server only via the
+  marketplace relay.
+- `mobile/` — Expo SDK 55 / React Native iOS + Android app. Native
+  POS screens. The relay path now lives in `@aeris/shared`.
+- `archive/desktop-v1/` — frozen v1 (WebView wrapper around the
+  Aeris2 web UI). Excluded from workspaces. Built only on demand via
+  the `archive-build-v1` workflow_dispatch for security patches.
 
-## Development Commands
+## Commands
 
-### Desktop (`cd desktop`)
-- `npm run dev` - Start development mode with DevTools
-- `npm start` - Start production mode
-- `npm test` - Run all tests (121 tests, 92.4% coverage)
-- `npm run build:mac` - Build macOS .dmg
-- `npm run build:win` - Build Windows .exe
+```bash
+# Install everything from the repo root.
+npm ci
+
+# Across all workspaces.
+npm run test:all
+npm run typecheck      # tsc --build (shared + client; composite)
+
+# Mobile is not a composite project — typecheck it directly.
+cd mobile && npx tsc --noEmit
+```
+
+### Aeris v2 client (`cd client`)
+
+- `npm run dev` — electron-vite dev with DevTools.
+- `npm test` — Jest + RTL.
+- `npm run build` — production main + preload + renderer bundles
+  to `out/`. `package.json#main` points at `out/main/index.js`;
+  `electron-builder.yml#files` lists `out/**`. All three must agree.
+- `npm run package:mac|win|linux` — electron-builder. macOS path
+  signs + notarises (`mac.notarize: true`); APPLE_ID /
+  APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID env vars are required.
 
 ### Mobile (`cd mobile`)
-- `npx expo start` - Start Expo dev server
-- `npm test` - Run all tests (45 tests)
-- `eas build --platform ios --profile development` - Dev build (simulator)
-- `eas build --platform ios --profile production --auto-submit` - Production build → TestFlight
 
-**Important**: EAS builds must use `"image": "sdk-55"` in `eas.json` (Xcode 26.2 / Swift 6.2). Other Xcode versions fail.
+- `npx expo start` — Expo dev server.
+- `npm test` — Jest.
+- `eas build --platform ios --profile production --auto-submit` —
+  TestFlight upload. EAS Build must use `"image": "sdk-55"` in
+  `eas.json` (Xcode 26.2 / Swift 6.2).
 
-### CI/CD
+## CI/CD
 
-**Branch Strategy**:
-- **Main Branch**: Development and testing (no CI/CD automation)
-- **Release Branch**: Deployment trigger (full CI/CD pipeline)
+`.github/workflows/build-release.yml` is path-filtered (dorny/paths-filter).
 
-The workflow uses **path-based change detection** (`dorny/paths-filter`):
-- `desktop/` changes → desktop test + build (macOS/Windows/Linux) → GitHub Release
-- `mobile/` changes → mobile test + EAS Build → auto-submit to TestFlight
-- Both can run in parallel if both directories change
+| Trigger                                | Jobs                                |
+|----------------------------------------|-------------------------------------|
+| `shared/**`                            | shared-test                         |
+| `client/**` or `shared/**`             | client-test, client-build-{mac,win,linux} |
+| `mobile/**` or `shared/**`             | mobile-typecheck, test-mobile, build-mobile-ios, build-mobile-android |
+| `archive/desktop-v1/**` + dispatch     | archive-build-v1                    |
 
-**Deployment Workflow**:
-1. Work on `main` branch (development)
-2. Run tests locally (`cd desktop && npm test` / `cd mobile && npm test`)
-3. Merge `main` → `release` to trigger deployment
-4. CI/CD runs automatically — desktop to GitHub Releases, mobile to TestFlight
+Per-app release tagging:
 
-**Required GitHub Secrets**: `EXPO_TOKEN`, `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASS`, `APPLE_TEAM_ID`
+| Tag prefix             | Effect                                            |
+|------------------------|---------------------------------------------------|
+| `client-vX.Y.Z`        | Cut Aeris v2 GitHub Release (dmg/zip/exe/AppImage/deb + electron-updater channel manifests) |
+| `mobile-vX.Y.Z`        | Mobile EAS production build + TestFlight auto-submit |
+| `desktop-v1-vX.Y.Z`    | Archived v1 security-patch GitHub Release        |
 
-## Architecture
+Required secrets: `EXPO_TOKEN`, `CSC_LINK`, `CSC_KEY_PASSWORD`,
+`APPLE_ID`, `APPLE_ID_PASS`, `APPLE_TEAM_ID`. Optional
+`WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`.
 
-### Desktop Core Files
-```
-desktop/src/
-├── main.js           # Main Electron process - window management, IPC handlers
-├── preload.js        # Secure bridge between main and renderer processes
-├── session-manager.js # Multi-user session management with encryption
-└── assets/icons/     # Application icons (icon.png, icon.ico, icon.icns)
-```
+Branch strategy:
 
-### Mobile Core Files
+- `main` — development, no automation (typecheck + tests run locally).
+- `release` — push merges trigger CI; tag pushes trigger releases.
+
+## Architecture (Aeris v2 client)
+
+See `client/CLAUDE.md` for the full picture. Key invariants:
+
+- **Token confinement.** The bearer token never crosses the IPC
+  boundary into the renderer. `client/src/main/relayBridge.ts` owns
+  the singleton RelayClient; the renderer issues calls via the typed
+  `relay:call` IPC.
+- **Strict CSP.** The renderer's HTML declares
+  `connect-src 'none'`; every relay call goes through main. Do not
+  loosen.
+- **Single source of truth for auth.** `main/authManager.ts` holds
+  state; renderer mirrors via `auth:get-state` + `auth:state-changed`.
+- **401 vs network distinction.** 401 wipes the session and routes
+  to `/login` with `errorKind: 'expired'`. Network errors keep the
+  session and surface a transient banner.
+- **PAYLOAD_SIZE_BUDGET_BYTES = 200 KB** at the IPC entry; oversize
+  payloads are rejected with `PAYLOAD_TOO_LARGE`.
+- **PIN persists across logout.** Reset PIN is an explicit user
+  action in Settings (lock:reset-pin IPC).
+- **Update banner.** The renderer subscribes to
+  `update:status-changed` + `update:manual-fallback` and surfaces
+  Restart-now / Download actions.
+
+## Architecture (mobile)
+
 ```
 mobile/src/
-├── App.tsx                  # Entry point — NavigationContainer, auth gating, init
-├── navigation/              # React Navigation (RootNavigator, AppTabs, stacks)
-├── screens/                 # LoginScreen, DashboardScreen, QuickSaleScreen, CartScreen,
-│                            # CheckoutScreen, BarcodeScannerScreen, TransactionListScreen,
-│                            # ReceiptViewerScreen, ERPScreen (WebView)
-├── services/
-│   ├── ApiClient.ts         # Dual-mode HTTP client (direct ERP or marketplace relay)
-│   ├── StorageService.ts    # Tiered storage: expo-secure-store + encrypted AsyncStorage
-│   ├── EncryptionService.ts # Iterated SHA-256 key stretching, expo-crypto
-│   ├── SessionManager.ts    # PIN-protected sessions with lockout
-│   ├── ConnectionService.ts # Network monitoring
-│   └── PrintService.ts      # expo-print + expo-sharing
-├── stores/                  # Zustand: authStore, cartStore, productCacheStore, settingsStore, sessionStore
-├── types/                   # api.types, navigation.types, settings.types, session.types
-├── constants/               # theme (brand colors), api (endpoints + relay actions), config
-└── components/              # Toolbar, WebViewContainer, PinPad, etc.
+├── App.tsx                  # NavigationContainer, auth gating, init
+├── navigation/              # React Navigation
+├── screens/                 # LoginScreen, DashboardScreen, QuickSale,
+│                            # Cart, Checkout, BarcodeScanner,
+│                            # TransactionList, ReceiptViewer, ERPScreen
+├── services/                # ApiClient, StorageService,
+│                            # EncryptionService, SessionManager,
+│                            # ConnectionService, PrintService
+├── stores/                  # Zustand stores
+├── types/                   # api/navigation/settings/session
+├── constants/               # theme, api, config
+└── components/              # Toolbar, WebViewContainer, PinPad, ...
 ```
 
-### Key Architecture Patterns
-
-**Dual Operating Modes:**
-- **Single-User Mode**: Direct ERP access (`enableSessionManagement: false`)
-- **Multi-User Mode**: Session management with PIN-protected user switching (`enableSessionManagement: true`)
-
-**Security Model:**
-- Context isolation enabled
-- Node integration disabled in renderer
-- Encrypted session storage with AES-256-GCM
-- PIN attempt limiting (3 attempts, 5-minute lockout)
-- External link protection (opens in system browser)
-
-**Configuration Management:**
-- Uses `electron-store` for persistent settings
-- Default base URL: `aeris.local` (user configurable to IP addresses)
-- Settings require immediate UI updates vs. restart (documented in TESTING.md)
-
-### IPC Communication
-Main process exposes APIs via preload script:
-- Settings management (`getSettings`, `saveSettings`, `testConnection`)
-- Print functionality (`printPage`, `getPrinters`, `printSilent`)
-- Navigation controls (`navigate`, `navigateToUrl`)  
-- Dialog replacements (`showConfirmDialog`, `showAlertDialog`)
-- Session management (when enabled)
-
-### Session Manager Features
-- Encrypted PIN storage with per-app encryption keys
-- Session timeout management (5-120 minutes)
-- Maximum 5 concurrent sessions
-- Automatic session cleanup and memory management
-- PIN attempt tracking with lockout protection
-
-## Important Implementation Notes
-
-**Default Server Configuration:**
-- Base URL defaults to `aeris.local` but must support IP address override via settings
-- Connection testing validates server accessibility before saving
-
-**Settings Behavior:**
-- Session management toggle: immediate effect, no restart required
-- Server URL changes: require application restart
-- Session timeout: immediate validation (5-120 minute range)
-
-**Window Management:**
-- Remembers window state (size, maximized status)
-- Minimum size: 800x600px
-- Default: 1200x800px, maximized
-- Supports full-screen mode (F11)
-
-**Print System:**
-- Full printing support including network printers
-- PDF export capabilities
-- Silent printing options for POS operations
+Mobile uses the same `@aeris/shared` RelayClient as the v2 desktop,
+so a contract change in `shared/` may affect both. The mobile
+typecheck CI job (`mobile-typecheck`) catches type drift before EAS
+builds run.
 
 ## Documentation
 
-- **[Testing Guide](TESTING.md)** - Comprehensive manual test procedures
-- **[TDD Review](TDD_REVIEW.md)** - Test-driven development analysis and recommendations
-
-## Testing
-
-Comprehensive test suite documented in [TESTING.md](TESTING.md) covers:
-- Application startup in both operating modes
-- Settings management and UI updates
-- Session management functionality
-- Print system integration
-- Error handling and connection issues
-
-The testing framework ensures all functionality works correctly across both single-user and multi-user modes, with special attention to immediate vs. restart-required setting changes.
+- `client/CLAUDE.md` — Aeris v2 architecture, build, IPC contract.
+- `client/README.md` — quick reference for the desktop client.
+- `archive/desktop-v1/` — frozen v1 README + TESTING docs.
