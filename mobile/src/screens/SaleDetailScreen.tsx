@@ -12,9 +12,17 @@ import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Ionicons} from '@expo/vector-icons';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import EmptyState from '../components/EmptyState';
+import ErrorBanner from '../components/ErrorBanner';
 import type {SaleDetail, Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
@@ -93,20 +101,16 @@ export default function SaleDetailScreen() {
   if (isUnavailable) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>Detail view is not available yet</Text>
-          <Text style={styles.errorBody}>
-            We couldn&apos;t load this sale right now. Please try again in a
-            moment.
-          </Text>
-          <TouchableOpacity
-            style={styles.primaryBtn}
-            onPress={() => {
+        <View style={styles.errorWrap}>
+          <ErrorBanner
+            message="Detail view is not available right now. Please try again in a moment."
+            onRetry={() => {
               haptics.light();
               load();
-            }}>
-            <Text style={styles.primaryBtnText}>Retry</Text>
-          </TouchableOpacity>
+            }}
+          />
+        </View>
+        <View style={styles.center}>
           <TouchableOpacity
             onPress={() => {
               haptics.light();
@@ -122,16 +126,18 @@ export default function SaleDetailScreen() {
   if (notFound || !sale) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>Sale not found</Text>
-          <TouchableOpacity
-            onPress={() => {
+        <EmptyState
+          icon="receipt-outline"
+          title="Sale not found"
+          description="This sale may have been deleted or is unavailable."
+          action={{
+            label: 'Back',
+            onPress: () => {
               haptics.light();
               navigation.goBack();
-            }}>
-            <Text style={styles.linkText}>Back</Text>
-          </TouchableOpacity>
-        </View>
+            },
+          }}
+        />
       </SafeAreaView>
     );
   }
@@ -246,7 +252,7 @@ export default function SaleDetailScreen() {
             }}>
             <Ionicons
               name="chevron-back"
-              size={20}
+              size={ICON_SIZE.action}
               color={COLORS.white}
               style={styles.backBtnIcon}
             />
@@ -286,8 +292,14 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
-  saleDate: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm, marginTop: 2},
+  saleDate: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    marginTop: 2,
+    fontVariant: ['tabular-nums'],
+  },
   statusChip: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
@@ -329,11 +341,17 @@ const styles = StyleSheet.create({
   },
   itemLeft: {flex: 1, marginRight: SPACING.md},
   itemName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
-  itemMeta: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm, marginTop: 2},
+  itemMeta: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    marginTop: 2,
+    fontVariant: ['tabular-nums'],
+  },
   itemTotal: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   totalRow: {
     flexDirection: 'row',
@@ -341,7 +359,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
   },
   totalLabel: {color: COLORS.textMuted, fontSize: FONT_SIZE.md},
-  totalValue: {color: COLORS.text, fontSize: FONT_SIZE.md},
+  totalValue: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontVariant: ['tabular-nums'],
+  },
   grandTotalRow: {
     marginTop: SPACING.xs,
     paddingTop: SPACING.sm,
@@ -357,6 +379,7 @@ const styles = StyleSheet.create({
     color: COLORS.crimson,
     fontSize: FONT_SIZE.xl,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   paymentRow: {
     flexDirection: 'row',
@@ -368,7 +391,12 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     textTransform: 'capitalize',
   },
-  paymentAmount: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  paymentAmount: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
   emptyText: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm},
   actions: {
     marginTop: SPACING.sm,
@@ -395,18 +423,9 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },
-  errorTitle: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
-    marginBottom: SPACING.sm,
-    textAlign: 'center',
-  },
-  errorBody: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.md,
-    textAlign: 'center',
-    marginBottom: SPACING.lg,
+  errorWrap: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
   },
   linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md},
 });
