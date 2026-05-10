@@ -3,6 +3,11 @@
   "version": "2.1.0",
   "private": true,
   "description": "Aeris v2 — relay-native Electron client. Successor to archive/desktop-v1.",
+  "homepage": "https://github.com/ClermontDigital/aeris_client",
+  "author": {
+    "name": "Clermont Digital",
+    "email": "support@clermontdigital.com.au"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
