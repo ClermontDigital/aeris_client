@@ -7,6 +7,8 @@ yarn.lock
 dist/
 build/
 !desktop/build/
+!archive/desktop-v1/build/
+!client/build/
 
 # Environment files
 .env
