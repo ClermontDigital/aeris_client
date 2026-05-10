@@ -125,6 +125,49 @@ describe('normalizeProduct', () => {
     expect(p.tax_rate).toBe(10);
   });
 
+  it('preserves tax_rate=7 round-trip (non-default custom rate)', () => {
+    const p = normalizeProduct({
+      id: 12,
+      name: 'F',
+      sku: 'F-1',
+      price: 1,
+      tax_rate: 7,
+    });
+    expect(p.tax_rate).toBe(7);
+  });
+
+  it('preserves explicit tax_rate=0 (GST-free; not overwritten by default)', () => {
+    const p = normalizeProduct({
+      id: 13,
+      name: 'G',
+      sku: 'G-1',
+      price: 1,
+      tax_rate: 0,
+    });
+    expect(p.tax_rate).toBe(0);
+  });
+
+  it('defaults tax_rate to 10 when undefined (matches Aeris2 server default)', () => {
+    const p = normalizeProduct({
+      id: 14,
+      name: 'H',
+      sku: 'H-1',
+      price: 1,
+    });
+    expect(p.tax_rate).toBe(10);
+  });
+
+  it('defaults tax_rate to 10 when null', () => {
+    const p = normalizeProduct({
+      id: 15,
+      name: 'I',
+      sku: 'I-1',
+      price: 1,
+      tax_rate: null,
+    });
+    expect(p.tax_rate).toBe(10);
+  });
+
   it('barcode is null when not a string', () => {
     const p = normalizeProduct({id: 11, name: 'E', sku: 'E-1', price: 1});
     expect(p.barcode).toBeNull();
