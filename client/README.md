@@ -3,6 +3,17 @@
 Relay-native Electron desktop client for the Aeris ERP. Native UI, no
 WebView. Successor to `archive/desktop-v1/`.
 
+## v2.1 (current)
+
+Adds the POS surface and write paths on top of the v2.0 read-only base:
+
+- POS flow: `/pos` (Quick Sale grid + barcode), `/pos/cart` (line edit
+  + discount), `/pos/checkout` (split-tender + sale post).
+- Customer CRUD and Item CRUD (create / edit) plus stock adjustment.
+- Daily Z-report screen.
+- Silent receipt + Z-report print path via the OS print queue.
+- Sidebar reorganized with lucide icons and a cart-count badge.
+
 ## Quick start
 
 ```sh
@@ -103,11 +114,12 @@ After a fresh `npm run package:<os>` install:
 8. Inside Settings, "Check for updates" surfaces the current channel
    state (idle / available / downloading / etc.).
 
-## Known limitations (v1 Slim)
+## Known limitations
 
-- Receipt is read-only — no print path. Documented; v1.5 ships printing.
-- No QuickSale / Cart / Checkout / Customer picker — v2 (Full).
-- No biometric unlock (Touch ID / Windows Hello). Post-2.0 candidate.
-- Windows code-sign cert availability is an open question. Until
-  resolved, 2.0.0 ships unsigned + 2.0.1 will add the cert.
+- No camera-based barcode scanner — USB keyboard-wedge scanners only
+  (the Cart screen's text input captures their wedged input + Enter).
+  Camera path is queued for 2.2.
+- No biometric unlock (Touch ID / Windows Hello). Post-2.x candidate.
+- Windows code-sign cert procurement still queued; 2.1.0 may ship
+  unsigned on Windows pending the cert.
 

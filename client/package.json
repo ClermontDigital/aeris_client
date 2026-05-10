@@ -1,6 +1,6 @@
 {
   "name": "aeris-client",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Aeris v2 — relay-native Electron client. Successor to archive/desktop-v1.",
   "main": "out/main/index.js",
@@ -41,6 +41,7 @@
     "electron-log": "^5.2.0",
     "electron-store": "^10.0.0",
     "electron-updater": "^6.8.3",
+    "lucide-react": "^0.460.0",
     "zustand": "^4.5.0"
   }
 }

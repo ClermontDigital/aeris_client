@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 import {
   AuthErrorKind,
   AuthState,
@@ -10,6 +10,7 @@ import { settingsStore } from './settingsStore';
 import { tokenStore } from './tokenStore';
 import { getRelayClient, setOnUnauthorized } from './relayBridge';
 import { logger } from './logger';
+import { safeHandle } from './senderGuard';
 
 // authManager is the single source of truth for auth state in main.
 // Renderer mirrors this state via auth:get-state + auth:state-changed
@@ -58,43 +59,74 @@ export function getState(): AuthState {
 // then miss the subsequent state-changed event and stay stuck on the
 // "Starting Aeris…" splash forever.
 let initializePromise: Promise<void> | null = null;
+// #M3 — auth:get-state awaits this rather than the full initializePromise
+// so the renderer leaves the splash as soon as the optimistic session is
+// in place (not after the slow-relay validation round-trip).
+let readyPromise: Promise<void> | null = null;
+let resolveReady: (() => void) | null = null;
+
+function markReady(): void {
+  if (resolveReady) {
+    resolveReady();
+    resolveReady = null;
+  }
+}
 
 export function initialize(): Promise<void> {
   if (!initializePromise) {
+    if (!readyPromise) {
+      readyPromise = new Promise<void>((res) => {
+        resolveReady = res;
+      });
+    }
     initializePromise = doInitialize();
   }
   return initializePromise;
 }
 
 async function doInitialize(): Promise<void> {
-  // Pull persisted session.
-  const settings = settingsStore.get();
-  state = {
-    ...state,
-    workspaceCode: settings.workspaceCode,
-  };
-
-  const token = await tokenStore.getToken();
-  const user = await tokenStore.getUser();
-  const expiresAt = await tokenStore.getExpiresAt();
-
-  // Wire 401 -> wipe session.
-  setOnUnauthorized(() => {
-    void handleUnauthorized();
-  });
-
-  if (!token) {
-    setState({ initialized: true, isAuthenticated: false, user: null, expiresAt: null, errorKind: null });
-    return;
-  }
-
-  // Token present — set on client.
-  getRelayClient().setAuthToken(token);
-
-  // Validate by trying a cheap relay call. On 401: wipe. On network error:
-  // keep token, mark initialized, surface a transient banner.
+  // try/finally so readyPromise resolves on every exit path — including the
+  // 401 wipe and the network-error branch. Without this, a cold-start whose
+  // persisted token gets rejected (or a synchronous throw before markReady)
+  // leaves auth:get-state pending forever and the renderer stuck on splash.
   try {
-    await getRelayClient().getDailySummary();
+    // Pull persisted session.
+    const settings = settingsStore.get();
+    state = {
+      ...state,
+      workspaceCode: settings.workspaceCode,
+    };
+
+    let token: string | null = null;
+    let user: AuthUserSnapshot | null = null;
+    let expiresAt: string | null = null;
+    try {
+      token = await tokenStore.getToken();
+      user = await tokenStore.getUser();
+      expiresAt = await tokenStore.getExpiresAt();
+    } catch (e) {
+      logger.warn('[authManager] tokenStore read failed', (e as Error)?.message);
+    }
+
+    // Wire 401 -> wipe session.
+    setOnUnauthorized(() => {
+      void handleUnauthorized();
+    });
+
+    if (!token) {
+      setState({ initialized: true, isAuthenticated: false, user: null, expiresAt: null, errorKind: null });
+      return;
+    }
+
+    // Token present — set on client.
+    getRelayClient().setAuthToken(token);
+
+    // #M3 — Mark initialized + flip the optimistic session immediately so
+    // the renderer leaves the splash without waiting on the relay validation
+    // round-trip (which can be ~23 s with RELAY_BUFFER_MS on a slow server).
+    // The validation runs in the background and either confirms the
+    // session, fires a 401 wipe, or leaves errorKind: 'network' for the
+    // banner.
     setState({
       initialized: true,
       isAuthenticated: true,
@@ -102,24 +134,28 @@ async function doInitialize(): Promise<void> {
       expiresAt,
       errorKind: null,
     });
-    logger.info('[authManager] session restored');
-  } catch (err) {
-    const e = err as Error & { status?: number };
-    if (e?.status === 401) {
-      // Already wiped via onUnauthorized.
-      setState({ initialized: true, errorKind: 'expired' });
-      return;
+    markReady();
+
+    try {
+      await getRelayClient().getDailySummary();
+      // Confirmed — clear any transient error. State already reflects auth.
+      setState({ errorKind: null });
+      logger.info('[authManager] session restored');
+    } catch (err) {
+      const e = err as Error & { status?: number };
+      if (e?.status === 401) {
+        // handleUnauthorized() already wiped state via onUnauthorized; tag
+        // the errorKind for the renderer's "session expired" copy.
+        setState({ errorKind: 'expired' });
+        return;
+      }
+      // Network error — keep optimistic session so the user isn't bounced
+      // to LoginScreen on a flaky cold start.
+      logger.warn('[authManager] initial validation failed (non-401); keeping token', e?.message);
+      setState({ errorKind: 'network' });
     }
-    // Network error — keep optimistic session so the user isn't bounced
-    // to LoginScreen on a flaky cold start.
-    logger.warn('[authManager] initial validation failed (non-401); keeping token', e?.message);
-    setState({
-      initialized: true,
-      isAuthenticated: true,
-      user,
-      expiresAt,
-      errorKind: 'network',
-    });
+  } finally {
+    markReady();
   }
 }
 
@@ -165,7 +201,15 @@ export async function login(req: LoginRequest): Promise<AuthState> {
       return state;
     }
 
-    await persistSession(token, apiUser, expiresAt);
+    try {
+      await persistSession(token, apiUser, expiresAt);
+    } catch (e) {
+      // Token encrypt failed — leave the renderer at the login screen
+      // rather than pretend we logged in.
+      logger.error('[authManager] persist session failed', (e as Error)?.message);
+      setState({ errorKind: 'unknown' });
+      return state;
+    }
     getRelayClient().setAuthToken(token);
 
     setState({
@@ -222,17 +266,21 @@ export async function handleUnauthorized(): Promise<void> {
 }
 
 export function registerAuthIpc(): void {
-  ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATE, async () => {
-    if (initializePromise) await initializePromise;
+  safeHandle(IPC_CHANNELS.AUTH_GET_STATE, async () => {
+    // Only wait for the optimistic-session phase, not the slow relay
+    // validation. See #M3 above.
+    if (readyPromise) await readyPromise;
     return getState();
   });
-  ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, (_e, req: LoginRequest) => login(req));
-  ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, () => logout());
+  safeHandle(IPC_CHANNELS.AUTH_LOGIN, (_e, req) => login(req as LoginRequest));
+  safeHandle(IPC_CHANNELS.AUTH_LOGOUT, () => logout());
 }
 
 // Test-only.
 export function _resetForTests(): void {
   initializePromise = null;
+  readyPromise = null;
+  resolveReady = null;
   state = {
     initialized: false,
     isAuthenticated: false,

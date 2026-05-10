@@ -37,17 +37,36 @@ export const logger = {
 // Tail the last `maxLines` lines of the active log file. Returns "" when
 // no file transport exists yet (e.g. very early in app boot or in tests
 // where electron-log is mocked).
+//
+// Reads only the last ~64 KB instead of the whole file so a long-running
+// install with a multi-MB main.log doesn't block the IPC handler.
+const TAIL_BYTES = 64 * 1024;
+
 export async function getRecentLogs(maxLines = 100): Promise<string> {
   try {
     const file = (log.transports.file as unknown as { getFile?: () => { path: string } | undefined })
       .getFile?.();
     const filePath = file?.path;
     if (!filePath) return '';
-    const buf = await fs.promises.readFile(filePath, 'utf8');
-    const lines = buf.split('\n');
-    const tail = lines.slice(-maxLines).join('\n');
-    // Defensive: re-redact in case anything slipped through earlier.
-    return typeof tail === 'string' ? (redact(tail) as string) : '';
+    const handle = await fs.promises.open(filePath, 'r');
+    try {
+      const stat = await handle.stat();
+      const size = stat.size;
+      const length = Math.min(size, TAIL_BYTES);
+      const offset = Math.max(0, size - length);
+      const buf = Buffer.alloc(length);
+      if (length > 0) {
+        await handle.read(buf, 0, length, offset);
+      }
+      const text = buf.toString('utf8');
+      const lines = text.split('\n');
+      // If we sliced into the middle of a line, drop the leading partial.
+      if (offset > 0 && lines.length > 1) lines.shift();
+      const tail = lines.slice(-maxLines).join('\n');
+      return typeof tail === 'string' ? (redact(tail) as string) : '';
+    } finally {
+      await handle.close();
+    }
   } catch (e) {
     log.warn('[logger] getRecentLogs failed', e);
     return '';

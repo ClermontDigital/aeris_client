@@ -5,37 +5,9 @@ import { Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Button } from '../components/Button';
+import { StatCard } from '../components/StatCard';
 import { COLORS, SPACING, FONT_SIZE, BORDER_RADIUS } from '../theme/tokens';
 import { formatCents, formatNumber, formatDateTime } from '../utils/format';
-
-function StatCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        background: COLORS.surface,
-        borderRadius: BORDER_RADIUS.lg,
-        border: `1px solid ${COLORS.surfaceBorder}`,
-        padding: SPACING.lg,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: SPACING.xs,
-      }}
-    >
-      <div style={{ color: COLORS.textMuted, fontSize: FONT_SIZE.sm, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-        {label}
-      </div>
-      <div style={{ color: COLORS.text, fontSize: FONT_SIZE.title, fontWeight: 700 }}>
-        {value}
-      </div>
-    </div>
-  );
-}
 
 function isEmptySummary(s: DailySummary): boolean {
   return (
@@ -82,13 +54,7 @@ export function DashboardScreen(): React.ReactElement {
         />
       ) : data ? (
         <>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: SPACING.md,
-            }}
-          >
+          <div className="aeris-stat-strip">
             <StatCard label="Revenue" value={formatCents(data.revenue_cents)} />
             <StatCard label="Sales" value={formatNumber(data.sales_count)} />
             <StatCard label="Items sold" value={formatNumber(data.items_sold)} />

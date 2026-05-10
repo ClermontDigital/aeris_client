@@ -10,15 +10,19 @@ import { DEFAULT_SETTINGS } from '../../shared-types/ipc';
 const logoutMock = jest.fn();
 const settingsSetMock = jest.fn();
 const lockNowMock = jest.fn();
-const resetPinMock = jest.fn();
+const clearPinMock = jest.fn();
 const getRecentLogsMock = jest.fn();
+const printReceiptMock = jest.fn();
+const printTestMock = jest.fn();
 
 beforeEach(() => {
   logoutMock.mockReset();
   settingsSetMock.mockReset();
   lockNowMock.mockReset();
-  resetPinMock.mockReset();
+  clearPinMock.mockReset();
   getRecentLogsMock.mockReset();
+  printReceiptMock.mockReset();
+  printTestMock.mockReset();
 
   // jsdom doesn't ship a clipboard implementation by default.
   Object.assign(navigator, {
@@ -45,12 +49,15 @@ beforeEach(() => {
         getState: jest.fn(),
         setPin: jest.fn(),
         verifyPin: jest.fn(),
-        clearPin: jest.fn(),
-        resetPin: resetPinMock.mockResolvedValue({ ok: true }),
+        clearPin: clearPinMock.mockResolvedValue({ ok: true }),
         lockNow: lockNowMock,
         onStateChanged: jest.fn().mockReturnValue(() => undefined),
       },
       diagnostics: { getRecentLogs: getRecentLogsMock },
+      print: {
+        receipt: printReceiptMock.mockResolvedValue({ ok: true }),
+        testPage: printTestMock.mockResolvedValue({ ok: true }),
+      },
     },
   });
 
@@ -119,13 +126,63 @@ describe('SettingsScreen', () => {
     expect(logoutMock).toHaveBeenCalled();
   });
 
-  test('Reset PIN shows a confirmation modal then triggers resetPin', () => {
+  test('Reset PIN shows a confirmation modal then triggers clearPin', () => {
     render(<SettingsScreen />);
     fireEvent.click(screen.getByRole('button', { name: /Reset PIN/i }));
-    expect(screen.getByText(/Resetting your PIN will require setup on next launch/i)).toBeInTheDocument();
+    expect(screen.getByText(/You'll be prompted to set a new PIN right away/i)).toBeInTheDocument();
     const confirms = screen.getAllByRole('button', { name: /Reset PIN/i });
     fireEvent.click(confirms[confirms.length - 1]);
-    expect(resetPinMock).toHaveBeenCalled();
+    expect(clearPinMock).toHaveBeenCalled();
+  });
+
+  test('Printing section renders with printer-name input and test button', () => {
+    render(<SettingsScreen />);
+    expect(screen.getByRole('heading', { name: /Printing/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Receipt printer name/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Print test receipt/i }),
+    ).toBeInTheDocument();
+  });
+
+  test('typing a printer name and blurring saves it via settings.set', async () => {
+    render(<SettingsScreen />);
+    const input = screen.getByLabelText(/Receipt printer name/i);
+    fireEvent.change(input, { target: { value: 'EPSON-TM-T20' } });
+    fireEvent.blur(input);
+    await waitFor(() =>
+      expect(settingsSetMock).toHaveBeenCalledWith({ printerName: 'EPSON-TM-T20' }),
+    );
+  });
+
+  test('blank printer name persists null (use system default)', async () => {
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, workspaceCode: 'demo', printerName: 'Old' },
+    });
+    render(<SettingsScreen />);
+    const input = screen.getByLabelText(/Receipt printer name/i);
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.blur(input);
+    await waitFor(() =>
+      expect(settingsSetMock).toHaveBeenCalledWith({ printerName: null }),
+    );
+  });
+
+  test('Print test receipt invokes the print IPC and shows a success toast', async () => {
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole('button', { name: /Print test receipt/i }));
+    await waitFor(() => expect(printTestMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByText(/Test page sent to the printer/i)).toBeInTheDocument(),
+    );
+  });
+
+  test('Print test receipt shows error toast when print fails', async () => {
+    printTestMock.mockResolvedValueOnce({ ok: false, message: 'No printer found' });
+    render(<SettingsScreen />);
+    fireEvent.click(screen.getByRole('button', { name: /Print test receipt/i }));
+    await waitFor(() =>
+      expect(screen.getByText(/No printer found/i)).toBeInTheDocument(),
+    );
   });
 
   test('Reset PIN button is hidden when no PIN is set', () => {

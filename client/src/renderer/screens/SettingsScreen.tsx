@@ -44,13 +44,24 @@ export function SettingsScreen(): React.ReactElement {
   const setSettings = useSettingsStore((s) => s.set);
   const logout = useAuthStore((s) => s.logout);
   const lockNow = useAppLockStore((s) => s.lockNow);
-  const resetPin = useAppLockStore((s) => s.resetPin);
+  const clearPin = useAppLockStore((s) => s.clearPin);
   const isPinSet = useAppLockStore((s) => s.isPinSet);
   const [version, setVersion] = useState<string>('…');
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [confirmWorkspaceSwitch, setConfirmWorkspaceSwitch] = useState(false);
   const [confirmPinReset, setConfirmPinReset] = useState(false);
   const [diagnosticsToast, setDiagnosticsToast] = useState<string | null>(null);
+  const [printerNameDraft, setPrinterNameDraft] = useState<string>(
+    settings.printerName ?? '',
+  );
+  const [printToast, setPrintToast] = useState<{
+    kind: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setPrinterNameDraft(settings.printerName ?? '');
+  }, [settings.printerName]);
 
   useEffect(() => {
     void window.aeris.app.version().then(setVersion);
@@ -69,6 +80,21 @@ export function SettingsScreen(): React.ReactElement {
       setDiagnosticsToast('No log lines available.');
     }
     setTimeout(() => setDiagnosticsToast(null), 3000);
+  };
+
+  const onSavePrinterName = async () => {
+    const trimmed = printerNameDraft.trim();
+    await setSettings({ printerName: trimmed === '' ? null : trimmed });
+  };
+
+  const onPrintTest = async () => {
+    const res = await window.aeris.print.testPage();
+    setPrintToast(
+      res.ok
+        ? { kind: 'success', text: 'Test page sent to the printer.' }
+        : { kind: 'error', text: res.message || 'Print failed.' },
+    );
+    setTimeout(() => setPrintToast(null), 4000);
   };
 
   return (
@@ -145,6 +171,50 @@ export function SettingsScreen(): React.ReactElement {
         ) : null}
       </Section>
 
+      <Section title="Printing">
+        <label
+          style={{ display: 'flex', flexDirection: 'column', gap: SPACING.xs, color: COLORS.text }}
+        >
+          <span>Receipt printer name</span>
+          <input
+            type="text"
+            value={printerNameDraft}
+            onChange={(e) => setPrinterNameDraft(e.target.value)}
+            onBlur={() => void onSavePrinterName()}
+            placeholder="Use system default"
+            aria-label="Receipt printer name"
+            style={{
+              padding: `${SPACING.sm}px ${SPACING.md}px`,
+              border: `1px solid ${COLORS.inputBorder}`,
+              borderRadius: BORDER_RADIUS.md,
+              background: COLORS.inputBg,
+              color: COLORS.text,
+            }}
+          />
+        </label>
+        <p style={{ margin: 0, color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
+          Leave blank to use the system's default printer.
+        </p>
+        <Button
+          variant="secondary"
+          onClick={() => void onPrintTest()}
+          style={{ alignSelf: 'flex-start' }}
+        >
+          Print test receipt
+        </Button>
+        {printToast ? (
+          <div
+            role="status"
+            style={{
+              color: printToast.kind === 'success' ? COLORS.success : COLORS.danger,
+              fontSize: FONT_SIZE.sm,
+            }}
+          >
+            {printToast.text}
+          </div>
+        ) : null}
+      </Section>
+
       <Section title="About">
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span style={{ color: COLORS.textMuted }}>Version</span>
@@ -209,7 +279,7 @@ export function SettingsScreen(): React.ReactElement {
               variant="danger"
               onClick={() => {
                 setConfirmPinReset(false);
-                void resetPin();
+                void clearPin();
               }}
             >
               Reset PIN
@@ -217,7 +287,8 @@ export function SettingsScreen(): React.ReactElement {
           </>
         }
       >
-        Resetting your PIN will require setup on next launch.
+        Resetting your PIN clears it immediately. You'll be prompted to set a new
+        PIN right away before you can keep using Aeris.
       </Modal>
 
       <Modal

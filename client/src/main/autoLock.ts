@@ -14,6 +14,10 @@ const IDLE_POLL_MS = 30 * 1000;
 
 let blurTimer: NodeJS.Timeout | null = null;
 let idleInterval: NodeJS.Timeout | null = null;
+let attachedWindow: BrowserWindow | null = null;
+let blurHandler: (() => void) | null = null;
+let focusHandler: (() => void) | null = null;
+let closedHandler: (() => void) | null = null;
 
 function clearBlurTimer(): void {
   if (blurTimer) {
@@ -37,25 +41,45 @@ function tryLock(reason: string): void {
   lockNow();
 }
 
+function detachPrevious(): void {
+  clearBlurTimer();
+  if (idleInterval) {
+    clearInterval(idleInterval);
+    idleInterval = null;
+  }
+  if (attachedWindow && !attachedWindow.isDestroyed()) {
+    if (blurHandler) attachedWindow.removeListener('blur', blurHandler);
+    if (focusHandler) attachedWindow.removeListener('focus', focusHandler);
+    if (closedHandler) attachedWindow.removeListener('closed', closedHandler);
+  }
+  attachedWindow = null;
+  blurHandler = null;
+  focusHandler = null;
+  closedHandler = null;
+}
+
 export function attachAutoLock(win: BrowserWindow): void {
-  // Blur path with debounce. If the user comes back inside the window
-  // within the debounce window we cancel.
-  win.on('blur', () => {
+  // Idempotent: clear any previous attachment first so a macOS
+  // reactivate doesn't accumulate listeners or interval timers.
+  detachPrevious();
+  attachedWindow = win;
+
+  blurHandler = () => {
     clearBlurTimer();
     blurTimer = setTimeout(() => tryLock('window-blur'), BLUR_DEBOUNCE_MS);
-  });
-  win.on('focus', () => clearBlurTimer());
-  win.on('closed', () => {
+  };
+  focusHandler = () => clearBlurTimer();
+  closedHandler = () => {
     clearBlurTimer();
     if (idleInterval) {
       clearInterval(idleInterval);
       idleInterval = null;
     }
-  });
+  };
+  win.on('blur', blurHandler);
+  win.on('focus', focusHandler);
+  win.on('closed', closedHandler);
 
-  // Idle poll. powerMonitor.getSystemIdleTime() returns seconds since last
-  // user input. When that exceeds autoLockMs, lock.
-  if (idleInterval) clearInterval(idleInterval);
   idleInterval = setInterval(() => {
     try {
       const idleSec = powerMonitor.getSystemIdleTime();
@@ -73,9 +97,5 @@ export function attachAutoLock(win: BrowserWindow): void {
 }
 
 export function detachAutoLockForTests(): void {
-  clearBlurTimer();
-  if (idleInterval) {
-    clearInterval(idleInterval);
-    idleInterval = null;
-  }
+  detachPrevious();
 }

@@ -7,7 +7,8 @@ import { Spinner } from './components/Spinner';
 import { COLORS } from './theme/tokens';
 
 export function App(): React.ReactElement {
-  const initialized = useAuthStore((s) => s.initialized);
+  const authInitialized = useAuthStore((s) => s.initialized);
+  const lockInitialized = useAppLockStore((s) => s.initialized);
   const init = useAuthStore((s) => s.init);
   const initSettings = useSettingsStore((s) => s.init);
   const initLock = useAppLockStore((s) => s.init);
@@ -18,7 +19,10 @@ export function App(): React.ReactElement {
     void initLock();
   }, [init, initSettings, initLock]);
 
-  if (!initialized) {
+  // Wait for BOTH auth AND lock state — otherwise ProtectedShell would
+  // briefly see the default `isPinSet: false` for users who already
+  // have a PIN and flash PinSetupScreen on every cold start.
+  if (!authInitialized || !lockInitialized) {
     return (
       <div
         style={{

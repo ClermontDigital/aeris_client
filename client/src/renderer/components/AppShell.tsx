@@ -26,6 +26,7 @@ export function AppShell(): React.ReactElement {
         <UpdateBanner />
         <TopBar />
         <main
+          className="aeris-fade-in"
           style={{
             flex: 1,
             overflow: 'auto',

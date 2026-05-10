@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { relayCall } from '../services/relay';
 import type { RelayCallOptions, RelayErrorCode } from '../../shared-types/ipc';
 
@@ -32,20 +32,34 @@ export function useRelayQuery<T>(
   const paramsKey = JSON.stringify(params ?? {});
   const idemKey = options?.idempotencyKey;
 
-  // The previous version guarded setState behind a `mountedRef` ref, but
-  // React 18 Strict Mode runs cleanup-only useEffects in mount → cleanup
-  // → mount cycles where useRef(true) only initialises once. After the
-  // first cleanup the ref stays false, so the fetcher's early-return fires
-  // even though the component is still alive — leaving the screen stuck
-  // on its loading spinner. React 18+ silently ignores setState on
-  // unmounted components, so the guard isn't needed for correctness.
+  // Sequence-id guards against stale-response races: when action/params
+  // change mid-fetch, we increment the seq, capture it, and ignore any
+  // response whose seq no longer matches. We deliberately avoid the old
+  // `mountedRef` pattern — React 18 StrictMode breaks `useRef(true)`
+  // early-returns by leaving the ref `false` after the synthetic
+  // cleanup, leaving screens stuck on their loading spinner.
+  const seqRef = useRef(0);
+
   const fetcher = useCallback(async () => {
+    const mySeq = ++seqRef.current;
     setLoading(true);
-    const result = await relayCall<T>(
-      action,
-      JSON.parse(paramsKey),
-      idemKey ? { idempotencyKey: idemKey } : undefined,
-    );
+    let result;
+    try {
+      result = await relayCall<T>(
+        action,
+        JSON.parse(paramsKey),
+        idemKey ? { idempotencyKey: idemKey } : undefined,
+      );
+    } catch (e) {
+      // IPC-layer rejection (frame guard etc.) — translate to UNKNOWN
+      // so screens don't hang on `loading: true`.
+      result = {
+        ok: false as const,
+        code: 'UNKNOWN' as const,
+        message: (e as Error)?.message ?? 'IPC call failed',
+      };
+    }
+    if (mySeq !== seqRef.current) return;
     if (result.ok) {
       setData(result.data);
       setErrorCode(null);
