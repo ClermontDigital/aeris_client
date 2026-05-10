@@ -1,10 +1,10 @@
 import { app, BrowserWindow } from 'electron';
 import { createMainWindow, loadRenderer } from './window';
-import { registerIpc } from './ipc';
+import { registerIpc, attachWindow as attachWindowIpc } from './ipc';
 import { initRelayBridge } from './relayBridge';
 import { initialize as initAuth } from './authManager';
 import { attachAutoLock } from './autoLock';
-import { initAutoUpdater } from './autoUpdater';
+import { initAutoUpdater, setRegisteredWindow } from './autoUpdater';
 import { logger } from './logger';
 
 // Single-instance lock — only one Aeris window across the app's lifetime.
@@ -24,8 +24,12 @@ app.on('second-instance', () => {
 
 app.whenReady().then(async () => {
   await initRelayBridge();
+  // IPC channel handlers are global and registered exactly once for the
+  // app's lifetime — ipcMain.handle throws on duplicate channels, which
+  // bit us when macOS `activate` re-created the window.
+  registerIpc();
   mainWindow = createMainWindow();
-  registerIpc(mainWindow);
+  attachWindowIpc(mainWindow);
   attachAutoLock(mainWindow);
   // Kick off auth restore (non-blocking). The renderer will read state
   // via auth:get-state and listen on auth:state-changed for updates.
@@ -43,7 +47,10 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0 && app.isReady()) {
     mainWindow = createMainWindow();
-    registerIpc(mainWindow);
+    // Re-attach window-scoped subscribers; channel handlers stay registered.
+    attachWindowIpc(mainWindow);
+    attachAutoLock(mainWindow);
+    setRegisteredWindow(mainWindow);
     void loadRenderer(mainWindow);
   }
 });

@@ -79,6 +79,8 @@ export const FONT_SIZE = {
   xl: 20,
   xxl: 24,
   title: 32,
+  body: 13,
+  tableCell: 13,
 } as const;
 
 export const BORDER_RADIUS = {
@@ -87,6 +89,24 @@ export const BORDER_RADIUS = {
   lg: 12,
   xl: 16,
   full: 9999,
+} as const;
+
+export const TABLE = {
+  rowHeight: 36,
+  headerHeight: 40,
+  cellPaddingX: 12,
+  cellPaddingY: 6,
+} as const;
+
+export const SHADOW = {
+  card: '0 1px 2px rgba(0,48,73,0.04), 0 1px 3px rgba(0,48,73,0.06)',
+  cardHover: '0 4px 12px rgba(0,48,73,0.10)',
+  toolbar: '0 2px 8px rgba(0,48,73,0.12)',
+} as const;
+
+export const TRANSITION = {
+  fast: '120ms ease',
+  base: '200ms ease',
 } as const;
 
 export const px = (n: number): string => `${n}px`;

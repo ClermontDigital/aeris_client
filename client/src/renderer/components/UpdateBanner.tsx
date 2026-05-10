@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { UpdateStatus } from '../../shared-types/ipc';
 import { Button } from './Button';
 import { COLORS, BORDER_RADIUS, SPACING, FONT_SIZE } from '../theme/tokens';
@@ -26,13 +26,21 @@ function statusToView(s: UpdateStatus): View {
 export function UpdateBanner(): React.ReactElement | null {
   const [view, setView] = useState<View>(null);
   const [dismissed, setDismissed] = useState(false);
+  // Track the kind that was last surfaced so we only un-dismiss when the
+  // banner transitions to a meaningfully different state — otherwise
+  // every progress event during downloading would un-dismiss the banner.
+  type Kind = 'available' | 'downloaded' | 'manual-fallback';
+  const lastKindRef = useRef<Kind | null>(null);
 
   useEffect(() => {
     const off1 = window.aeris.update.onStatusChanged((status) => {
       const next = statusToView(status);
       if (next) {
         setView(next);
-        setDismissed(false);
+        if (lastKindRef.current !== next.kind) {
+          setDismissed(false);
+          lastKindRef.current = next.kind;
+        }
       }
     });
     const off2 = window.aeris.update.onManualFallback((status) => {
@@ -41,7 +49,10 @@ export function UpdateBanner(): React.ReactElement | null {
         version: status.version,
         htmlUrl: status.htmlUrl,
       });
-      setDismissed(false);
+      if (lastKindRef.current !== 'manual-fallback') {
+        setDismissed(false);
+        lastKindRef.current = 'manual-fallback';
+      }
     });
     return () => {
       off1();

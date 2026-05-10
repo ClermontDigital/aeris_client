@@ -8,8 +8,9 @@ import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Button } from '../components/Button';
 import { TextField } from '../components/TextField';
+import { StatCard } from '../components/StatCard';
 import { COLORS, SPACING, FONT_SIZE, BORDER_RADIUS } from '../theme/tokens';
-import { formatCents } from '../utils/format';
+import { formatCents, formatNumber } from '../utils/format';
 
 const PER_PAGE = 20;
 
@@ -65,14 +66,33 @@ export function CustomersScreen(): React.ReactElement {
   const lastPage = meta?.last_page ?? 1;
   const isEmpty = !loading && customers.length === 0 && !errorCode;
 
+  const stats = useMemo(() => {
+    let withEmail = 0;
+    let withPhone = 0;
+    for (const c of customers) {
+      if (c.email) withEmail += 1;
+      if (c.phone || c.mobile) withPhone += 1;
+    }
+    return { total: customers.length, withEmail, withPhone };
+  }, [customers]);
+
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: SPACING.md }}>
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h1 style={{ margin: 0, color: COLORS.text, fontSize: FONT_SIZE.xxl }}>Customers</h1>
-        <Button variant="secondary" onClick={() => void refetch()} disabled={loading}>
-          Refresh
-        </Button>
+        <div style={{ display: 'flex', gap: SPACING.sm }}>
+          <Button variant="secondary" onClick={() => void refetch()} disabled={loading}>
+            Refresh
+          </Button>
+          <Button onClick={() => navigate('/customers/new')}>+ New customer</Button>
+        </div>
       </header>
+
+      <div className="aeris-stat-strip">
+        <StatCard label="Customers" value={formatNumber(stats.total)} />
+        <StatCard label="With email" value={formatNumber(stats.withEmail)} />
+        <StatCard label="With phone" value={formatNumber(stats.withPhone)} />
+      </div>
 
       <TextField
         label="Search"
@@ -111,34 +131,43 @@ export function CustomersScreen(): React.ReactElement {
             overflow: 'hidden',
           }}
         >
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table className="aeris-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: COLORS.creamLight, color: COLORS.text }}>
-                <th style={{ width: 56, padding: SPACING.sm }} aria-label="Avatar" />
-                <th style={{ textAlign: 'left', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Name</th>
-                <th style={{ textAlign: 'left', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Email</th>
-                <th style={{ textAlign: 'left', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Phone</th>
-                <th style={{ textAlign: 'right', padding: SPACING.sm, fontSize: FONT_SIZE.sm }}>Total spent</th>
+                <th style={{ width: 56 }} aria-label="Avatar" />
+                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>Name</th>
+                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>Email</th>
+                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>Phone</th>
+                <th style={{ textAlign: 'right', fontSize: FONT_SIZE.sm }}>Total spent</th>
               </tr>
             </thead>
             <tbody>
               {customers.map((c) => (
                 <tr
                   key={c.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => navigate(`/customers/${c.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`/customers/${c.id}`);
+                    }
+                  }}
+                  className="aeris-row-clickable"
                   style={{ cursor: 'pointer', borderTop: `1px solid ${COLORS.surfaceBorder}` }}
                 >
-                  <td style={{ padding: SPACING.sm }}>
+                  <td>
                     <Avatar name={c.name} />
                   </td>
-                  <td style={{ padding: SPACING.sm, color: COLORS.text }}>{c.name}</td>
-                  <td style={{ padding: SPACING.sm, color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
+                  <td style={{ color: COLORS.text }}>{c.name}</td>
+                  <td style={{ color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
                     {c.email ?? '—'}
                   </td>
-                  <td style={{ padding: SPACING.sm, color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
+                  <td style={{ color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
                     {c.phone ?? c.mobile ?? '—'}
                   </td>
-                  <td style={{ padding: SPACING.sm, color: COLORS.text, textAlign: 'right' }}>
+                  <td style={{ color: COLORS.text, textAlign: 'right' }}>
                     {c.total_spent_cents != null ? formatCents(c.total_spent_cents) : '—'}
                   </td>
                 </tr>

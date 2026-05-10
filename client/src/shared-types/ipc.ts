@@ -22,7 +22,6 @@ export const IPC_CHANNELS = {
   LOCK_SET_PIN: 'lock:set-pin',
   LOCK_VERIFY_PIN: 'lock:verify-pin',
   LOCK_CLEAR_PIN: 'lock:clear-pin',
-  LOCK_RESET_PIN: 'lock:reset-pin',
   LOCK_NOW: 'lock:lock-now',
   LOCK_STATE_CHANGED: 'lock:state-changed',
 
@@ -35,6 +34,10 @@ export const IPC_CHANNELS = {
   UPDATE_INSTALL_NOW: 'update:install-now',
   UPDATE_STATUS_CHANGED: 'update:status-changed',
   UPDATE_MANUAL_FALLBACK: 'update:manual-fallback',
+
+  PRINT_RECEIPT: 'print:receipt',
+  PRINT_TEST: 'print:test',
+  PRINT_ZREPORT: 'print:zreport',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -100,6 +103,9 @@ export interface AppSettings {
   relayUrl: string;
   autoLockMs: number;
   lockEnabled: boolean;
+  // null → use the OS default printer. Non-null is matched against
+  // webContents.getPrintersAsync(); falls back to the default if missing.
+  printerName: string | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -107,6 +113,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   relayUrl: 'https://api.aeris.team',
   autoLockMs: 5 * 60 * 1000, // 5 minutes
   lockEnabled: true,
+  printerName: null,
 };
 
 // --- app lock ---------------------------------------------------------------
@@ -160,3 +167,9 @@ export interface CheckNowResult {
   ok: boolean;
   message?: string;
 }
+
+// --- printing ---------------------------------------------------------------
+
+export type PrintReceiptResult =
+  | { ok: true }
+  | { ok: false; message: string };

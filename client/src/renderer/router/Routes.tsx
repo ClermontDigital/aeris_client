@@ -9,10 +9,16 @@ import { ItemsScreen } from '../screens/ItemsScreen';
 import { ProductDetailScreen } from '../screens/ProductDetailScreen';
 import { CustomersScreen } from '../screens/CustomersScreen';
 import { CustomerDetailScreen } from '../screens/CustomerDetailScreen';
+import { CustomerEditScreen } from '../screens/CustomerEditScreen';
+import { ItemEditScreen } from '../screens/ItemEditScreen';
+import { DailyZReportScreen } from '../screens/DailyZReportScreen';
 import { TransactionListScreen } from '../screens/TransactionListScreen';
 import { SaleDetailScreen } from '../screens/SaleDetailScreen';
 import { ReceiptViewerScreen } from '../screens/ReceiptViewerScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { QuickSaleScreen } from '../screens/QuickSaleScreen';
+import { CartScreen } from '../screens/CartScreen';
+import { CheckoutScreen } from '../screens/CheckoutScreen';
 import { useAuthStore } from '../stores/authStore';
 import { useAppLockStore } from '../stores/appLockStore';
 
@@ -23,16 +29,19 @@ import { useAppLockStore } from '../stores/appLockStore';
 // - Authenticated + unlocked: full app shell.
 function ProtectedShell(): React.ReactElement {
   const isAuth = useAuthStore((s) => s.isAuthenticated);
-  const lock = useAppLockStore();
+  // Individual primitive selectors so attempts/lockedOutUntilMs churn doesn't
+  // re-render the whole shell + every nested screen.
+  const isPinSet = useAppLockStore((s) => s.isPinSet);
+  const locked = useAppLockStore((s) => s.locked);
   const location = useLocation();
 
   if (!isAuth) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
-  if (!lock.isPinSet) {
+  if (!isPinSet) {
     return <PinSetupScreen />;
   }
-  if (lock.locked) {
+  if (locked) {
     return <Navigate to="/lock" replace />;
   }
   return <AppShell />;
@@ -61,10 +70,18 @@ export function Routes(): React.ReactElement {
       <Route path="/lock" element={<LockGuard />} />
       <Route element={<ProtectedShell />}>
         <Route path="/" element={<DashboardScreen />} />
+        <Route path="/dashboard/eod" element={<DailyZReportScreen />} />
+        <Route path="/pos" element={<QuickSaleScreen />} />
+        <Route path="/pos/cart" element={<CartScreen />} />
+        <Route path="/pos/checkout" element={<CheckoutScreen />} />
         <Route path="/items" element={<ItemsScreen />} />
+        <Route path="/items/new" element={<ItemEditScreen />} />
         <Route path="/items/:id" element={<ProductDetailScreen />} />
+        <Route path="/items/:id/edit" element={<ItemEditScreen />} />
         <Route path="/customers" element={<CustomersScreen />} />
+        <Route path="/customers/new" element={<CustomerEditScreen />} />
         <Route path="/customers/:id" element={<CustomerDetailScreen />} />
+        <Route path="/customers/:id/edit" element={<CustomerEditScreen />} />
         <Route path="/transactions" element={<TransactionListScreen />} />
         <Route path="/transactions/:id" element={<SaleDetailScreen />} />
         <Route path="/transactions/:id/receipt" element={<ReceiptViewerScreen />} />

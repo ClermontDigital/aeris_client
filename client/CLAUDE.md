@@ -74,7 +74,7 @@ Renderer mirrors via `auth:get-state` + the `auth:state-changed` event.
 
 ```
 client/
-  package.json                  # name "aeris-client", version 2.0.0
+  package.json                  # name "aeris-client", version 2.1.0
   electron.vite.config.ts       # main + preload + renderer split
   electron-builder.yml          # SKELETON — Phase 4 finalises sign/notary/updater
   build/entitlements.mac.plist  # macOS hardened runtime entitlements
@@ -98,8 +98,16 @@ client/
       router/Routes.tsx         # auth + lock guards
       stores/                   # Zustand stores (mirror main state)
       services/relay.ts         # thin IPC wrapper for relay:call
-      components/               # AppShell, Sidebar, TopBar, Button, ...
-      screens/                  # placeholders (Phase 3 builds real impls)
+      components/               # AppShell, Sidebar, TopBar, Button, Modal, ...
+      screens/                  # LoginScreen, AppLockScreen, PinSetupScreen,
+                                # DashboardScreen, SettingsScreen,
+                                # TransactionListScreen, SaleDetailScreen,
+                                # ReceiptViewerScreen,
+                                # ItemsScreen, ItemEditScreen, ProductDetailScreen,
+                                # CustomersScreen, CustomerEditScreen,
+                                # CustomerDetailScreen,
+                                # QuickSaleScreen, CartScreen, CheckoutScreen,
+                                # DailyZReportScreen
       hooks/useDebounce.ts
     shared-types/               # IPC channel + event names + payload budget
 ```
@@ -160,6 +168,30 @@ npm run package:linux
 
 See `/Users/developersteve/.claude/plans/now-i-want-you-effervescent-reddy.md`
 for the full plan.
+
+## v2.1 surfaces
+
+v2.1 layers POS + write paths on top of the read-only v2.0 base. New
+routes: `/pos` (Quick Sale grid + barcode lookup), `/pos/cart`
+(line edit, per-cart discount, clear-cart confirm), `/pos/checkout`
+(split-tender + post via the typed RelayClient.createSale path),
+`/items/new` + `/items/:id/edit`, `/customers/new` +
+`/customers/:id/edit`, plus a daily Z-report at `/reports/daily`. The
+sidebar uses lucide icons and shows a cart-count badge fed by
+`useCartStore`. Cart state is persisted to `localStorage` via
+`zustand/persist` so a restart preserves the in-progress sale.
+
+Typed RelayClient methods consumed by these screens:
+`createCustomer`, `updateCustomer`, `deleteCustomer`, `createProduct`,
+`updateProduct`, `adjustStock`, `getDailyZReport`. Verify against
+`shared/src/relay/RelayClient.ts` before wiring new screens — those
+are the contract.
+
+New IPC channels (main owns the print queue; renderer just dispatches):
+
+- `print:receipt` — silent print of a `SaleDetail` to the default printer.
+- `print:test` — emits a one-page test receipt to verify the queue.
+- `print:zreport` — silent print of the daily Z-report payload.
 
 ## Auto-update channel (Phase 4)
 

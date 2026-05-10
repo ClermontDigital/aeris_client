@@ -101,6 +101,79 @@ describe('authManager', () => {
     expect(c.getAuthToken()).toBeNull();
   });
 
+  test('initialize() does not wait on slow relay validation before flipping initialized=true (#M3)', async () => {
+    // Persist a token + user so doInitialize takes the optimistic-session path.
+    await tokenStore.setToken('persisted-token');
+    await tokenStore.setUser({ id: 1, name: 'Me', email: 'me@aeris', role: 'cashier' });
+    await tokenStore.setExpiresAt('2030-01-01');
+
+    const c = getRelayClient();
+    let resolveSummary: ((v: unknown) => void) | null = null;
+    jest.spyOn(c, 'getDailySummary').mockImplementation(
+      () =>
+        new Promise<never>((res) => {
+          resolveSummary = res as (v: unknown) => void;
+        }),
+    );
+
+    const initPromise = authManager.initialize();
+    // Give the microtask queue time to drain through the synchronous
+    // tokenStore reads + the immediate setState.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // initialize() is still pending on the unresolved getDailySummary,
+    // but state should already reflect optimistic auth.
+    const optimistic = authManager.getState();
+    expect(optimistic.initialized).toBe(true);
+    expect(optimistic.isAuthenticated).toBe(true);
+    expect(optimistic.errorKind).toBeNull();
+
+    // Now resolve the validation — initialize() completes cleanly.
+    resolveSummary!(undefined);
+    await initPromise;
+    expect(authManager.getState().errorKind).toBeNull();
+  });
+
+  test('initialize() with 401 on cold-start still resolves readyPromise (auth:get-state does not hang)', async () => {
+    await tokenStore.setToken('expired-token');
+    await tokenStore.setUser({ id: 1, name: 'Me', email: 'me@aeris', role: 'cashier' });
+    await tokenStore.setExpiresAt('2030-01-01');
+
+    const c = getRelayClient();
+    const err = new Error('expired') as Error & { status: number };
+    err.status = 401;
+    jest.spyOn(c, 'getDailySummary').mockRejectedValue(err);
+
+    // Kick off init in the background.
+    const initPromise = authManager.initialize();
+
+    // auth:get-state must resolve within a tight window even though
+    // getDailySummary rejected — readyPromise has to fire on every branch.
+    const getStateResult = await Promise.race([
+      (async () => {
+        await initPromise;
+        return authManager.getState();
+      })(),
+      new Promise<'timeout'>((res) => setTimeout(() => res('timeout'), 1000)),
+    ]);
+    expect(getStateResult).not.toBe('timeout');
+  });
+
+  test('initialize() validation network error keeps the optimistic session + errorKind=network (#M3)', async () => {
+    await tokenStore.setToken('persisted-token');
+    await tokenStore.setUser({ id: 1, name: 'Me', email: 'me@aeris', role: 'cashier' });
+    await tokenStore.setExpiresAt('2030-01-01');
+
+    const c = getRelayClient();
+    jest.spyOn(c, 'getDailySummary').mockRejectedValue(new Error('offline'));
+    await authManager.initialize();
+    const s = authManager.getState();
+    expect(s.initialized).toBe(true);
+    expect(s.isAuthenticated).toBe(true);
+    expect(s.errorKind).toBe('network');
+  });
+
   test('logout preserves the PIN across login cycles', async () => {
     const c = getRelayClient();
     jest.spyOn(c, 'login').mockResolvedValue({
@@ -112,7 +185,7 @@ describe('authManager', () => {
     jest.spyOn(c, 'logout').mockResolvedValue(undefined);
 
     await authManager.login({ workspaceCode: 'demo', email: 'me@aeris', password: 'pw' });
-    appLockManager.setPin('1234');
+    await appLockManager.setPin('1234');
     expect(appLockManager.getAppLockState().isPinSet).toBe(true);
 
     await authManager.logout();

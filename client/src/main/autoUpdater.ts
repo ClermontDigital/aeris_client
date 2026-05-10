@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import { IPC_CHANNELS } from '../shared-types/ipc';
 import type {
@@ -6,6 +6,7 @@ import type {
   UpdateStatus,
 } from '../shared-types/ipc';
 import { logger } from './logger';
+import { safeHandle } from './senderGuard';
 
 // Auto-update orchestration. Two paths run in parallel:
 //   1. Primary: electron-updater polls GitHub Releases (client-vX.Y.Z) on
@@ -74,6 +75,12 @@ export function __resetForTests(): void {
 
 export function getStatus(): UpdateStatus {
   return lastStatus;
+}
+
+// Swap the broadcast target without rerunning the primary updater wiring
+// (which would re-arm the fallback timer + re-poll).
+export function setRegisteredWindow(win: BrowserWindow | null): void {
+  registeredWindow = win;
 }
 
 function broadcastStatus(next: UpdateStatus): void {
@@ -152,6 +159,10 @@ async function runManualFallback(fetchImpl: typeof fetch): Promise<void> {
   if (!release.tag_name.startsWith(TAG_PREFIX) && !release.tag_name.startsWith('v')) {
     return;
   }
+  // Skip pre-release tags (e.g. `client-v2.0.0-rc.1`) — Aeris doesn't
+  // ship pre-releases through this update channel.
+  const versionPart = release.tag_name.replace(/^client-v/, '').replace(/^v/, '');
+  if (versionPart.includes('-')) return;
   const current = app.getVersion();
   if (compareSemver(release.tag_name, current) <= 0) return;
   const version = release.tag_name.replace(/^client-v/, '').replace(/^v/, '');
@@ -168,29 +179,27 @@ async function runManualFallback(fetchImpl: typeof fetch): Promise<void> {
 
 function registerIpc(): void {
   if (ipcRegistered) return;
-  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK_NOW, async (): Promise<CheckNowResult> => {
+  safeHandle(IPC_CHANNELS.UPDATE_CHECK_NOW, async (): Promise<CheckNowResult> => {
     try {
       await autoUpdater.checkForUpdates();
       return { ok: true };
     } catch (err) {
-      const message = (err as Error)?.message ?? 'check-for-updates failed';
-      return { ok: false, message };
+      return { ok: false, message: (err as Error)?.message ?? 'check-for-updates failed' };
     }
   });
-  ipcMain.handle(IPC_CHANNELS.UPDATE_OPEN_DOWNLOAD, async (_e, url: string) => {
+  safeHandle(IPC_CHANNELS.UPDATE_OPEN_DOWNLOAD, async (_e, url) => {
     if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
       return { ok: false, message: 'invalid url' };
     }
     await shell.openExternal(url);
     return { ok: true };
   });
-  ipcMain.handle(IPC_CHANNELS.UPDATE_INSTALL_NOW, async () => {
+  safeHandle(IPC_CHANNELS.UPDATE_INSTALL_NOW, async () => {
     try {
       autoUpdater.quitAndInstall();
       return { ok: true };
     } catch (err) {
-      const message = (err as Error)?.message ?? 'install-now failed';
-      return { ok: false, message };
+      return { ok: false, message: (err as Error)?.message ?? 'install-now failed' };
     }
   });
   ipcRegistered = true;
@@ -202,6 +211,16 @@ export function initAutoUpdater(
 ): void {
   registeredWindow = mainWindow;
   registerIpc();
+
+  // electron-updater hits live release feeds and writes to the cache —
+  // skip both the primary updater and the GitHub fallback in dev so devs
+  // don't accidentally pull a real update over a built-from-source app.
+  // Tests opt back in by setting deps.skipPrimary explicitly (or relying
+  // on the mocked autoUpdater) and we still run when NODE_ENV is test.
+  const isTest = process.env['NODE_ENV'] === 'test';
+  if (!app.isPackaged && !isTest) {
+    return;
+  }
 
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   const fallbackDelay = deps.fallbackDelayMs ?? FALLBACK_DELAY_MS;

@@ -69,13 +69,16 @@ export function LoginScreen(): React.ReactElement {
     async (e?: React.FormEvent) => {
       if (e) e.preventDefault();
       if (!canSubmit) return;
+      // Clear stale banner here, not on every keystroke — otherwise the
+      // banner flickers as the user types.
+      if (errorKind) clearError();
       await login({
         workspaceCode: workspaceTrimmed,
         email: email.trim(),
         password,
       });
     },
-    [canSubmit, login, workspaceTrimmed, email, password],
+    [canSubmit, clearError, errorKind, login, workspaceTrimmed, email, password],
   );
 
   const errorCopy = copyForError(errorKind);
@@ -126,7 +129,6 @@ export function LoginScreen(): React.ReactElement {
           placeholder="acme-prod"
           value={workspace}
           onChange={(e) => {
-            if (errorKind) clearError();
             setWorkspace(e.target.value.toLowerCase());
           }}
           onBlur={() => setWorkspaceTouched(true)}
@@ -147,7 +149,6 @@ export function LoginScreen(): React.ReactElement {
           value={email}
           autoComplete="username"
           onChange={(e) => {
-            if (errorKind) clearError();
             setEmail(e.target.value);
           }}
           disabled={isLoading}
@@ -160,7 +161,6 @@ export function LoginScreen(): React.ReactElement {
           value={password}
           autoComplete="current-password"
           onChange={(e) => {
-            if (errorKind) clearError();
             setPassword(e.target.value);
           }}
           disabled={isLoading}

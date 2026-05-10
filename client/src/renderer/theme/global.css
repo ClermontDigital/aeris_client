@@ -23,6 +23,9 @@
   --aeris-radius-md: 8px;
   --aeris-radius-lg: 12px;
   --aeris-radius-xl: 16px;
+
+  --aeris-shadow-card: 0 1px 2px rgba(0, 48, 73, 0.04), 0 1px 3px rgba(0, 48, 73, 0.06);
+  --aeris-shadow-card-hover: 0 4px 12px rgba(0, 48, 73, 0.1);
 }
 
 * {
@@ -156,4 +159,64 @@ textarea {
   background: var(--aeris-crimson);
   border-color: var(--aeris-crimson);
   transform: scale(1.05);
+}
+
+/* Clickable list rows — keyboard focus + hover affordance for tables in
+   ItemsScreen, CustomersScreen, TransactionListScreen. */
+.aeris-row-clickable:hover {
+  background: var(--aeris-cream-light);
+}
+.aeris-row-clickable:focus-visible {
+  outline: 2px solid var(--aeris-crimson);
+  outline-offset: -2px;
+}
+
+/* Phase A — surface treatment for stat cards / panels. Hover lift uses the
+   token-defined shadow pair so density screens feel tactile without
+   recoloring. */
+.aeris-card {
+  box-shadow: var(--aeris-shadow-card);
+  transition:
+    box-shadow 200ms ease,
+    transform 120ms ease;
+}
+.aeris-card:hover {
+  box-shadow: var(--aeris-shadow-card-hover);
+}
+
+.aeris-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* Tighter rows + tabular-nums for list-page tables. */
+.aeris-table tbody tr {
+  height: 36px;
+}
+.aeris-table td,
+.aeris-table th {
+  padding: 6px 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.aeris-fade-in {
+  animation: aeris-fade-in 200ms ease-out;
+}
+@keyframes aeris-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Sidebar active-item pill — solid crimson against the navy chrome. */
+.aeris-nav-active {
+  background: var(--aeris-crimson) !important;
+  color: var(--aeris-cream) !important;
 }
