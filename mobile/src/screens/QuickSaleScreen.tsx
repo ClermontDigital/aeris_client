@@ -14,11 +14,19 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
+import EmptyState from '../components/EmptyState';
+import ErrorBanner from '../components/ErrorBanner';
 import type {Product, Category} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
@@ -42,7 +50,9 @@ export default function QuickSaleScreen() {
   const [displayProducts, setDisplayProducts] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stockNotice, setStockNotice] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stockNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const itemCount = getItemCount();
   const totalCents = getTotalCents();
@@ -104,13 +114,43 @@ export default function QuickSaleScreen() {
     await syncProducts();
   }, [syncProducts]);
 
+  // Treat absent track_stock as "tracked" so the gate matches the cashier's
+  // expectation; explicit false (untracked items) bypasses the stock check.
+  const isOutOfStock = useCallback((product: Product): boolean => {
+    const tracked = (product as Product & {track_stock?: boolean}).track_stock;
+    if (tracked === false) return false;
+    return product.stock_on_hand <= 0;
+  }, []);
+
   const handleAddToCart = useCallback(
     (product: Product) => {
+      if (isOutOfStock(product)) {
+        haptics.error();
+        if (stockNoticeTimerRef.current) clearTimeout(stockNoticeTimerRef.current);
+        setStockNotice(`${product.name} is out of stock.`);
+        // Auto-dismiss after 2.5s; cashier doesn't need to chase a close button.
+        stockNoticeTimerRef.current = setTimeout(() => {
+          setStockNotice(null);
+          stockNoticeTimerRef.current = null;
+        }, 2500);
+        return;
+      }
       haptics.light();
       addItem(product);
     },
-    [addItem, haptics],
+    [addItem, haptics, isOutOfStock],
   );
+
+  // Clean up the auto-dismiss timer on unmount so a tap-then-leave doesn't
+  // setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (stockNoticeTimerRef.current) {
+        clearTimeout(stockNoticeTimerRef.current);
+        stockNoticeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleCategoryPress = useCallback((categoryId: number | null) => {
     setSelectedCategory(categoryId);
@@ -127,6 +167,9 @@ export default function QuickSaleScreen() {
           styles.categoryPill,
           selectedCategory === null && styles.categoryPillActive,
         ]}
+        accessibilityRole="button"
+        accessibilityLabel="Category All"
+        accessibilityState={{selected: selectedCategory === null}}
         onPress={() => handleCategoryPress(null)}>
         <Text
           style={[
@@ -136,23 +179,29 @@ export default function QuickSaleScreen() {
           All
         </Text>
       </TouchableOpacity>
-      {categories.map((cat: Category) => (
-        <TouchableOpacity
-          key={cat.id}
-          style={[
-            styles.categoryPill,
-            selectedCategory === cat.id && styles.categoryPillActive,
-          ]}
-          onPress={() => handleCategoryPress(cat.id)}>
-          <Text
+      {categories.map((cat: Category) => {
+        const selected = selectedCategory === cat.id;
+        return (
+          <TouchableOpacity
+            key={cat.id}
             style={[
-              styles.categoryPillText,
-              selectedCategory === cat.id && styles.categoryPillTextActive,
-            ]}>
-            {cat.name}
-          </Text>
-        </TouchableOpacity>
-      ))}
+              styles.categoryPill,
+              selected && styles.categoryPillActive,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Category ${cat.name}`}
+            accessibilityState={{selected}}
+            onPress={() => handleCategoryPress(cat.id)}>
+            <Text
+              style={[
+                styles.categoryPillText,
+                selected && styles.categoryPillTextActive,
+              ]}>
+              {cat.name}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </ScrollView>
   );
 
@@ -190,16 +239,13 @@ export default function QuickSaleScreen() {
   const renderEmpty = () => {
     if (isSearching || isSyncing) return null;
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>
-          {searchQuery
-            ? 'No products match your search'
-            : 'No products available'}
-        </Text>
-        <Text style={styles.emptySubtext}>
-          Pull down to refresh the product catalog
-        </Text>
-      </View>
+      <EmptyState
+        icon={searchQuery ? 'search-outline' : 'cube-outline'}
+        title={
+          searchQuery ? 'No products match your search' : 'No products available'
+        }
+        description="Pull down to refresh the product catalog"
+      />
     );
   };
 
@@ -219,7 +265,7 @@ export default function QuickSaleScreen() {
       <View style={styles.searchContainer}>
         <Ionicons
           name="search"
-          size={18}
+          size={ICON_SIZE.action}
           color={COLORS.textMuted}
           style={styles.searchIcon}
         />
@@ -236,7 +282,11 @@ export default function QuickSaleScreen() {
           <TouchableOpacity
             onPress={() => setSearchQuery('')}
             style={styles.clearBtn}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+            <Ionicons
+              name="close-circle"
+              size={ICON_SIZE.action}
+              color={COLORS.textMuted}
+            />
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -248,7 +298,11 @@ export default function QuickSaleScreen() {
           accessibilityRole="button"
           accessibilityLabel="Scan barcode"
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <Ionicons name="barcode-outline" size={22} color={COLORS.crimson} />
+          <Ionicons
+            name="barcode-outline"
+            size={ICON_SIZE.hero}
+            color={COLORS.crimson}
+          />
         </TouchableOpacity>
       </View>
 
@@ -256,11 +310,18 @@ export default function QuickSaleScreen() {
       {renderCategoryPills()}
 
       {/* Error */}
-      {error && (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
+      {error ? (
+        <View style={styles.errorWrap}>
+          <ErrorBanner message={error} onRetry={loadProducts} />
         </View>
-      )}
+      ) : null}
+
+      {/* Out-of-stock notice — auto-dismisses after 2.5s. */}
+      {stockNotice ? (
+        <View style={styles.errorWrap}>
+          <ErrorBanner message={stockNotice} tone="warning" />
+        </View>
+      ) : null}
 
       {/* Loading */}
       {(isSearching || isSyncing) && (
@@ -306,7 +367,11 @@ export default function QuickSaleScreen() {
           </Text>
           <View style={styles.cartBarActionRow}>
             <Text style={styles.cartBarAction}>View Cart</Text>
-            <Ionicons name="chevron-forward" size={16} color={COLORS.white} />
+            <Ionicons
+            name="chevron-forward"
+            size={ICON_SIZE.action}
+            color={COLORS.white}
+          />
           </View>
         </TouchableOpacity>
       )}
@@ -399,17 +464,9 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: '600',
   },
-  errorBanner: {
-    backgroundColor: COLORS.danger,
+  errorWrap: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    marginHorizontal: SPACING.md,
-    marginTop: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  errorText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
+    paddingTop: SPACING.sm,
   },
   loader: {
     marginTop: SPACING.lg,
@@ -451,6 +508,7 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
     marginBottom: SPACING.xs,
+    fontVariant: ['tabular-nums'],
   },
   stockRow: {
     flexDirection: 'row',
@@ -465,20 +523,6 @@ const styles = StyleSheet.create({
   stockText: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingTop: SPACING.xxl,
-  },
-  emptyText: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    color: COLORS.textDim,
-    fontSize: FONT_SIZE.sm,
-    marginTop: SPACING.sm,
   },
   // Sits ABOVE the bottom tab bar (which is ~49pt + bottom safe area on
   // iOS). 12pt of clearance keeps it from kissing the tab bar edge while
@@ -505,6 +549,7 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   cartBarActionRow: {flexDirection: 'row', alignItems: 'center'},
   cartBarAction: {

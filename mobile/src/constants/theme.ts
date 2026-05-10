@@ -95,3 +95,43 @@ export const BORDER_RADIUS = {
   xl: 16,
   full: 9999,
 } as const;
+
+// Shadow tokens for elevation/cardness — RN takes both elevation (Android)
+// and shadow* (iOS); pre-bake the cross-platform pair so screens don't
+// reinvent it.
+export const SHADOW = {
+  card: {
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+  },
+  cardElevated: {
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
+  },
+  toolbar: {
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+  },
+} as const;
+
+// Animation timing tokens (ms). fast = press feedback / chip toggles;
+// base = list/card transitions.
+export const TRANSITION = {fast: 150, base: 220} as const;
+
+// Standardised icon-size tokens for Ionicons across the app.
+// action: inline buttons / row icons. hero: empty-state / dashboard cards.
+// stat: the big number above a stat label.
+export const ICON_SIZE = {action: 18, hero: 24, stat: 28} as const;
+
+// Standardised square button sizes for compact toolbars and toolbar-rail
+// affordances. Use these instead of hard-coding 36/44.
+export const BUTTON_SIZE = {sm: 36, md: 40, lg: 44} as const;

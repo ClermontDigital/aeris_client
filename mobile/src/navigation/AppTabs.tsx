@@ -13,7 +13,9 @@ import SettingsModal from '../screens/SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
-import {COLORS} from '../constants/theme';
+import {useCartStore} from '../stores/cartStore';
+import {getItemCount} from '@aeris/shared';
+import {COLORS, BORDER_RADIUS, SPACING, FONT_SIZE} from '../constants/theme';
 import type {AppTabParamList} from '../types/navigation.types';
 
 const Tab = createBottomTabNavigator<AppTabParamList>();
@@ -30,6 +32,10 @@ const AppTabs: React.FC = () => {
   const showErpTab = connectionMode !== 'relay' || isServerReachable;
   const haptics = useHaptics();
   const [settingsVisible, setSettingsVisible] = useState(false);
+  // Sum line quantities so the badge matches what QuickSale + Cart show
+  // (5 of one SKU is "5", not "1"). Selector returns a primitive so
+  // zustand's referential-equality bail-out still fires on no-op updates.
+  const cartCount = useCartStore(s => getItemCount(s.items));
 
   return (
     <View style={styles.root}>
@@ -62,74 +68,92 @@ const AppTabs: React.FC = () => {
         </View>
       </SafeAreaView>
       <Tab.Navigator
-      initialRouteName="Dashboard"
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: COLORS.primary,
-          borderTopColor: COLORS.border,
-        },
-        tabBarActiveTintColor: COLORS.accent,
-        tabBarInactiveTintColor: COLORS.textDim,
-      }}>
-      <Tab.Screen
-        name="Dashboard"
-        component={DashboardScreen}
-        options={{
-          tabBarIcon: ({color, size}) => (
-            <Ionicons name="stats-chart" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="QuickSale"
-        component={QuickSaleStack}
-        options={{
-          tabBarLabel: 'Sale',
-          tabBarIcon: ({color, size}) => (
-            <Ionicons name="cart" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Items"
-        component={ItemsStack}
-        options={{
-          tabBarIcon: ({color, size}) => (
-            <Ionicons name="cube" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Customers"
-        component={CustomersStack}
-        options={{
-          tabBarIcon: ({color, size}) => (
-            <Ionicons name="people" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Transactions"
-        component={TransactionsStack}
-        options={{
-          tabBarIcon: ({color, size}) => (
-            <Ionicons name="receipt" size={size} color={color} />
-          ),
-        }}
-      />
-      {showErpTab && (
+        initialRouteName="Dashboard"
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: styles.tabBar,
+          // Active tab renders a solid crimson pill (mirrors desktop's
+          // .aeris-nav-active) — enabled by tabBarActiveBackgroundColor +
+          // a per-item style that adds the rounded inset.
+          tabBarActiveTintColor: COLORS.cream,
+          tabBarActiveBackgroundColor: COLORS.crimson,
+          tabBarInactiveTintColor: COLORS.textDim,
+          tabBarInactiveBackgroundColor: 'transparent',
+          tabBarItemStyle: styles.tabBarItem,
+          tabBarLabelStyle: styles.tabBarLabel,
+          tabBarBadgeStyle: styles.tabBarBadge,
+        }}>
         <Tab.Screen
-          name="ERP"
-          component={ERPScreen}
+          name="Dashboard"
+          component={DashboardScreen}
           options={{
-            tabBarLabel: 'Aeris',
             tabBarIcon: ({color, size}) => (
-              <Ionicons name="globe" size={size} color={color} />
+              <Ionicons name="stats-chart" size={size} color={color} />
             ),
           }}
         />
-      )}
+        <Tab.Screen
+          name="QuickSale"
+          component={QuickSaleStack}
+          options={{
+            tabBarLabel: 'Sale',
+            tabBarIcon: ({color, size}) => (
+              <Ionicons name="cart" size={size} color={color} />
+            ),
+            tabBarBadge:
+              cartCount === 0
+                ? undefined
+                : cartCount > 99
+                  ? '99+'
+                  : String(cartCount),
+            // Announce the actual count (not the "99+" display string) so
+            // VoiceOver users hear the real number when the cart overflows.
+            // When the cart is empty we fall back to the default tab label.
+            tabBarAccessibilityLabel:
+              cartCount > 0
+                ? `Sale tab, ${cartCount} ${cartCount === 1 ? 'item' : 'items'} in cart`
+                : undefined,
+          }}
+        />
+        <Tab.Screen
+          name="Items"
+          component={ItemsStack}
+          options={{
+            tabBarIcon: ({color, size}) => (
+              <Ionicons name="cube" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tab.Screen
+          name="Customers"
+          component={CustomersStack}
+          options={{
+            tabBarIcon: ({color, size}) => (
+              <Ionicons name="people" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tab.Screen
+          name="Transactions"
+          component={TransactionsStack}
+          options={{
+            tabBarIcon: ({color, size}) => (
+              <Ionicons name="receipt" size={size} color={color} />
+            ),
+          }}
+        />
+        {showErpTab && (
+          <Tab.Screen
+            name="ERP"
+            component={ERPScreen}
+            options={{
+              tabBarLabel: 'Aeris',
+              tabBarIcon: ({color, size}) => (
+                <Ionicons name="globe" size={size} color={color} />
+              ),
+            }}
+          />
+        )}
       </Tab.Navigator>
       <SettingsModal
         visible={settingsVisible}
@@ -163,6 +187,32 @@ const styles = StyleSheet.create({
     width: 56,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tabBar: {
+    backgroundColor: COLORS.primary,
+    borderTopColor: COLORS.border,
+  },
+  // Active tab fills its cell edge-to-edge so the crimson background
+  // reads as a deliberate state change, not an inset chip floating in
+  // the bar. Drop margins entirely; keep a small radius for crispness.
+  tabBarItem: {
+    borderRadius: 4,
+  },
+  tabBarLabel: {
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '600',
+  },
+  tabBarBadge: {
+    backgroundColor: COLORS.cream,
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '700',
+    minWidth: 18,
+    height: 18,
+    lineHeight: 18,
+    // paddingHorizontal lets 2- and 3-char strings ("99+") expand the pill
+    // rather than clip; minWidth (no fixed width) keeps the empty pill round.
+    paddingHorizontal: 4,
   },
 });
 

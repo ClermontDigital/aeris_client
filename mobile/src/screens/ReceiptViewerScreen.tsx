@@ -11,8 +11,15 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
+import ErrorBanner from '../components/ErrorBanner';
 import type {ReceiptData} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 
@@ -62,12 +69,13 @@ export default function ReceiptViewerScreen() {
   if (error || !receipt) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+        <View style={styles.errorWrap}>
+          <ErrorBanner
+            message={error || 'Receipt not found'}
+            onRetry={loadReceipt}
+          />
+        </View>
         <View style={styles.centerContent}>
-          <Text style={styles.errorTitle}>Failed to Load Receipt</Text>
-          <Text style={styles.errorMessage}>{error || 'Receipt not found'}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadReceipt}>
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.backButtonAlt}
             onPress={() => navigation.goBack()}>
@@ -194,7 +202,7 @@ export default function ReceiptViewerScreen() {
             onPress={() => navigation.goBack()}>
             <Ionicons
               name="chevron-back"
-              size={20}
+              size={ICON_SIZE.action}
               color={COLORS.white}
               style={styles.backButtonIcon}
             />
@@ -226,29 +234,9 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     marginTop: SPACING.md,
   },
-  errorTitle: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
-    marginBottom: SPACING.sm,
-  },
-  errorMessage: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.md,
-    textAlign: 'center',
-    marginBottom: SPACING.lg,
-  },
-  retryButton: {
-    backgroundColor: COLORS.accent,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingHorizontal: SPACING.xl,
-    paddingVertical: SPACING.md,
-    marginBottom: SPACING.sm,
-  },
-  retryButtonText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+  errorWrap: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
   },
   backButtonAlt: {
     paddingVertical: SPACING.sm,
@@ -291,6 +279,7 @@ const styles = StyleSheet.create({
     color: '#374151',
     fontSize: FONT_SIZE.sm,
     fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
   saleDate: {
     color: '#6b7280',
@@ -324,6 +313,7 @@ const styles = StyleSheet.create({
   itemText: {
     color: '#374151',
     fontSize: FONT_SIZE.sm,
+    fontVariant: ['tabular-nums'],
   },
   itemTotalText: {
     color: '#111827',
@@ -343,6 +333,7 @@ const styles = StyleSheet.create({
   totalValue: {
     color: '#374151',
     fontSize: FONT_SIZE.md,
+    fontVariant: ['tabular-nums'],
   },
   grandTotalRow: {
     marginTop: SPACING.sm,
@@ -359,6 +350,7 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: FONT_SIZE.xl,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   // Payments
   paymentsSection: {},
@@ -382,6 +374,7 @@ const styles = StyleSheet.create({
   paymentAmount: {
     color: '#374151',
     fontSize: FONT_SIZE.md,
+    fontVariant: ['tabular-nums'],
   },
   servedBy: {
     color: '#9ca3af',
