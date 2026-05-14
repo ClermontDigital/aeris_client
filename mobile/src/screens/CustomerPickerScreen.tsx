@@ -121,7 +121,7 @@ export default function CustomerPickerScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Select Customer</Text>
       </View>

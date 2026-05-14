@@ -57,7 +57,7 @@ export default function ProductDetailScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.accent} size="large" />
         </View>
@@ -67,7 +67,7 @@ export default function ProductDetailScreen() {
 
   if (isUnavailable) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
           <Ionicons
             name="cloud-offline-outline"
@@ -102,7 +102,7 @@ export default function ProductDetailScreen() {
 
   if (notFound || !product) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
           <Ionicons
             name="search-outline"
@@ -147,7 +147,7 @@ export default function ProductDetailScreen() {
       : null;
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.heroCard}>
           <View style={styles.heroTopRow}>

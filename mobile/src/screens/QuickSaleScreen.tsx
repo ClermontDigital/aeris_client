@@ -250,7 +250,7 @@ export default function QuickSaleScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       {/* Header — matches Items/Customers/Transactions for visual consistency */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Sale</Text>

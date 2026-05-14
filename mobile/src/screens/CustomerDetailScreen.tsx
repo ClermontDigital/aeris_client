@@ -146,7 +146,7 @@ export default function CustomerDetailScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.accent} size="large" />
         </View>
@@ -156,7 +156,7 @@ export default function CustomerDetailScreen() {
 
   if (isUnavailable) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
           <Ionicons
             name="cloud-offline-outline"
@@ -191,7 +191,7 @@ export default function CustomerDetailScreen() {
 
   if (notFound || !customer) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
           <Ionicons
             name="person-outline"
@@ -218,7 +218,7 @@ export default function CustomerDetailScreen() {
   const displayName = customer.name?.trim() || '(Unnamed)';
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.heroCard}>
           <View style={styles.avatar}>
