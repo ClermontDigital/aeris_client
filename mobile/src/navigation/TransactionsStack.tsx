@@ -8,7 +8,11 @@ import type {TransactionsStackParamList} from '../types/navigation.types';
 const Stack = createNativeStackNavigator<TransactionsStackParamList>();
 
 const TransactionsStack: React.FC = () => (
-  <Stack.Navigator screenOptions={{headerShown: false}}>
+  <Stack.Navigator screenOptions={{
+      headerShown: false,
+      fullScreenGestureEnabled: true,
+      gestureEnabled: true,
+    }}>
     <Stack.Screen name="TransactionList" component={TransactionListScreen} />
     <Stack.Screen name="SaleDetail" component={SaleDetailScreen} />
     <Stack.Screen name="Receipt" component={ReceiptViewerScreen} />

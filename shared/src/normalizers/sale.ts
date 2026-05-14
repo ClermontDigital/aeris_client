@@ -39,13 +39,19 @@ export function normalizeSale(input: unknown): Sale {
 
 function normalizeSaleItem(input: unknown): SaleItem {
   const raw = (input || {}) as Record<string, unknown>;
+  // Aeris2's SaleResource emits the nested `product` relation rather
+  // than flat product_name/sku columns; fall through to product.{name,sku}
+  // so detail screens don't render blank rows. Unit price uses the
+  // server's `price` (dollars) when the cents mirror isn't present.
+  const product = (raw.product || {}) as Record<string, unknown>;
   return {
     product_id: asNumber(raw.product_id),
-    product_name: asString(raw.product_name),
-    sku: asString(raw.sku),
+    product_name:
+      asString(raw.product_name) || asString(product.name),
+    sku: asString(raw.sku) || asString(product.sku),
     quantity: asNumber(raw.quantity),
-    unit_price_cents: pickCents(raw, 'unit_price_cents', 'unit_price'),
-    line_total_cents: pickCents(raw, 'line_total_cents', 'line_total', 'total', 'price'),
+    unit_price_cents: pickCents(raw, 'unit_price_cents', 'unit_price', 'price'),
+    line_total_cents: pickCents(raw, 'line_total_cents', 'line_total', 'total'),
     discount_cents: pickCents(raw, 'discount_cents', 'discount_amount'),
   };
 }
