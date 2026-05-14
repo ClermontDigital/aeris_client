@@ -75,25 +75,37 @@ const App: React.FC = () => {
   const lockInitialized = useAppLockStore(s => s.initialized);
 
   useEffect(() => {
-    activateKeepAwakeAsync();
-    initSettings();
-    restoreSession();
-    restoreCache();
-    initAppLock();
-
-    // Wire 401s in ApiClient back into the auth store so a stale token
-    // takes the user to the login screen instead of leaving them logged-in
-    // but unable to make any calls.
-    ApiClient.setOnUnauthorized(() => {
-      clearLocalSession();
-    });
-
-    if (Platform.OS === 'android') {
-      StatusBar.setHidden(true);
-      NavigationBar.setVisibilityAsync('hidden');
-    }
+    let cancelled = false;
+    // Serialise boot so settings (baseUrl/relayUrl/mode/workspaceCode)
+    // are applied to ApiClient BEFORE restoreSession sets the bearer
+    // token. Parallel init lets the token land on a not-yet-configured
+    // client; the first call can route to the wrong URL and surface as
+    // the ErrorBoundary "Something went wrong" fallback on first login.
+    (async () => {
+      try {
+        activateKeepAwakeAsync();
+        await initSettings();
+        if (cancelled) return;
+        await restoreSession();
+        if (cancelled) return;
+        await Promise.all([restoreCache(), initAppLock()]);
+        if (cancelled) return;
+        ApiClient.setOnUnauthorized(() => {
+          clearLocalSession();
+        });
+        if (Platform.OS === 'android') {
+          StatusBar.setHidden(true);
+          NavigationBar.setVisibilityAsync('hidden');
+        }
+      } catch (e) {
+        // Async init failures shouldn't reach the ErrorBoundary
+        // (it's render-only). Log + continue with whatever state landed.
+        console.warn('[App] init failed:', e);
+      }
+    })();
 
     return () => {
+      cancelled = true;
       ApiClient.setOnUnauthorized(null);
     };
   }, [initSettings, restoreSession, restoreCache, clearLocalSession, initAppLock]);
