@@ -1,6 +1,7 @@
 import {create} from 'zustand';
 import ApiClient, {RelayError} from '../services/ApiClient';
 import {SecureStorage} from '../services/StorageService';
+import {useSettingsStore} from './settingsStore';
 import type {User} from '../types/api.types';
 
 const AUTH_TOKEN_KEY = 'aeris_auth_token';
@@ -53,6 +54,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email: string, password: string) => {
     set({isLoading: true, error: null, errorKind: null});
     try {
+      // Reactive ApiClient.configure in App.tsx lags one render behind a
+      // just-saved workspaceCode/baseUrl — call configure synchronously
+      // here so the LoginScreen's first request always sees the current
+      // settings (otherwise the first login attempt 404s the wrong URL
+      // and the user has to retry).
+      const s = useSettingsStore.getState().settings;
+      ApiClient.configure({
+        baseUrl: s?.baseUrl,
+        relayUrl: s?.relayUrl,
+        mode: s?.connectionMode,
+        workspaceCode: s?.workspaceCode,
+      });
       const response = await ApiClient.login(email, password);
       const {access_token, expires_at, user} = response;
       ApiClient.setAuthToken(access_token);
