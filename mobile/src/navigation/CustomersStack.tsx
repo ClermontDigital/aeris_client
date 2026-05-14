@@ -7,7 +7,11 @@ import type {CustomersStackParamList} from '../types/navigation.types';
 const Stack = createNativeStackNavigator<CustomersStackParamList>();
 
 const CustomersStack: React.FC = () => (
-  <Stack.Navigator screenOptions={{headerShown: false}}>
+  <Stack.Navigator screenOptions={{
+      headerShown: false,
+      fullScreenGestureEnabled: true,
+      gestureEnabled: true,
+    }}>
     <Stack.Screen name="CustomersList" component={CustomersScreen} />
     <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
   </Stack.Navigator>

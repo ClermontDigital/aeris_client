@@ -42,6 +42,9 @@ const ItemsScreen: React.FC = () => {
   const [items, setItems] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
+  // Server's aggregate item count from the relay's pagination meta —
+  // distinct from items.length, which only counts loaded pages.
+  const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -68,6 +71,7 @@ const ItemsScreen: React.FC = () => {
         setItems(prev => (append ? [...prev, ...result.data] : result.data));
         setPage(result.meta.current_page);
         setLastPage(result.meta.last_page);
+        setTotalCount(result.meta.total);
       } catch (e) {
         if (seq !== requestSeq.current) return;
         haptics.error();
@@ -102,8 +106,11 @@ const ItemsScreen: React.FC = () => {
     }
   }, [isLoadingMore, page, lastPage, search, fetchPage]);
 
-  // Stat strip metrics derive from currently-loaded pages — relay meta
-  // doesn't expose aggregate stock counts.
+  // Total comes from the server (meta.total) so it stays stable
+  // regardless of how many pages have been scrolled. Low-stock /
+  // out-of-stock counts derive from loaded pages because the relay's
+  // meta doesn't expose those aggregates — they grow as more pages
+  // load but never overshoot the truth.
   const stats = useMemo(() => {
     let lowStock = 0;
     let outOfStock = 0;
@@ -111,8 +118,8 @@ const ItemsScreen: React.FC = () => {
       if (it.stock_on_hand === 0) outOfStock += 1;
       else if (it.stock_on_hand < LOW_STOCK_THRESHOLD) lowStock += 1;
     }
-    return {total: items.length, lowStock, outOfStock};
-  }, [items]);
+    return {total: totalCount, lowStock, outOfStock};
+  }, [items, totalCount]);
 
   const renderItem = ({item}: {item: Product}) => (
     <TouchableOpacity
