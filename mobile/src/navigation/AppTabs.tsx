@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, Text, Pressable, StyleSheet, TouchableOpacity, GestureResponderEvent} from 'react-native';
+import {View, Image, Pressable, StyleSheet, TouchableOpacity, GestureResponderEvent} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
@@ -67,17 +67,19 @@ const AppTabs: React.FC = () => {
 
   return (
     <View style={styles.root}>
-      {/* Navy strip across the device's top safe-area inset (status bar /
-          dynamic island row). Brand wordmark rendered as text — crisper
-          than scaling the square app-icon.png down to logo size. */}
+      {/* Navy strip across the device's top safe-area inset. The wordmark
+          is the production Aeris2 light-on-dark logo (sourced from
+          public/images/aeris-logo-light.png) so chrome reads as one
+          brand across web, desktop, and mobile. */}
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View style={styles.topBarRow}>
-          <Text
+          <Image
+            source={require('../../assets/images/aeris-wordmark.png')}
             style={styles.brandWordmark}
-            accessibilityRole="header"
-            accessibilityLabel="Aeris">
-            AERIS
-          </Text>
+            accessibilityIgnoresInvertColors
+            accessibilityLabel="Aeris"
+            resizeMode="contain"
+          />
           <TouchableOpacity
             onPress={() => {
               haptics.light();
@@ -193,14 +195,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Crisp text wordmark beats scaling the 1024x1024 app-icon.png down
-  // to a small logo. Letter-spacing + bold cream-on-navy reads as a
-  // proper brand mark rather than a shrunken app tile.
+  // Native asset is 250x73 (3.42 aspect); render at 130x38 so it stays
+  // crisp across phone DPIs while leaving room for the safe-area inset
+  // and the gear icon on the right.
   brandWordmark: {
-    color: COLORS.cream,
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: 4,
+    width: 130,
+    height: 38,
   },
   gearBtn: {
     position: 'absolute',

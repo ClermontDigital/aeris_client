@@ -193,7 +193,7 @@ const CustomersScreen: React.FC = () => {
   return (
     <SafeAreaView
       style={styles.container}
-      edges={['left', 'right', 'bottom']}>
+      edges={['left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Customers</Text>
       </View>

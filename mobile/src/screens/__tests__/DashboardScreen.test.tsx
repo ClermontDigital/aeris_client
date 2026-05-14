@@ -80,10 +80,12 @@ describe('DashboardScreen', () => {
   it('renders the stat strip with values from the daily summary', async () => {
     mockGetDailySummary.mockResolvedValue(baseSummary);
 
-    const {getByText} = render(<DashboardScreen />);
+    const {getByText, getAllByText} = render(<DashboardScreen />);
 
     await waitFor(() => {
-      expect(getByText('Transactions')).toBeTruthy();
+      // Multiple "Sales" strings can appear (StatCard label + hero footnote
+       // copy "N sales so far"); the stat-strip label is the uppercase one.
+       expect(getAllByText('Sales').length).toBeGreaterThan(0);
     });
 
     expect(getByText('3')).toBeTruthy(); // sales_count
@@ -95,7 +97,7 @@ describe('DashboardScreen', () => {
   it('surfaces a relay error via ErrorBanner with a retry affordance', async () => {
     mockGetDailySummary.mockRejectedValue(new Error('Relay unreachable'));
 
-    const {getByText, getByLabelText} = render(<DashboardScreen />);
+    const {getByText, getByLabelText, getAllByText} = render(<DashboardScreen />);
 
     await waitFor(() => {
       expect(getByText('Relay unreachable')).toBeTruthy();
@@ -106,7 +108,9 @@ describe('DashboardScreen', () => {
     fireEvent.press(getByLabelText('Retry'));
 
     await waitFor(() => {
-      expect(getByText('Transactions')).toBeTruthy();
+      // Multiple "Sales" strings can appear (StatCard label + hero footnote
+       // copy "N sales so far"); the stat-strip label is the uppercase one.
+       expect(getAllByText('Sales').length).toBeGreaterThan(0);
     });
   });
 });
