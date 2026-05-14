@@ -76,7 +76,7 @@ jobs:
   # ------------------------------------------------------------------
   client-test:
     needs: detect-changes
-    if: needs.detect-changes.outputs.client_changed == 'true' && hashFiles('client/package.json') != ''
+    if: needs.detect-changes.outputs.client_changed == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -103,7 +103,7 @@ jobs:
 
   client-build-mac:
     needs: [detect-changes, client-test]
-    if: needs.detect-changes.outputs.client_changed == 'true' && hashFiles('client/package.json') != ''
+    if: needs.detect-changes.outputs.client_changed == 'true'
     runs-on: macos-latest
     defaults:
       run:
@@ -157,7 +157,7 @@ jobs:
 
   client-build-win:
     needs: [detect-changes, client-test]
-    if: needs.detect-changes.outputs.client_changed == 'true' && hashFiles('client/package.json') != ''
+    if: needs.detect-changes.outputs.client_changed == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -193,7 +193,7 @@ jobs:
 
   client-build-linux:
     needs: [detect-changes, client-test]
-    if: needs.detect-changes.outputs.client_changed == 'true' && hashFiles('client/package.json') != ''
+    if: needs.detect-changes.outputs.client_changed == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -412,7 +412,6 @@ jobs:
     if: |
       always() &&
       startsWith(github.ref, 'refs/tags/client-v') &&
-      hashFiles('client/package.json') != '' &&
       (needs.client-build-mac.result == 'success' || needs.client-build-mac.result == 'skipped') &&
       (needs.client-build-win.result == 'success' || needs.client-build-win.result == 'skipped') &&
       (needs.client-build-linux.result == 'success' || needs.client-build-linux.result == 'skipped')
@@ -441,7 +440,7 @@ jobs:
     # electron-updater consumes latest-mac.yml / latest.yml / latest-linux.yml
     # plus the artifacts they reference, so all three plus the *.blockmap
     # files must land on the release.
-    - uses: softprops/action-gh-release@v1
+    - uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -474,7 +473,7 @@ jobs:
         pattern: archive-desktop-v1-*
         merge-multiple: true
     - run: ls -la ./release-assets/
-    - uses: softprops/action-gh-release@v1
+    - uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
