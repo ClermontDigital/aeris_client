@@ -10,7 +10,11 @@ import type {QuickSaleStackParamList} from '../types/navigation.types';
 const Stack = createNativeStackNavigator<QuickSaleStackParamList>();
 
 const QuickSaleStack: React.FC = () => (
-  <Stack.Navigator screenOptions={{headerShown: false}}>
+  <Stack.Navigator screenOptions={{
+      headerShown: false,
+      fullScreenGestureEnabled: true,
+      gestureEnabled: true,
+    }}>
     <Stack.Screen name="ProductGrid" component={QuickSaleScreen} />
     <Stack.Screen name="Scanner" component={BarcodeScannerScreen} />
     <Stack.Screen name="Cart" component={CartScreen} />
