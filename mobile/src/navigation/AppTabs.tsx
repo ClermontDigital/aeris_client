@@ -1,7 +1,8 @@
 import React, {useState} from 'react';
-import {View, Image, StyleSheet, TouchableOpacity} from 'react-native';
+import {View, Text, Pressable, StyleSheet, TouchableOpacity, GestureResponderEvent} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
 import DashboardScreen from '../screens/DashboardScreen';
 import QuickSaleStack from './QuickSaleStack';
@@ -15,10 +16,37 @@ import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
 import {useCartStore} from '../stores/cartStore';
 import {getItemCount} from '@aeris/shared';
-import {COLORS, BORDER_RADIUS, SPACING, FONT_SIZE} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE} from '../constants/theme';
 import type {AppTabParamList} from '../types/navigation.types';
 
 const Tab = createBottomTabNavigator<AppTabParamList>();
+
+// Custom tab button: thin crimson top stripe marks the active tab so the
+// row keeps a consistent height + baseline. Replaces the prior full-cell
+// crimson fill that visually overpowered inactive tabs and broke
+// alignment per the screenshot feedback.
+const TabButton: React.FC<BottomTabBarButtonProps> = ({
+  accessibilityState,
+  children,
+  onPress,
+  onLongPress,
+  style,
+  testID,
+}) => {
+  const focused = accessibilityState?.selected ?? false;
+  return (
+    <Pressable
+      onPress={(e: GestureResponderEvent) => onPress?.(e)}
+      onLongPress={onLongPress ?? undefined}
+      accessibilityState={accessibilityState}
+      testID={testID}
+      style={[styles.tabBtn, style]}
+      android_ripple={{color: 'rgba(193, 18, 31, 0.12)', borderless: false}}>
+      <View style={[styles.indicator, focused && styles.indicatorActive]} />
+      {children}
+    </Pressable>
+  );
+};
 
 const AppTabs: React.FC = () => {
   const connectionMode = useSettingsStore(s => s.settings.connectionMode);
@@ -40,20 +68,16 @@ const AppTabs: React.FC = () => {
   return (
     <View style={styles.root}>
       {/* Navy strip across the device's top safe-area inset (status bar /
-          dynamic island row). Mirrors the navy logo bar on the Aeris2 web
-          app and the navy chrome on the Electron desktop client so all
-          three surfaces read as one product. The screens below render with
-          their own cream SafeAreaView; the top inset is consumed here so
-          they don't double-pad. */}
+          dynamic island row). Brand wordmark rendered as text — crisper
+          than scaling the square app-icon.png down to logo size. */}
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View style={styles.topBarRow}>
-          <Image
-            source={require('../../assets/images/app-icon.png')}
-            style={styles.brandLogo}
-            accessibilityIgnoresInvertColors
-            accessibilityLabel="Aeris"
-            resizeMode="contain"
-          />
+          <Text
+            style={styles.brandWordmark}
+            accessibilityRole="header"
+            accessibilityLabel="Aeris">
+            AERIS
+          </Text>
           <TouchableOpacity
             onPress={() => {
               haptics.light();
@@ -72,16 +96,14 @@ const AppTabs: React.FC = () => {
         screenOptions={{
           headerShown: false,
           tabBarStyle: styles.tabBar,
-          // Active tab renders a solid crimson pill (mirrors desktop's
-          // .aeris-nav-active) — enabled by tabBarActiveBackgroundColor +
-          // a per-item style that adds the rounded inset.
-          tabBarActiveTintColor: COLORS.cream,
-          tabBarActiveBackgroundColor: COLORS.crimson,
+          // Active tab: crimson icon + label, plus a 3-px top stripe from
+          // the custom TabButton. Drops the full-cell crimson background
+          // so all tabs keep an identical baseline.
+          tabBarActiveTintColor: COLORS.crimson,
           tabBarInactiveTintColor: COLORS.textDim,
-          tabBarInactiveBackgroundColor: 'transparent',
-          tabBarItemStyle: styles.tabBarItem,
           tabBarLabelStyle: styles.tabBarLabel,
           tabBarBadgeStyle: styles.tabBarBadge,
+          tabBarButton: (props) => <TabButton {...props} />,
         }}>
         <Tab.Screen
           name="Dashboard"
@@ -166,18 +188,19 @@ const AppTabs: React.FC = () => {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.navy},
   topBar: {backgroundColor: COLORS.navy},
-  // Logo is centered by absolute-positioning across the row; the gear sits on
-  // top in the trailing corner so the logo stays visually centred regardless
-  // of locale label widths.
   topBarRow: {
     minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  brandLogo: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
+  // Crisp text wordmark beats scaling the 1024x1024 app-icon.png down
+  // to a small logo. Letter-spacing + bold cream-on-navy reads as a
+  // proper brand mark rather than a shrunken app tile.
+  brandWordmark: {
+    color: COLORS.cream,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 4,
   },
   gearBtn: {
     position: 'absolute',
@@ -192,11 +215,23 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderTopColor: COLORS.border,
   },
-  // Active tab fills its cell edge-to-edge so the crimson background
-  // reads as a deliberate state change, not an inset chip floating in
-  // the bar. Drop margins entirely; keep a small radius for crispness.
-  tabBarItem: {
-    borderRadius: 4,
+  tabBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Transparent placeholder so all tabs share identical layout — only the
+  // focused tab paints crimson, preserving the row's vertical baseline.
+  indicator: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: 'transparent',
+  },
+  indicatorActive: {
+    backgroundColor: COLORS.crimson,
   },
   tabBarLabel: {
     fontSize: FONT_SIZE.xs,
