@@ -130,7 +130,7 @@ const DashboardScreen: React.FC = () => {
 
   if (isLoading && !summary) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={COLORS.accent} />
           <Text style={styles.loadingText}>Loading dashboard...</Text>
@@ -141,7 +141,7 @@ const DashboardScreen: React.FC = () => {
 
   if (error && !summary) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.centered}>
           <View style={styles.fullErrorWrap}>
             <ErrorBanner message={error} onRetry={() => fetchSummary()} />
@@ -158,7 +158,7 @@ const DashboardScreen: React.FC = () => {
   const topProducts = summary?.top_products ?? [];
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -210,7 +210,7 @@ const DashboardScreen: React.FC = () => {
 
         <View style={styles.statsGrid}>
           <View style={styles.statCell}>
-            <StatCard label="Transactions" value={String(salesCount)} />
+            <StatCard label="Sales" value={String(salesCount)} />
           </View>
           <View style={styles.statCell}>
             <StatCard label="Items Sold" value={String(itemsSold)} />

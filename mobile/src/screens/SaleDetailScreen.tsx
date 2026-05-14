@@ -90,7 +90,7 @@ export default function SaleDetailScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.accent} size="large" />
         </View>
@@ -100,7 +100,7 @@ export default function SaleDetailScreen() {
 
   if (isUnavailable) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.errorWrap}>
           <ErrorBanner
             message="Detail view is not available right now. Please try again in a moment."
@@ -125,7 +125,7 @@ export default function SaleDetailScreen() {
 
   if (notFound || !sale) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <EmptyState
           icon="receipt-outline"
           title="Sale not found"
@@ -145,7 +145,7 @@ export default function SaleDetailScreen() {
   const customerName = sale.customer?.name || sale.customer_name || 'Walk-in';
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.card}>
           <View style={styles.headerRow}>
