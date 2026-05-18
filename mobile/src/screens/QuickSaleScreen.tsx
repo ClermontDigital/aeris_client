@@ -11,22 +11,31 @@ import {
   RefreshControl,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {Ionicons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import {useProductCacheStore} from '../stores/productCacheStore';
+import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
+import EmptyState from '../components/EmptyState';
+import ErrorBanner from '../components/ErrorBanner';
 import type {Product, Category} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
 
-const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
-
 export default function QuickSaleScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const haptics = useHaptics();
   const {addItem, getItemCount, getTotalCents} = useCartStore();
   const {
     products: cachedProducts,
@@ -41,7 +50,9 @@ export default function QuickSaleScreen() {
   const [displayProducts, setDisplayProducts] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stockNotice, setStockNotice] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stockNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const itemCount = getItemCount();
   const totalCents = getTotalCents();
@@ -80,32 +91,66 @@ export default function QuickSaleScreen() {
     // Fallback to API search
     setIsSearching(true);
     try {
-      const response = await ApiClient.searchProducts(
-        searchQuery,
-        1,
-        50,
-        selectedCategory ?? undefined,
-      );
+      const trimmed = searchQuery.trim();
+      const response = trimmed
+        ? await ApiClient.searchProducts(
+            trimmed,
+            1,
+            50,
+            selectedCategory ?? undefined,
+          )
+        : await ApiClient.listProducts(1, 50, selectedCategory ?? undefined);
       setDisplayProducts(response.data);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load products';
+      haptics.error();
       setError(msg);
     } finally {
       setIsSearching(false);
     }
-  }, [cachedProducts, searchQuery, selectedCategory, searchLocal]);
+  }, [cachedProducts, searchQuery, selectedCategory, searchLocal, haptics]);
 
   const handleRefresh = useCallback(async () => {
     await syncProducts();
   }, [syncProducts]);
 
+  // Treat absent track_stock as "tracked" so the gate matches the cashier's
+  // expectation; explicit false (untracked items) bypasses the stock check.
+  const isOutOfStock = useCallback((product: Product): boolean => {
+    const tracked = (product as Product & {track_stock?: boolean}).track_stock;
+    if (tracked === false) return false;
+    return product.stock_on_hand <= 0;
+  }, []);
+
   const handleAddToCart = useCallback(
     (product: Product) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (isOutOfStock(product)) {
+        haptics.error();
+        if (stockNoticeTimerRef.current) clearTimeout(stockNoticeTimerRef.current);
+        setStockNotice(`${product.name} is out of stock.`);
+        // Auto-dismiss after 2.5s; cashier doesn't need to chase a close button.
+        stockNoticeTimerRef.current = setTimeout(() => {
+          setStockNotice(null);
+          stockNoticeTimerRef.current = null;
+        }, 2500);
+        return;
+      }
+      haptics.light();
       addItem(product);
     },
-    [addItem],
+    [addItem, haptics, isOutOfStock],
   );
+
+  // Clean up the auto-dismiss timer on unmount so a tap-then-leave doesn't
+  // setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (stockNoticeTimerRef.current) {
+        clearTimeout(stockNoticeTimerRef.current);
+        stockNoticeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleCategoryPress = useCallback((categoryId: number | null) => {
     setSelectedCategory(categoryId);
@@ -122,6 +167,9 @@ export default function QuickSaleScreen() {
           styles.categoryPill,
           selectedCategory === null && styles.categoryPillActive,
         ]}
+        accessibilityRole="button"
+        accessibilityLabel="Category All"
+        accessibilityState={{selected: selectedCategory === null}}
         onPress={() => handleCategoryPress(null)}>
         <Text
           style={[
@@ -131,23 +179,29 @@ export default function QuickSaleScreen() {
           All
         </Text>
       </TouchableOpacity>
-      {categories.map((cat: Category) => (
-        <TouchableOpacity
-          key={cat.id}
-          style={[
-            styles.categoryPill,
-            selectedCategory === cat.id && styles.categoryPillActive,
-          ]}
-          onPress={() => handleCategoryPress(cat.id)}>
-          <Text
+      {categories.map((cat: Category) => {
+        const selected = selectedCategory === cat.id;
+        return (
+          <TouchableOpacity
+            key={cat.id}
             style={[
-              styles.categoryPillText,
-              selectedCategory === cat.id && styles.categoryPillTextActive,
-            ]}>
-            {cat.name}
-          </Text>
-        </TouchableOpacity>
-      ))}
+              styles.categoryPill,
+              selected && styles.categoryPillActive,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Category ${cat.name}`}
+            accessibilityState={{selected}}
+            onPress={() => handleCategoryPress(cat.id)}>
+            <Text
+              style={[
+                styles.categoryPillText,
+                selected && styles.categoryPillTextActive,
+              ]}>
+              {cat.name}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </ScrollView>
   );
 
@@ -185,24 +239,36 @@ export default function QuickSaleScreen() {
   const renderEmpty = () => {
     if (isSearching || isSyncing) return null;
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>
-          {searchQuery
-            ? 'No products match your search'
-            : 'No products available'}
-        </Text>
-        <Text style={styles.emptySubtext}>
-          Pull down to refresh the product catalog
-        </Text>
-      </View>
+      <EmptyState
+        icon={searchQuery ? 'search-outline' : 'cube-outline'}
+        title={
+          searchQuery ? 'No products match your search' : 'No products available'
+        }
+        description="Pull down to refresh the product catalog"
+      />
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Search Bar */}
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      {/* Header — matches Items/Customers/Transactions for visual consistency */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Sale</Text>
+        {itemCount > 0 ? (
+          <Text style={styles.headerSubtitle}>
+            {itemCount} {itemCount === 1 ? 'item' : 'items'} in cart
+          </Text>
+        ) : null}
+      </View>
+
+      {/* Search Bar + inline Scan shortcut */}
       <View style={styles.searchContainer}>
-        <Text style={styles.searchIcon}>Search</Text>
+        <Ionicons
+          name="search"
+          size={ICON_SIZE.action}
+          color={COLORS.textMuted}
+          style={styles.searchIcon}
+        />
         <TextInput
           style={styles.searchInput}
           placeholder="Search products..."
@@ -213,21 +279,49 @@ export default function QuickSaleScreen() {
           returnKeyType="search"
         />
         {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Text style={styles.clearButton}>Clear</Text>
+          <TouchableOpacity
+            onPress={() => setSearchQuery('')}
+            style={styles.clearBtn}>
+            <Ionicons
+              name="close-circle"
+              size={ICON_SIZE.action}
+              color={COLORS.textMuted}
+            />
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          style={styles.scanButton}
+          onPress={() => {
+            haptics.light();
+            navigation.navigate('Scanner');
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Scan barcode"
+          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+          <Ionicons
+            name="barcode-outline"
+            size={ICON_SIZE.hero}
+            color={COLORS.crimson}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Category Pills */}
       {renderCategoryPills()}
 
       {/* Error */}
-      {error && (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
+      {error ? (
+        <View style={styles.errorWrap}>
+          <ErrorBanner message={error} onRetry={loadProducts} />
         </View>
-      )}
+      ) : null}
+
+      {/* Out-of-stock notice — auto-dismisses after 2.5s. */}
+      {stockNotice ? (
+        <View style={styles.errorWrap}>
+          <ErrorBanner message={stockNotice} tone="warning" />
+        </View>
+      ) : null}
 
       {/* Loading */}
       {(isSearching || isSyncing) && (
@@ -245,7 +339,13 @@ export default function QuickSaleScreen() {
         keyExtractor={item => String(item.id)}
         numColumns={2}
         columnWrapperStyle={styles.gridRow}
-        contentContainerStyle={styles.gridContent}
+        // Tighter bottom padding when the cart bar isn't visible — its
+        // 100pt clearance was leaving a dead band of cream space above
+        // the tab bar when the cart was empty.
+        contentContainerStyle={[
+          styles.gridContent,
+          itemCount > 0 ? styles.gridContentWithCart : styles.gridContentNoCart,
+        ]}
         ListEmptyComponent={renderEmpty}
         refreshControl={
           <RefreshControl
@@ -261,12 +361,18 @@ export default function QuickSaleScreen() {
         <TouchableOpacity
           style={styles.cartBar}
           onPress={() => navigation.navigate('Cart')}
-          activeOpacity={0.8}>
+          activeOpacity={0.85}>
           <Text style={styles.cartBarText}>
-            {itemCount} {itemCount === 1 ? 'item' : 'items'} &mdash;{' '}
-            {formatCurrency(totalCents)}
+            {itemCount} {itemCount === 1 ? 'item' : 'items'} · {formatCurrency(totalCents)}
           </Text>
-          <Text style={styles.cartBarAction}>View Cart &gt;</Text>
+          <View style={styles.cartBarActionRow}>
+            <Text style={styles.cartBarAction}>View Cart</Text>
+            <Ionicons
+            name="chevron-forward"
+            size={ICON_SIZE.action}
+            color={COLORS.white}
+          />
+          </View>
         </TouchableOpacity>
       )}
     </SafeAreaView>
@@ -278,6 +384,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  header: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.xxl,
+    fontWeight: '700',
+  },
+  headerSubtitle: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '500',
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -286,13 +410,11 @@ const styles = StyleSheet.create({
     borderColor: COLORS.inputBorder,
     borderRadius: BORDER_RADIUS.lg,
     marginHorizontal: SPACING.md,
-    marginTop: SPACING.sm,
+    marginBottom: SPACING.xs,
     paddingHorizontal: SPACING.md,
     height: 44,
   },
   searchIcon: {
-    color: COLORS.textDim,
-    fontSize: FONT_SIZE.sm,
     marginRight: SPACING.sm,
   },
   searchInput: {
@@ -301,27 +423,33 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     height: 44,
   },
-  clearButton: {
-    color: COLORS.accent,
-    fontSize: FONT_SIZE.sm,
-    paddingLeft: SPACING.sm,
-  },
+  clearBtn: {paddingHorizontal: SPACING.xs},
+  // Inline barcode icon — sits inside the search container at the right
+  // edge. Borderless / crimson tint so it reads as part of the input row
+  // rather than a separate floating button. Tap target via hitSlop.
+  scanButton: {paddingLeft: SPACING.sm},
   categoryStrip: {
-    maxHeight: 48,
-    marginTop: SPACING.sm,
+    maxHeight: 56,
+    paddingVertical: SPACING.sm,
   },
   categoryContent: {
     paddingHorizontal: SPACING.md,
-    gap: SPACING.sm,
+    alignItems: 'center',
   },
+  // Wider horizontal padding + taller vertical padding so each pill has
+  // breathing room and a real tap target. The previous SPACING.xs vertical
+  // pad made the row feel "squished" against the search bar above and the
+  // grid below.
   categoryPill: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
     borderRadius: BORDER_RADIUS.full,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     marginRight: SPACING.sm,
+    minHeight: 36,
+    justifyContent: 'center',
   },
   categoryPillActive: {
     backgroundColor: COLORS.crimson,
@@ -330,30 +458,25 @@ const styles = StyleSheet.create({
   categoryPillText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.sm,
+    fontWeight: '500',
   },
   categoryPillTextActive: {
     color: COLORS.white,
     fontWeight: '600',
   },
-  errorBanner: {
-    backgroundColor: COLORS.danger,
+  errorWrap: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    marginHorizontal: SPACING.md,
-    marginTop: SPACING.sm,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  errorText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
+    paddingTop: SPACING.sm,
   },
   loader: {
     marginTop: SPACING.lg,
   },
   gridContent: {
-    padding: SPACING.md,
-    paddingBottom: 100,
+    paddingHorizontal: SPACING.sm,
+    paddingTop: SPACING.xs,
   },
+  gridContentWithCart: {paddingBottom: 96},
+  gridContentNoCart: {paddingBottom: SPACING.md},
   gridRow: {
     justifyContent: 'space-between',
   },
@@ -366,19 +489,26 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     marginBottom: SPACING.sm,
     marginHorizontal: SPACING.xs,
+    shadowColor: COLORS.black,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
   },
   productName: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
-    marginBottom: SPACING.xs,
-    minHeight: 36,
+    marginBottom: SPACING.sm,
+    minHeight: 38,
+    lineHeight: 19,
   },
   productPrice: {
-    color: COLORS.accent,
+    color: COLORS.crimson,
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
     marginBottom: SPACING.xs,
+    fontVariant: ['tabular-nums'],
   },
   stockRow: {
     flexDirection: 'row',
@@ -394,26 +524,15 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
   },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingTop: SPACING.xxl,
-  },
-  emptyText: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    color: COLORS.textDim,
-    fontSize: FONT_SIZE.sm,
-    marginTop: SPACING.sm,
-  },
+  // Sits ABOVE the bottom tab bar (which is ~49pt + bottom safe area on
+  // iOS). 12pt of clearance keeps it from kissing the tab bar edge while
+  // still feeling docked.
   cartBar: {
     position: 'absolute',
-    bottom: SPACING.lg,
+    bottom: SPACING.sm,
     left: SPACING.md,
     right: SPACING.md,
-    backgroundColor: COLORS.accent,
+    backgroundColor: COLORS.crimson,
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
@@ -421,19 +540,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     shadowColor: COLORS.black,
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
     elevation: 8,
   },
   cartBarText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
+  cartBarActionRow: {flexDirection: 'row', alignItems: 'center'},
   cartBarAction: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
+    marginRight: SPACING.xs,
   },
 });

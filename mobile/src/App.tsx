@@ -1,5 +1,5 @@
-import React, {useEffect} from 'react';
-import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import React, {useEffect, useRef} from 'react';
+import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState, AppStateStatus} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {NavigationContainer} from '@react-navigation/native';
 import {activateKeepAwakeAsync} from 'expo-keep-awake';
@@ -7,8 +7,11 @@ import * as NavigationBar from 'expo-navigation-bar';
 import {useSettingsStore} from './stores/settingsStore';
 import {useAuthStore} from './stores/authStore';
 import {useProductCacheStore} from './stores/productCacheStore';
+import {useAppLockStore} from './stores/appLockStore';
 import ApiClient from './services/ApiClient';
 import RootNavigator from './navigation/RootNavigator';
+import AppLockScreen from './screens/AppLockScreen';
+import PinSetupScreen from './screens/PinSetupScreen';
 import {COLORS} from './constants/theme';
 
 interface ErrorBoundaryState {
@@ -62,29 +65,80 @@ const App: React.FC = () => {
   const restoreSession = useAuthStore(s => s.restoreSession);
   const clearLocalSession = useAuthStore(s => s.clearLocalSession);
   const restoreCache = useProductCacheStore(s => s.restoreCache);
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const expiresAt = useAuthStore(s => s.expiresAt);
+  const refreshSession = useAuthStore(s => s.refreshSession);
+  const initAppLock = useAppLockStore(s => s.init);
+  const lockNow = useAppLockStore(s => s.lockNow);
+  const isLocked = useAppLockStore(s => s.isLocked);
+  const hasPin = useAppLockStore(s => s.hasPin);
+  const lockInitialized = useAppLockStore(s => s.initialized);
 
   useEffect(() => {
-    activateKeepAwakeAsync();
-    initSettings();
-    restoreSession();
-    restoreCache();
-
-    // Wire 401s in ApiClient back into the auth store so a stale token
-    // takes the user to the login screen instead of leaving them logged-in
-    // but unable to make any calls.
-    ApiClient.setOnUnauthorized(() => {
-      clearLocalSession();
-    });
-
-    if (Platform.OS === 'android') {
-      StatusBar.setHidden(true);
-      NavigationBar.setVisibilityAsync('hidden');
-    }
+    let cancelled = false;
+    // Serialise boot so settings (baseUrl/relayUrl/mode/workspaceCode)
+    // are applied to ApiClient BEFORE restoreSession sets the bearer
+    // token. Parallel init lets the token land on a not-yet-configured
+    // client; the first call can route to the wrong URL and surface as
+    // the ErrorBoundary "Something went wrong" fallback on first login.
+    (async () => {
+      try {
+        activateKeepAwakeAsync();
+        await initSettings();
+        if (cancelled) return;
+        await restoreSession();
+        if (cancelled) return;
+        await Promise.all([restoreCache(), initAppLock()]);
+        if (cancelled) return;
+        ApiClient.setOnUnauthorized(() => {
+          clearLocalSession();
+        });
+        if (Platform.OS === 'android') {
+          StatusBar.setHidden(true);
+          NavigationBar.setVisibilityAsync('hidden');
+        }
+      } catch (e) {
+        // Async init failures shouldn't reach the ErrorBoundary
+        // (it's render-only). Log + continue with whatever state landed.
+        console.warn('[App] init failed:', e);
+      }
+    })();
 
     return () => {
+      cancelled = true;
       ApiClient.setOnUnauthorized(null);
     };
-  }, [initSettings, restoreSession, restoreCache, clearLocalSession]);
+  }, [initSettings, restoreSession, restoreCache, clearLocalSession, initAppLock]);
+
+  // (isAuthenticated, hasPin) flip from false→true exactly once per session;
+  // lockNow itself bails out when hasPin is false, so this useEffect is safe
+  // to re-run.
+  useEffect(() => {
+    if (isAuthenticated && hasPin) {
+      lockNow();
+    }
+  }, [isAuthenticated, hasPin, lockNow]);
+
+  // Foreground-from-background lock with a 5-second debounce so transient
+  // OS interruptions (Apple Pay sheet, control-centre, incoming call banner)
+  // don't trigger an unwanted lock.
+  const backgroundedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'background') {
+        backgroundedAtRef.current = Date.now();
+        return;
+      }
+      if (state === 'active') {
+        const stamped = backgroundedAtRef.current;
+        backgroundedAtRef.current = null;
+        if (stamped == null) return;
+        if (Date.now() - stamped < 5_000) return;
+        lockNow();
+      }
+    });
+    return () => sub.remove();
+  }, [lockNow]);
 
   // Configure ApiClient whenever connection-relevant settings change
   useEffect(() => {
@@ -100,6 +154,56 @@ const App: React.FC = () => {
     settings?.connectionMode,
     settings?.workspaceCode,
   ]);
+
+  // Proactive Sanctum refresh: 2 minutes before expiry, mint a new token so
+  // the user never sees a mid-shift "session expired" interruption. The
+  // timer covers the always-foreground POS use case; the AppState listener
+  // below covers the close-the-app-overnight case.
+  useEffect(() => {
+    if (!isAuthenticated || !expiresAt) return;
+    const REFRESH_LEAD_MS = 120_000; // 2 minutes
+    const msUntilRefresh = Date.parse(expiresAt) - Date.now() - REFRESH_LEAD_MS;
+    if (Number.isNaN(msUntilRefresh)) {
+      // Malformed ISO would silently disable refresh forever — log so the
+      // server-side bug shows up in Sentry / device logs. User still falls
+      // through to the natural-401 path which is acceptable.
+      console.warn('[refresh] could not parse expiresAt:', expiresAt);
+      return;
+    }
+    if (msUntilRefresh <= 0) {
+      // Already past the lead — fire immediately. refreshSession handles
+      // its own dedupe and error logging.
+      refreshSession().catch(() => {});
+      return;
+    }
+    const timer = setTimeout(() => {
+      refreshSession().catch(() => {});
+    }, msUntilRefresh);
+    return () => clearTimeout(timer);
+  }, [isAuthenticated, expiresAt, refreshSession]);
+
+  // Foreground after long background → if expiry is near, refresh now.
+  // The setTimeout above is paused while backgrounded on iOS, so without
+  // this hook a user who closes the app overnight wakes up to a stale
+  // token and would hit the natural-401 path on the first tap.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      if (!isAuthenticated || !expiresAt) return;
+      const remaining = Date.parse(expiresAt) - Date.now();
+      if (Number.isNaN(remaining)) return;
+      if (remaining < 120_000) {
+        refreshSession().catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, [isAuthenticated, expiresAt, refreshSession]);
+
+  // While the lock store is still resolving its async secure-store reads,
+  // hide the navigator behind a navy splash so we never flash protected
+  // content to a returning user before the lock overlay has a chance to
+  // mount. Unauthed users skip the gate (login/setup is allowed pre-init).
+  const showSplash = isAuthenticated && !lockInitialized;
 
   return (
     <ErrorBoundary>
@@ -126,9 +230,41 @@ const App: React.FC = () => {
         >
           <RootNavigator />
         </NavigationContainer>
+        {showSplash && <View style={styles.splash} pointerEvents="auto" />}
+        {isAuthenticated && lockInitialized && !hasPin && (
+          <View style={styles.overlay} pointerEvents="auto">
+            <PinSetupScreen />
+          </View>
+        )}
+        {isAuthenticated && lockInitialized && hasPin && isLocked && (
+          <View style={styles.overlay} pointerEvents="auto">
+            <AppLockScreen />
+          </View>
+        )}
       </SafeAreaProvider>
     </ErrorBoundary>
   );
 };
+
+const styles = StyleSheet.create({
+  splash: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: COLORS.navy,
+  },
+  // PIN setup / app-lock are full-screen overlays. Without absolute fill
+  // they share layout space with the NavigationContainer below and the
+  // dashboard bleeds through.
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+});
 
 export default App;

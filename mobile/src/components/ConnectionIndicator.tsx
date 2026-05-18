@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, StyleSheet} from 'react-native';
+import {COLORS} from '../constants/theme';
 
 interface Props {
   isConnected: boolean;
@@ -7,7 +8,11 @@ interface Props {
 }
 
 const ConnectionIndicator: React.FC<Props> = ({isConnected, isServerReachable}) => {
-  const color = !isConnected ? '#e74c3c' : isServerReachable ? '#27ae60' : '#f39c12';
+  const color = !isConnected
+    ? COLORS.danger
+    : isServerReachable
+    ? COLORS.success
+    : COLORS.warning;
 
   return <View style={[styles.dot, {backgroundColor: color}]} />;
 };

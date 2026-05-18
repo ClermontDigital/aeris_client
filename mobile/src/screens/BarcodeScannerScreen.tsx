@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useEffect} from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,36 @@ import {
   Alert,
 } from 'react-native';
 import {CameraView, useCameraPermissions} from 'expo-camera';
-import {useIsFocused} from '@react-navigation/native';
+import {useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
+import type {RouteProp} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Ionicons} from '@expo/vector-icons';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useCartStore} from '../stores/cartStore';
+import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import type {Product, ProductDetail} from '../types/api.types';
+import type {ItemsStackParamList} from '../types/navigation.types';
 import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 
 const formatCents = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
+// In 'detail' mode, found products are pushed to ProductDetail (Items tab).
+// In 'cart' mode (default), they show a card with Add-to-Cart (QuickSale tab).
+type ScanMode = 'cart' | 'detail';
+
+// Scanner is registered in both QuickSaleStack and ItemsStack. The 'detail'
+// mode replace() target ProductDetail only exists in ItemsStackParamList,
+// so we type against that — 'cart' mode never calls .replace().
+type Nav = NativeStackNavigationProp<ItemsStackParamList, 'Scanner'>;
+
 const BarcodeScannerScreen: React.FC = () => {
   const isFocused = useIsFocused();
+  // Both stacks declare Scanner with different param shapes; we read the
+  // mode via a permissive route type and default to 'cart'.
+  const route = useRoute<RouteProp<ItemsStackParamList, 'Scanner'>>();
+  const mode: ScanMode = route.params?.mode === 'detail' ? 'detail' : 'cart';
+  const navigation = useNavigation<Nav>();
   const [permission, requestPermission] = useCameraPermissions();
   const [torchOn, setTorchOn] = useState(false);
   const [scannedProduct, setScannedProduct] = useState<
@@ -35,6 +53,7 @@ const BarcodeScannerScreen: React.FC = () => {
 
   const getByBarcode = useProductCacheStore(s => s.getByBarcode);
   const addItem = useCartStore(s => s.addItem);
+  const haptics = useHaptics();
 
   const lookupBarcode = useCallback(
     async (barcode: string) => {
@@ -57,11 +76,25 @@ const BarcodeScannerScreen: React.FC = () => {
         }
       };
 
+      // In detail mode, jump straight to the product page on a hit. We
+      // navigation.replace rather than navigate so the Scanner doesn't
+      // pile up in the back stack between scans.
+      const goDetail = (productId: number) => {
+        haptics.success();
+        navigation.replace('ProductDetail', {productId});
+      };
+
       // Try local cache first
       const cached = getByBarcode(barcode);
       if (cached) {
+        if (mode === 'detail') {
+          setIsLookingUp(false);
+          goDetail(cached.id);
+          return;
+        }
         setScannedProduct(cached);
         setIsLookingUp(false);
+        haptics.success();
         refreshStock(cached.id);
         return;
       }
@@ -70,18 +103,25 @@ const BarcodeScannerScreen: React.FC = () => {
       try {
         const product = await ApiClient.getProductByBarcode(barcode);
         if (product) {
+          if (mode === 'detail') {
+            goDetail(product.id);
+            return;
+          }
           setScannedProduct(product);
+          haptics.success();
           refreshStock(product.id);
         } else {
           setNotFound(true);
+          haptics.error();
         }
       } catch {
         setNotFound(true);
+        haptics.error();
       } finally {
         setIsLookingUp(false);
       }
     },
-    [getByBarcode, isLookingUp, scanLock],
+    [getByBarcode, isLookingUp, scanLock, haptics, mode, navigation],
   );
 
   const handleBarcodeScanned = useCallback(
@@ -91,6 +131,18 @@ const BarcodeScannerScreen: React.FC = () => {
     },
     [lookupBarcode, scanLock],
   );
+
+  // Auto re-arm after a not-found result so the user doesn't have to tap
+  // "Scan Again" to retry. Manual entry / found-product flow still owns its
+  // own dismiss button because the user needs to choose Add-to-Cart first.
+  useEffect(() => {
+    if (!notFound) return;
+    const t = setTimeout(() => {
+      setNotFound(false);
+      setScanLock(false);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [notFound]);
 
   const handleManualSubmit = useCallback(() => {
     const code = manualBarcode.trim();
@@ -158,8 +210,21 @@ const BarcodeScannerScreen: React.FC = () => {
               'code39',
             ],
           }}
-          onBarcodeScanned={scanLock ? undefined : handleBarcodeScanned}
+          onBarcodeScanned={
+            scanLock || isLookingUp ? undefined : handleBarcodeScanned
+          }
         />
+      ) : null}
+
+      {/* Centered busy overlay — pauses scanning visually while a lookup
+          is in flight so the user knows fresh scans are ignored. */}
+      {isLookingUp ? (
+        <View style={styles.busyOverlay} pointerEvents="none">
+          <View style={styles.busyCard}>
+            <ActivityIndicator size="small" color={COLORS.accent} />
+            <Text style={styles.busyText}>Looking up…</Text>
+          </View>
+        </View>
       ) : null}
 
       {/* Top overlay */}
@@ -171,7 +236,7 @@ const BarcodeScannerScreen: React.FC = () => {
           <Ionicons
             name={torchOn ? 'flash' : 'flash-off'}
             size={22}
-            color={COLORS.textLight}
+            color={COLORS.cream}
           />
         </TouchableOpacity>
       </View>
@@ -214,10 +279,11 @@ const BarcodeScannerScreen: React.FC = () => {
           </View>
         ) : null}
 
-        {/* Not found */}
+        {/* Not found — auto re-arms after a short delay; the button is a
+            shortcut for impatient users. */}
         {notFound && !isLookingUp ? (
           <View style={styles.resultCard}>
-            <Text style={styles.notFoundText}>Product not found</Text>
+            <Text style={styles.notFoundText}>No product matched</Text>
             <TouchableOpacity
               style={styles.dismissButton}
               onPress={handleDismiss}>
@@ -230,7 +296,7 @@ const BarcodeScannerScreen: React.FC = () => {
         <TouchableOpacity
           style={styles.manualToggle}
           onPress={() => setManualEntry(prev => !prev)}>
-          <Ionicons name="keypad-outline" size={16} color={COLORS.textMuted} />
+          <Ionicons name="keypad-outline" size={16} color={COLORS.cream} />
           <Text style={styles.manualToggleText}>
             {manualEntry ? 'Hide manual entry' : 'Enter barcode manually'}
           </Text>
@@ -281,6 +347,26 @@ const styles = StyleSheet.create({
   camera: {
     ...StyleSheet.absoluteFillObject,
   },
+  busyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  busyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.cream,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  busyText: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+  },
   topOverlay: {
     position: 'absolute',
     top: 0,
@@ -292,10 +378,12 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.md,
-    backgroundColor: COLORS.modalBg,
+    backgroundColor: COLORS.modalBg, // navy 92%
   },
+  // Cream on navy — was COLORS.text (now navy in cream theme), which made
+  // the title invisible against the navy modalBg backdrop.
   topTitle: {
-    color: COLORS.text,
+    color: COLORS.cream,
     fontSize: FONT_SIZE.xl,
     fontWeight: '600',
   },
@@ -309,19 +397,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Semi-transparent navy backdrop so any text rendered directly in the
+  // bottom area (manual-entry toggle, errors) stays legible against an
+  // arbitrary camera scene. The result cards inside still pop forward as
+  // bright cream surfaces.
   bottomArea: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.xl,
+    backgroundColor: 'rgba(0, 48, 73, 0.85)',
   },
   resultCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.cream,
     borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
     padding: SPACING.md,
     marginBottom: SPACING.sm,
   },
@@ -371,17 +463,23 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     fontWeight: '600',
   },
+  // Outline-on-cream so the button reads as a button against the cream
+  // result card (the previous near-white surfaceHover bg was effectively
+  // invisible, ~1.05 contrast on cream).
   dismissButton: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: BORDER_RADIUS.md,
-    backgroundColor: COLORS.surfaceHover,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: COLORS.text, // navy outline
     alignItems: 'center',
     justifyContent: 'center',
   },
   dismissText: {
-    color: COLORS.textMuted,
+    color: COLORS.text,
     fontSize: FONT_SIZE.md,
+    fontWeight: '500',
   },
   notFoundText: {
     color: COLORS.warning,
@@ -396,8 +494,9 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     paddingVertical: SPACING.sm,
   },
+  // Cream on navy backdrop. textMuted (slate-navy) was unreadable here.
   manualToggleText: {
-    color: COLORS.textMuted,
+    color: COLORS.cream,
     fontSize: FONT_SIZE.sm,
   },
   manualInputRow: {
