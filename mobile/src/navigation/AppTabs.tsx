@@ -67,17 +67,19 @@ const AppTabs: React.FC = () => {
 
   return (
     <View style={styles.root}>
-      {/* Navy strip across the device's top safe-area inset. A cream
-          "notch" rises from the bottom of the navy area to spotlight
-          the wordmark — the pill spans the navy/cream boundary so its
-          upper half reads as a carved cutout in the header. Inside the
-          pill we render the dark wordmark variant so it stays
-          visible against the cream fill. */}
+      {/* Navy header with a downward-bulging navy island hosting the
+          wordmark — cream "shoulders" on each side curve up into the
+          navy with rounded inner corners. Net effect: the navy reads
+          as a tab protruding into the cream body, framing the logo. */}
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View style={styles.topBarRow}>
-          <View style={styles.logoNotch} pointerEvents="none" />
+          <View style={styles.bottomFlank} pointerEvents="none">
+            <View style={styles.shoulderLeft} />
+            <View style={styles.islandSpacer} />
+            <View style={styles.shoulderRight} />
+          </View>
           <Image
-            source={require('../../assets/images/aeris-wordmark-dark.png')}
+            source={require('../../assets/images/aeris-wordmark.png')}
             style={styles.brandWordmark}
             accessibilityIgnoresInvertColors
             accessibilityLabel="Aeris"
@@ -194,25 +196,38 @@ const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.navy},
   topBar: {backgroundColor: COLORS.navy},
   topBarRow: {
-    minHeight: 68,
+    minHeight: 72,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Cream pill anchored to the bottom edge of the navy bar — the upper
-  // half rises into the navy as a carved notch, the lower half blends
-  // with the cream body underneath so the seam disappears. Width sized
-  // to comfortably enclose the wordmark with padding.
-  logoNotch: {
+  // Cream shoulders flanking a navy island at the bottom of the header.
+  // Each shoulder's inner top corner curves up to meet the island, so
+  // the navy reads as a downward-protruding tab around the wordmark.
+  bottomFlank: {
     position: 'absolute',
-    left: '50%',
-    bottom: -28,
-    marginLeft: -110,
-    width: 220,
-    height: 56,
-    backgroundColor: COLORS.background,
-    borderRadius: 28,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 32,
+    flexDirection: 'row',
   },
-  // Native asset is 2000x612 (3.27 aspect); render at 130x38 so it stays
+  shoulderLeft: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderTopRightRadius: 32,
+  },
+  // Spacer = the navy island where the wordmark sits. Transparent so
+  // the navy bar shows through. Width tuned to hug the wordmark with
+  // a comfortable margin.
+  islandSpacer: {
+    width: 220,
+  },
+  shoulderRight: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 32,
+  },
+  // Native asset is 250x73 (3.42 aspect); render at 130x38 so it stays
   // crisp across phone DPIs while leaving room for the safe-area inset
   // and the gear icon on the right.
   brandWordmark: {
