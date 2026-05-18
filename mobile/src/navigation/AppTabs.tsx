@@ -207,21 +207,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'visible',
   },
-  // Cream shoulders flanking the navy island at the bottom of the
-  // header. Each shoulder's inner top corner curves up to meet the
-  // navy tongue, so the navy reads as a continuous downward bulge.
+  // Cream shoulders flanking the navy tab. Each shoulder is a half-pill
+  // (rounded on both inner-top and inner-bottom corners) so the curve
+  // doesn't terminate at a sharp point. Tall enough to reach roughly
+  // the top of the wordmark so the cream reads at the same vertical
+  // level as the logo.
   bottomFlank: {
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 18,
     bottom: 0,
-    height: 28,
     flexDirection: 'row',
   },
   shoulderLeft: {
     flex: 1,
     backgroundColor: COLORS.background,
-    borderTopRightRadius: 28,
+    borderTopRightRadius: 29,
+    borderBottomRightRadius: 29,
   },
   // Width tuned tight to the 130pt wordmark — narrower than before so
   // the cream working area expands on both sides.
@@ -231,7 +234,8 @@ const styles = StyleSheet.create({
   shoulderRight: {
     flex: 1,
     backgroundColor: COLORS.background,
-    borderTopLeftRadius: 28,
+    borderTopLeftRadius: 29,
+    borderBottomLeftRadius: 29,
   },
   // Navy tab that extends below the bar into the cream body. Sits
   // behind the wordmark and shares its width with the islandSpacer
