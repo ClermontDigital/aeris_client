@@ -6,6 +6,7 @@ import Toolbar from '../components/Toolbar';
 import WebViewContainer from '../components/WebViewContainer';
 import LoadingOverlay from '../components/LoadingOverlay';
 import OfflineBanner from '../components/OfflineBanner';
+import EmptyState from '../components/EmptyState';
 import SettingsModal from './SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useAuthStore} from '../stores/authStore';
@@ -17,12 +18,14 @@ import {COLORS} from '../constants/theme';
 
 const ERPScreen: React.FC = () => {
   const baseUrl = useSettingsStore(s => s.settings.baseUrl);
+  const connectionMode = useSettingsStore(s => s.settings.connectionMode);
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const webView = useWebView();
   const networkStatus = useNetworkStatus(baseUrl);
 
   const [backPressCount, setBackPressCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const isRelayMode = connectionMode === 'relay';
 
   // Hardware back button (Android)
   useEffect(() => {
@@ -69,7 +72,7 @@ const ERPScreen: React.FC = () => {
   }, [webView.currentUrl, baseUrl]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <Toolbar
         canGoBack={webView.canGoBack}
         canGoForward={webView.canGoForward}
@@ -83,32 +86,44 @@ const ERPScreen: React.FC = () => {
         showSessionButton={false}
       />
 
-      <OfflineBanner
-        isConnected={networkStatus.isConnected}
-        isServerReachable={networkStatus.isServerReachable}
-        onRetry={() => ConnectionService.checkServer()}
-      />
-
-      <View style={styles.webviewContainer}>
-        <WebViewContainer
-          url={baseUrl}
-          webViewRef={webView.webViewRef}
-          onNavigationStateChange={handleNavChange}
-          onLoadStart={() => webView.setIsLoading(true)}
-          onLoadEnd={() => {
-            webView.setIsLoading(false);
-            ConnectionService.setReachable(true);
-          }}
-          onError={() => {
-            webView.setIsLoading(false);
-            Alert.alert(
-              'Error',
-              'Failed to load page. Check your connection.',
-            );
-          }}
+      {!isRelayMode && (
+        <OfflineBanner
+          isConnected={networkStatus.isConnected}
+          isServerReachable={networkStatus.isServerReachable}
+          onRetry={() => ConnectionService.checkServer()}
         />
-        <LoadingOverlay visible={webView.isLoading} />
-      </View>
+      )}
+
+      {isRelayMode ? (
+        // ERP web shell talks to the deployment directly; in relay mode the
+        // architecture forbids that, so route the user to the native tabs.
+        <EmptyState
+          icon="cloud-offline-outline"
+          title="ERP web view unavailable"
+          description="The full ERP shell is only available in direct (LAN) mode. While you are connected through the Aeris relay, please use the POS, Scanner, and Transactions tabs for day-to-day work."
+        />
+      ) : (
+        <View style={styles.webviewContainer}>
+          <WebViewContainer
+            url={baseUrl}
+            webViewRef={webView.webViewRef}
+            onNavigationStateChange={handleNavChange}
+            onLoadStart={() => webView.setIsLoading(true)}
+            onLoadEnd={() => {
+              webView.setIsLoading(false);
+              ConnectionService.setReachable(true);
+            }}
+            onError={() => {
+              webView.setIsLoading(false);
+              Alert.alert(
+                'Error',
+                'Failed to load page. Check your connection.',
+              );
+            }}
+          />
+          <LoadingOverlay visible={webView.isLoading} />
+        </View>
+      )}
 
       <SettingsModal
         visible={settingsVisible}

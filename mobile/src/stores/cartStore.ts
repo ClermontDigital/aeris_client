@@ -1,5 +1,13 @@
 import {create} from 'zustand';
 import type {Product, CartItem} from '../types/api.types';
+import {
+  clampDiscountCents,
+  getItemCount,
+  getSubtotalCents,
+  getTaxCents,
+  getTotalCents,
+} from '@aeris/shared';
+import {useAuthStore} from './authStore';
 
 interface CartState {
   items: CartItem[];
@@ -75,7 +83,9 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   setCustomer: (id, name) => set({customerId: id, customerName: name}),
-  setDiscount: (cents) => set({discountCents: cents}),
+  setDiscount: (cents) => {
+    set({discountCents: clampDiscountCents(get().items, cents)});
+  },
   setNotes: (notes) => set({notes}),
   clear: () =>
     set({
@@ -86,31 +96,18 @@ export const useCartStore = create<CartState>((set, get) => ({
       notes: '',
     }),
 
-  getSubtotalCents: () => {
-    return get().items.reduce(
-      (sum, item) =>
-        sum + item.unit_price_cents * item.quantity - item.discount_cents,
-      0,
-    );
-  },
-
-  getTaxCents: () => {
-    return get().items.reduce(
-      (sum, item) =>
-        sum +
-        Math.round(
-          (item.unit_price_cents * item.quantity - item.discount_cents) *
-            item.product.tax_rate,
-        ),
-      0,
-    );
-  },
-
-  getTotalCents: () => {
-    return get().getSubtotalCents() + get().getTaxCents() - get().discountCents;
-  },
-
-  getItemCount: () => {
-    return get().items.reduce((sum, item) => sum + item.quantity, 0);
-  },
+  getSubtotalCents: () => getSubtotalCents(get().items),
+  getTaxCents: () => getTaxCents(get().items),
+  getTotalCents: () => getTotalCents(get().items, get().discountCents),
+  getItemCount: () => getItemCount(get().items),
 }));
+
+// Drop the cart on logout / 401 so the next operator can't pick up the
+// previous user's half-built sale. Mirrors desktop's cartStore subscription.
+let lastAuthed = useAuthStore.getState().isAuthenticated;
+useAuthStore.subscribe(state => {
+  if (lastAuthed && !state.isAuthenticated) {
+    useCartStore.getState().clear();
+  }
+  lastAuthed = state.isAuthenticated;
+});

@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
+import {COLORS, FONT_SIZE, SPACING} from '../constants/theme';
 
 interface Props {
   isConnected: boolean;
@@ -26,15 +27,15 @@ const OfflineBanner: React.FC<Props> = ({isConnected, isServerReachable, onRetry
 
 const styles = StyleSheet.create({
   banner: {
-    backgroundColor: '#dc2626',
+    backgroundColor: COLORS.crimson,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    gap: 16,
+    paddingVertical: SPACING.sm,
+    gap: SPACING.md,
   },
-  text: {color: '#fdf0d5', fontSize: 14, fontWeight: '500'},
-  retry: {color: '#fdf0d5', fontSize: 14, fontWeight: '700', textDecorationLine: 'underline'},
+  text: {color: COLORS.cream, fontSize: FONT_SIZE.md, fontWeight: '500'},
+  retry: {color: COLORS.cream, fontSize: FONT_SIZE.md, fontWeight: '700', textDecorationLine: 'underline'},
 });
 
 export default OfflineBanner;

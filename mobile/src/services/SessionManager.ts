@@ -1,21 +1,12 @@
+import * as Crypto from 'expo-crypto';
 import EncryptionService from './EncryptionService';
 import StorageService from './StorageService';
 import {STORAGE_KEYS, DEFAULT_CONFIG} from '../constants/config';
 import type {Session, SessionPublic, PinAttemptData} from '../types/session.types';
 
+// expo-crypto: Hermes' `crypto` global is not reliable across all OS versions.
 function generateId(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  const hex = Array.from(bytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20, 32),
-  ].join('-');
+  return Crypto.randomUUID();
 }
 
 class SessionManager {

@@ -87,13 +87,21 @@ function decrypt(stored: string): string | null {
   // We don't persist a separate "is-encrypted" flag per record; we rely on
   // the cached encryption-available flag at read time. If a user moves the
   // electron-store DB between machines with/without a keyring, the worst
-  // case is a corrupt-looking token which authManager will treat as a 401
-  // and wipe.
+  // case is a corrupt-looking token which we wipe here so the next cold
+  // start doesn't re-warn forever.
   if (!isEncryptionAvailable()) return stored;
   try {
     return safeStorage.decryptString(Buffer.from(stored, 'base64'));
   } catch (e) {
     logger.warn('[tokenStore] failed to decrypt stored token; wiping', e);
+    try {
+      const s = getStore() as unknown as { set: (k: string, v: unknown) => void };
+      s.set('token', null);
+      s.set('user', null);
+      s.set('expiresAt', null);
+    } catch (wipeErr) {
+      logger.warn('[tokenStore] post-decrypt wipe failed', wipeErr);
+    }
     return null;
   }
 }

@@ -24,12 +24,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isLoading: true,
 
   init: async () => {
-    const stored = await StorageService.getItem<Settings>(STORAGE_KEYS.SETTINGS);
-    if (stored) {
-      // Merge over defaults so fields added in newer builds (e.g. workspaceCode)
-      // don't end up undefined when an older persisted payload is loaded.
-      set({settings: {...DEFAULT_CONFIG, ...stored}, isLoading: false});
-    } else {
+    try {
+      const stored = await StorageService.getItem<Settings>(STORAGE_KEYS.SETTINGS);
+      if (stored) {
+        // Merge over defaults so fields added in newer builds (e.g. workspaceCode)
+        // don't end up undefined when an older persisted payload is loaded.
+        set({settings: {...DEFAULT_CONFIG, ...stored}});
+      }
+    } finally {
+      // Always release the splash gate, even if storage I/O threw — settings
+      // simply remain at defaults rather than stranding the user on a blank
+      // splash screen.
       set({isLoading: false});
     }
   },

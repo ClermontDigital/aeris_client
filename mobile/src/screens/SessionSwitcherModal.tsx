@@ -4,6 +4,7 @@ import Modal from 'react-native-modal';
 import SessionCard from '../components/SessionCard';
 import PinPad from '../components/PinPad';
 import {useSessionStore} from '../stores/sessionStore';
+import {COLORS, FONT_SIZE, SPACING, BORDER_RADIUS} from '../constants/theme';
 
 interface Props {
   visible: boolean;
@@ -52,7 +53,7 @@ const SessionSwitcherModal: React.FC<Props> = ({visible, onClose, onCreateNew}) 
   if (pinForSession) {
     return (
       <Modal isVisible={visible} onBackdropPress={() => setPinForSession(null)} style={styles.modal}>
-        <View style={styles.content}>
+        <View style={styles.pinContent}>
           <PinPad
             title="Enter PIN"
             onSubmit={handlePinSubmit}
@@ -93,14 +94,27 @@ const SessionSwitcherModal: React.FC<Props> = ({visible, onClose, onCreateNew}) 
 };
 
 const styles = StyleSheet.create({
-  modal: {justifyContent: 'center', margin: 20},
-  content: {backgroundColor: '#fff', borderRadius: 12, padding: 20, maxHeight: 400},
-  title: {fontSize: 20, fontWeight: '700', color: '#2c3e50', marginBottom: 12},
+  modal: {justifyContent: 'center', margin: SPACING.lg - 4},
+  content: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg - 4,
+    maxHeight: 400,
+  },
+  // PinPad supplies its own navy card, so the outer wrapper here is
+  // transparent / flush.
+  pinContent: {alignItems: 'center'},
+  title: {fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.sm + 4},
   scrollView: {flexGrow: 0},
-  buttons: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16},
-  newBtn: {backgroundColor: '#27ae60', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8},
-  newText: {color: '#fff', fontWeight: '600'},
-  closeText: {color: '#7f8c8d', fontSize: 15},
+  buttons: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: SPACING.md},
+  newBtn: {
+    backgroundColor: COLORS.crimson,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  newText: {color: COLORS.white, fontWeight: '600'},
+  closeText: {color: COLORS.textMuted, fontSize: FONT_SIZE.md + 1},
 });
 
 export default SessionSwitcherModal;

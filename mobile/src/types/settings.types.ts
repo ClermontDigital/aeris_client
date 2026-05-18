@@ -8,4 +8,5 @@ export interface Settings {
   relayUrl?: string;
   connectionMode?: ConnectionMode;
   workspaceCode?: string;
+  hapticsEnabled?: boolean;
 }
