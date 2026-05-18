@@ -53,110 +53,66 @@ export function getState(): AuthState {
   return state;
 }
 
-// Captured so that auth:get-state can await an in-flight initialize()
-// before responding. Without this, the renderer's first read can race
-// against the relay validation call and receive {initialized: false},
-// then miss the subsequent state-changed event and stay stuck on the
-// "Starting Aeris…" splash forever.
+// initializePromise lets callers await the cold-start path; auth:get-state
+// awaits this directly so renderer reads can never race ahead of the
+// optimistic-session setState (which is the only point where isAuthenticated
+// flips from the default false to true on restore).
 let initializePromise: Promise<void> | null = null;
-// #M3 — auth:get-state awaits this rather than the full initializePromise
-// so the renderer leaves the splash as soon as the optimistic session is
-// in place (not after the slow-relay validation round-trip).
-let readyPromise: Promise<void> | null = null;
-let resolveReady: (() => void) | null = null;
-
-function markReady(): void {
-  if (resolveReady) {
-    resolveReady();
-    resolveReady = null;
-  }
-}
 
 export function initialize(): Promise<void> {
   if (!initializePromise) {
-    if (!readyPromise) {
-      readyPromise = new Promise<void>((res) => {
-        resolveReady = res;
-      });
-    }
     initializePromise = doInitialize();
   }
   return initializePromise;
 }
 
 async function doInitialize(): Promise<void> {
-  // try/finally so readyPromise resolves on every exit path — including the
-  // 401 wipe and the network-error branch. Without this, a cold-start whose
-  // persisted token gets rejected (or a synchronous throw before markReady)
-  // leaves auth:get-state pending forever and the renderer stuck on splash.
+  // Pull persisted session.
+  const settings = settingsStore.get();
+  state = {
+    ...state,
+    workspaceCode: settings.workspaceCode,
+  };
+
+  let token: string | null = null;
+  let user: AuthUserSnapshot | null = null;
+  let expiresAt: string | null = null;
   try {
-    // Pull persisted session.
-    const settings = settingsStore.get();
-    state = {
-      ...state,
-      workspaceCode: settings.workspaceCode,
-    };
-
-    let token: string | null = null;
-    let user: AuthUserSnapshot | null = null;
-    let expiresAt: string | null = null;
-    try {
-      token = await tokenStore.getToken();
-      user = await tokenStore.getUser();
-      expiresAt = await tokenStore.getExpiresAt();
-    } catch (e) {
-      logger.warn('[authManager] tokenStore read failed', (e as Error)?.message);
-    }
-
-    // Wire 401 -> wipe session.
-    setOnUnauthorized(() => {
-      void handleUnauthorized();
-    });
-
-    if (!token) {
-      setState({ initialized: true, isAuthenticated: false, user: null, expiresAt: null, errorKind: null });
-      return;
-    }
-
-    // Token present — set on client.
-    getRelayClient().setAuthToken(token);
-
-    // #M3 — Mark initialized + flip the optimistic session immediately so
-    // the renderer leaves the splash without waiting on the relay validation
-    // round-trip (which can be ~23 s with RELAY_BUFFER_MS on a slow server).
-    // The validation runs in the background and either confirms the
-    // session, fires a 401 wipe, or leaves errorKind: 'network' for the
-    // banner.
-    setState({
-      initialized: true,
-      isAuthenticated: true,
-      user,
-      expiresAt,
-      errorKind: null,
-    });
-    markReady();
-
-    try {
-      await getRelayClient().getDailySummary();
-      // Confirmed — clear any transient error. State already reflects auth.
-      setState({ errorKind: null });
-      logger.info('[authManager] session restored');
-    } catch (err) {
-      const e = err as Error & { status?: number };
-      if (e?.status === 401) {
-        // handleUnauthorized() already wiped state via onUnauthorized; tag
-        // the errorKind for the renderer's "session expired" copy.
-        setState({ errorKind: 'expired' });
-        return;
-      }
-      // Network error — keep optimistic session so the user isn't bounced
-      // to LoginScreen on a flaky cold start.
-      logger.warn('[authManager] initial validation failed (non-401); keeping token', e?.message);
-      setState({ errorKind: 'network' });
-    }
-  } finally {
-    markReady();
+    token = await tokenStore.getToken();
+    user = await tokenStore.getUser();
+    expiresAt = await tokenStore.getExpiresAt();
+  } catch (e) {
+    logger.warn('[authManager] tokenStore read failed', (e as Error)?.message);
   }
+
+  // Wire 401 -> wipe session. From here on, ANY relay call (renderer or
+  // main) that returns 401 routes through handleUnauthorized() to wipe
+  // the session and tag errorKind: 'expired' for the LoginScreen banner.
+  setOnUnauthorized(() => {
+    void handleUnauthorized();
+  });
+
+  if (!token) {
+    setState({ initialized: true, isAuthenticated: false, user: null, expiresAt: null, errorKind: null });
+    return;
+  }
+
+  // Token present — apply it to the client and flip auth optimistically.
+  // We deliberately do NOT validate by firing a probe call here: the
+  // renderer's first real query (Dashboard's getDailySummary, etc.) will
+  // either succeed or 401, and the onUnauthorized wiring handles the 401
+  // path. Probing here previously caused a duplicate cold-start fetch
+  // whose transient relay-edge 5xx surfaced as a spurious "Couldn't reach
+  // the server" banner even though the session was valid.
+  getRelayClient().setAuthToken(token);
+  setState({
+    initialized: true,
+    isAuthenticated: true,
+    user,
+    expiresAt,
+    errorKind: null,
+  });
+  logger.info('[authManager] session restored (optimistic)');
 }
 
 async function persistSession(
@@ -267,9 +223,11 @@ export async function handleUnauthorized(): Promise<void> {
 
 export function registerAuthIpc(): void {
   safeHandle(IPC_CHANNELS.AUTH_GET_STATE, async () => {
-    // Only wait for the optimistic-session phase, not the slow relay
-    // validation. See #M3 above.
-    if (readyPromise) await readyPromise;
+    // Idempotently kick + await initialize() so the IPC handler can never
+    // out-race the boot ordering in main/index.ts. If initialize() has
+    // already been called (the normal path), this just awaits the
+    // memoised promise; if it somehow hasn't, this drives it.
+    await initialize();
     return getState();
   });
   safeHandle(IPC_CHANNELS.AUTH_LOGIN, (_e, req) => login(req as LoginRequest));
@@ -279,8 +237,6 @@ export function registerAuthIpc(): void {
 // Test-only.
 export function _resetForTests(): void {
   initializePromise = null;
-  readyPromise = null;
-  resolveReady = null;
   state = {
     initialized: false,
     isAuthenticated: false,

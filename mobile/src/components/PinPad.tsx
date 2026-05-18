@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform} from 'react-native';
+import {COLORS, FONT_SIZE, SPACING, BORDER_RADIUS} from '../constants/theme';
 
 interface PinPadProps {
   title: string;
@@ -62,19 +63,27 @@ const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
   );
 };
 
+// PinPad uses a self-contained navy card so it reads correctly whether it's
+// rendered on a navy lockOverlay (MainScreen) or inside a white modal
+// (SessionSwitcher / SessionCreate). Cream text + glass keys on navy.
 const styles = StyleSheet.create({
-  container: {alignItems: 'center', padding: 24},
-  title: {fontSize: 20, fontWeight: '600', color: '#2c3e50', marginBottom: 20},
-  dotsRow: {flexDirection: 'row', gap: 16, marginBottom: 12},
+  container: {
+    alignItems: 'center',
+    padding: SPACING.lg,
+    backgroundColor: COLORS.navy,
+    borderRadius: BORDER_RADIUS.xl,
+  },
+  title: {fontSize: FONT_SIZE.xl, fontWeight: '600', color: COLORS.textOnDark, marginBottom: SPACING.lg},
+  dotsRow: {flexDirection: 'row', gap: SPACING.md, marginBottom: SPACING.sm + 4},
   dot: {
     width: 18,
     height: 18,
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: '#2c3e50',
+    borderColor: COLORS.textOnDark,
   },
-  dotFilled: {backgroundColor: '#2c3e50'},
-  error: {color: '#e74c3c', fontSize: 14, marginBottom: 12},
+  dotFilled: {backgroundColor: COLORS.textOnDark},
+  error: {color: COLORS.dangerLight, fontSize: FONT_SIZE.md, marginBottom: SPACING.sm + 4},
   grid: {flexDirection: 'row', flexWrap: 'wrap', width: 240, justifyContent: 'center'},
   key: {
     width: 72,
@@ -82,13 +91,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     margin: 4,
-    borderRadius: 8,
-    backgroundColor: '#ecf0f1',
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   emptyKey: {width: 72, height: 56, margin: 4},
-  keyText: {fontSize: 22, fontWeight: '600', color: '#2c3e50'},
-  cancelBtn: {marginTop: 16},
-  cancelText: {color: '#e74c3c', fontSize: 16},
+  keyText: {fontSize: 22, fontWeight: '600', color: COLORS.textOnDark},
+  cancelBtn: {marginTop: SPACING.md},
+  cancelText: {color: COLORS.textOnDark, fontSize: FONT_SIZE.lg, textDecorationLine: 'underline'},
 });
 
 export default PinPad;

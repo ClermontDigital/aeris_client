@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -7,21 +7,38 @@ import {
   StyleSheet,
   ActivityIndicator,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
+import type {CompositeNavigationProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import * as Haptics from 'expo-haptics';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
+import {Ionicons} from '@expo/vector-icons';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
+import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
+import ErrorBanner from '../components/ErrorBanner';
 import type {PaymentMethod} from '../types/api.types';
-import type {QuickSaleStackParamList} from '../types/navigation.types';
+import type {
+  AppTabParamList,
+  QuickSaleStackParamList,
+} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
-type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
-
-const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
+type NavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<QuickSaleStackParamList, 'Checkout'>,
+  BottomTabNavigationProp<AppTabParamList>
+>;
 
 const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   {code: 'cash', name: 'Cash', requires_reference: false},
@@ -37,8 +54,17 @@ interface SaleResult {
 
 export default function CheckoutScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const {items, customerId, discountCents, notes, getTotalCents, getItemCount, clear} =
-    useCartStore();
+  const haptics = useHaptics();
+  const {
+    items,
+    customerId,
+    customerName,
+    discountCents,
+    notes,
+    getTotalCents,
+    getItemCount,
+    clear,
+  } = useCartStore();
 
   const totalCents = getTotalCents();
   const itemCount = getItemCount();
@@ -46,6 +72,11 @@ export default function CheckoutScreen() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
     DEFAULT_PAYMENT_METHODS,
   );
+  const [paymentMethodsState, setPaymentMethodsState] = useState<
+    'loading' | 'live' | 'fallback'
+  >('loading');
+  const paymentMethodsStateRef = useRef(paymentMethodsState);
+  paymentMethodsStateRef.current = paymentMethodsState;
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [amountTendered, setAmountTendered] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,19 +84,38 @@ export default function CheckoutScreen() {
   const [saleResult, setSaleResult] = useState<SaleResult | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Load payment methods
-  useEffect(() => {
-    (async () => {
-      try {
-        const methods = await ApiClient.getPaymentMethods();
-        if (methods.length > 0) {
-          setPaymentMethods(methods);
-        }
-      } catch {
-        // Fall back to defaults
+  // Load payment methods. Surfacing the fallback state lets the operator
+  // know the workspace's customised method list isn't loaded — important
+  // when a deployment has e.g. 'EFTPOS', 'GiftCard' beyond cash/card. We
+  // block sale completion in fallback because the hard-coded codes
+  // (cash/card/account) aren't guaranteed valid for every deployment;
+  // submitting an unknown method would be a server-side validation fail
+  // mid-sale. Tap-to-retry covers the transient-network case.
+  const loadPaymentMethods = useCallback(async () => {
+    const wasFallback =
+      paymentMethodsStateRef.current === 'fallback';
+    setPaymentMethodsState('loading');
+    try {
+      const methods = await ApiClient.getPaymentMethods();
+      if (methods.length > 0) {
+        setPaymentMethods(methods);
+        setPaymentMethodsState('live');
+        return;
       }
-    })();
-  }, []);
+      setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+      setPaymentMethodsState('fallback');
+      if (!wasFallback) haptics.error();
+    } catch (e) {
+      console.warn('Failed to load payment methods, using defaults:', e);
+      setPaymentMethods(DEFAULT_PAYMENT_METHODS);
+      setPaymentMethodsState('fallback');
+      if (!wasFallback) haptics.error();
+    }
+  }, [haptics]);
+
+  useEffect(() => {
+    loadPaymentMethods();
+  }, [loadPaymentMethods]);
 
   const tenderedCents = Math.round(parseFloat(amountTendered || '0') * 100);
   const changeCents =
@@ -74,12 +124,14 @@ export default function CheckoutScreen() {
       : 0;
 
   const canComplete =
+    paymentMethodsState === 'live' &&
     selectedMethod !== null &&
     (selectedMethod !== 'cash' || tenderedCents >= totalCents);
 
   const handleCompleteSale = useCallback(async () => {
     if (!selectedMethod) return;
 
+    haptics.medium();
     setIsSubmitting(true);
     setError(null);
 
@@ -88,6 +140,9 @@ export default function CheckoutScreen() {
         product_id: item.product.id,
         quantity: item.quantity,
         unit_price_cents: item.unit_price_cents,
+        // Thread per-line tax_rate so RelayClient.createSale flags
+        // gst_applicable correctly for GST-free SKUs.
+        tax_rate: item.product.tax_rate,
         discount_cents: item.discount_cents || undefined,
       }));
 
@@ -106,15 +161,16 @@ export default function CheckoutScreen() {
         notes: notes || undefined,
       });
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       setSaleResult(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sale failed';
+      haptics.error();
       setError(msg);
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedMethod, items, totalCents, customerId, discountCents, notes]);
+  }, [selectedMethod, items, totalCents, customerId, discountCents, notes, haptics]);
 
   const handlePrintReceipt = useCallback(async () => {
     if (!saleResult) return;
@@ -124,21 +180,34 @@ export default function CheckoutScreen() {
       const html = buildReceiptHtml(receipt);
       await PrintService.printHtml(html);
     } catch {
+      haptics.error();
       setError('Failed to print receipt');
     } finally {
       setIsPrinting(false);
     }
-  }, [saleResult]);
+  }, [saleResult, haptics]);
 
   const handleNewSale = useCallback(() => {
     clear();
     navigation.navigate('ProductGrid');
   }, [clear, navigation]);
 
+  const handleViewTransaction = useCallback(() => {
+    if (!saleResult) return;
+    haptics.light();
+    // Clear before cross-tab nav: the sale is finalised and the user is
+    // leaving the success screen, so a stale cart shouldn't survive.
+    clear();
+    navigation.navigate('Transactions', {
+      screen: 'SaleDetail',
+      params: {saleId: saleResult.sale_id},
+    });
+  }, [saleResult, haptics, clear, navigation]);
+
   // Success view
   if (saleResult) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <ScrollView contentContainerStyle={styles.successContainer}>
           <View style={styles.successCard}>
             <Text style={styles.successIcon}>&#10003;</Text>
@@ -163,6 +232,13 @@ export default function CheckoutScreen() {
               )}
             </TouchableOpacity>
             <TouchableOpacity
+              style={styles.viewTransactionButton}
+              onPress={handleViewTransaction}>
+              <Text style={styles.viewTransactionButtonText}>
+                View Transaction
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.newSaleButton}
               onPress={handleNewSale}>
               <Text style={styles.newSaleButtonText}>New Sale</Text>
@@ -174,8 +250,45 @@ export default function CheckoutScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled">
+        {/* Customer */}
+        <View style={styles.customerRow}>
+          <View style={styles.customerIconWrap}>
+            <Ionicons
+              name="person-outline"
+              size={ICON_SIZE.action}
+              color={COLORS.crimson}
+            />
+          </View>
+          <View style={styles.customerTextWrap}>
+            <Text style={styles.customerLabel}>Customer</Text>
+            <Text style={styles.customerName} numberOfLines={1}>
+              {customerId != null && customerName ? customerName : 'Walk-in'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.customerChangeBtn}
+            onPress={() => {
+              haptics.light();
+              navigation.navigate('CustomerPicker');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Change customer">
+            <Text style={styles.customerChangeText}>Change</Text>
+            <Ionicons
+              name="chevron-forward"
+              size={ICON_SIZE.action}
+              color={COLORS.accent}
+            />
+          </TouchableOpacity>
+        </View>
+
         {/* Order Summary */}
         <View style={styles.summaryHeader}>
           <Text style={styles.summaryTotal}>
@@ -188,28 +301,50 @@ export default function CheckoutScreen() {
 
         {/* Payment Methods */}
         <Text style={styles.sectionTitle}>Payment Method</Text>
+        {paymentMethodsState === 'fallback' ? (
+          <TouchableOpacity
+            style={styles.methodsFallbackChip}
+            onPress={loadPaymentMethods}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading payment methods">
+            <Ionicons
+              name="cloud-offline-outline"
+              size={ICON_SIZE.action}
+              color={COLORS.warning}
+              style={styles.methodsFallbackIcon}
+            />
+            <Text style={styles.methodsFallbackText}>
+              Using offline defaults — tap to retry
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         <View style={styles.methodGrid}>
-          {paymentMethods.map(method => (
-            <TouchableOpacity
-              key={method.code}
-              style={[
-                styles.methodButton,
-                selectedMethod === method.code && styles.methodButtonActive,
-              ]}
-              onPress={() => {
-                setSelectedMethod(method.code);
-                setAmountTendered('');
-              }}>
-              <Text
+          {paymentMethods.map(method => {
+            const selected = selectedMethod === method.code;
+            return (
+              <TouchableOpacity
+                key={method.code}
                 style={[
-                  styles.methodButtonText,
-                  selectedMethod === method.code &&
-                    styles.methodButtonTextActive,
-                ]}>
-                {method.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                  styles.methodButton,
+                  selected && styles.methodButtonActive,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Payment method ${method.name}`}
+                accessibilityState={{selected}}
+                onPress={() => {
+                  setSelectedMethod(method.code);
+                  setAmountTendered('');
+                }}>
+                <Text
+                  style={[
+                    styles.methodButtonText,
+                    selected && styles.methodButtonTextActive,
+                  ]}>
+                  {method.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Cash: Amount Tendered */}
@@ -242,11 +377,14 @@ export default function CheckoutScreen() {
         )}
 
         {/* Error */}
-        {error && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{error}</Text>
+        {error ? (
+          <View style={styles.errorWrap}>
+            <ErrorBanner
+              message={error}
+              onDismiss={() => setError(null)}
+            />
           </View>
-        )}
+        ) : null}
 
         {/* Complete Sale Button */}
         <TouchableOpacity
@@ -263,8 +401,18 @@ export default function CheckoutScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function buildReceiptHtml(receipt: {
@@ -281,12 +429,12 @@ function buildReceiptHtml(receipt: {
   const itemRows = receipt.items
     .map(
       i =>
-        `<tr><td>${i.name}</td><td>${i.quantity}</td><td>${i.unit_price}</td><td>${i.line_total}</td></tr>`,
+        `<tr><td>${escapeHtml(i.name)}</td><td>${i.quantity}</td><td>${escapeHtml(i.unit_price)}</td><td>${escapeHtml(i.line_total)}</td></tr>`,
     )
     .join('');
 
   const paymentRows = receipt.payments
-    .map(p => `<p>${p.method}: ${p.amount}</p>`)
+    .map(p => `<p>${escapeHtml(p.method)}: ${escapeHtml(p.amount)}</p>`)
     .join('');
 
   return `
@@ -302,9 +450,9 @@ function buildReceiptHtml(receipt: {
       .total-row td { font-size: 14px; font-weight: bold; }
     </style></head>
     <body>
-      <h2>${receipt.business_name}</h2>
-      <p class="info">Sale #${receipt.sale_number}</p>
-      <p class="info">${receipt.date}</p>
+      <h2>${escapeHtml(receipt.business_name)}</h2>
+      <p class="info">Sale #${escapeHtml(receipt.sale_number)}</p>
+      <p class="info">${escapeHtml(receipt.date)}</p>
       <div class="sep"></div>
       <table>
         <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr>
@@ -312,13 +460,13 @@ function buildReceiptHtml(receipt: {
       </table>
       <div class="sep"></div>
       <table class="totals">
-        <tr><td>Subtotal</td><td>${receipt.subtotal}</td></tr>
-        <tr><td>Tax</td><td>${receipt.tax}</td></tr>
-        <tr class="total-row"><td>Total</td><td>${receipt.total}</td></tr>
+        <tr><td>Subtotal</td><td>${escapeHtml(receipt.subtotal)}</td></tr>
+        <tr><td>Tax</td><td>${escapeHtml(receipt.tax)}</td></tr>
+        <tr class="total-row"><td>Total</td><td>${escapeHtml(receipt.total)}</td></tr>
       </table>
       <div class="sep"></div>
       ${paymentRows}
-      ${receipt.served_by ? `<p class="info">Served by: ${receipt.served_by}</p>` : ''}
+      ${receipt.served_by ? `<p class="info">Served by: ${escapeHtml(receipt.served_by)}</p>` : ''}
     </body>
     </html>
   `;
@@ -328,6 +476,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  keyboardView: {
+    flex: 1,
   },
   scrollContent: {
     padding: SPACING.md,
@@ -345,6 +496,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   summaryItems: {
     color: COLORS.textMuted,
@@ -364,6 +516,25 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: SPACING.sm,
     marginBottom: SPACING.lg,
+  },
+  methodsFallbackChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.warning,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  methodsFallbackIcon: {
+    marginRight: SPACING.xs,
+  },
+  methodsFallbackText: {
+    color: COLORS.warning,
+    fontSize: FONT_SIZE.xs,
   },
   methodButton: {
     flex: 1,
@@ -402,6 +573,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: SPACING.sm,
+    fontVariant: ['tabular-nums'],
   },
   changeDisplay: {
     flexDirection: 'row',
@@ -420,24 +592,19 @@ const styles = StyleSheet.create({
     color: COLORS.success,
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   insufficientText: {
     color: COLORS.warning,
     fontSize: FONT_SIZE.sm,
     textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
-  errorBanner: {
-    backgroundColor: COLORS.danger,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.md,
+  errorWrap: {
     marginBottom: SPACING.md,
   },
-  errorText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
-  },
   completeSaleButton: {
-    backgroundColor: COLORS.success,
+    backgroundColor: COLORS.crimson, // brand primary CTA (was COLORS.success — green looked like Stripe)
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.md,
     alignItems: 'center',
@@ -447,7 +614,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   completeSaleText: {
-    color: COLORS.black,
+    color: COLORS.white,
     fontSize: FONT_SIZE.lg,
     fontWeight: '700',
   },
@@ -481,12 +648,14 @@ const styles = StyleSheet.create({
     color: COLORS.accent,
     fontSize: FONT_SIZE.xl,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   saleTotal: {
     color: COLORS.accent,
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
     marginTop: SPACING.sm,
+    fontVariant: ['tabular-nums'],
   },
   successActions: {
     gap: SPACING.md,
@@ -512,5 +681,64 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontWeight: '700',
+  },
+  viewTransactionButton: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
+  viewTransactionButtonText: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '700',
+  },
+  customerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  customerIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.cream,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.md,
+  },
+  customerTextWrap: {flex: 1},
+  customerLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  customerName: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  customerChangeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
+  customerChangeText: {
+    color: COLORS.accent,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '700',
+    marginRight: 2,
   },
 });

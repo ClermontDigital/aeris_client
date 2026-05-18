@@ -1,5 +1,6 @@
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {BottomTabScreenProps} from '@react-navigation/bottom-tabs';
+import type {NavigatorScreenParams} from '@react-navigation/native';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -13,20 +14,37 @@ export type AuthStackParamList = {
 export type AppTabParamList = {
   Dashboard: undefined;
   QuickSale: undefined;
-  Scanner: undefined;
-  Transactions: undefined;
+  Items: undefined;
+  Customers: undefined;
+  Transactions: NavigatorScreenParams<TransactionsStackParamList> | undefined;
   ERP: undefined;
 };
 
 export type QuickSaleStackParamList = {
   ProductGrid: undefined;
+  // mode = 'cart' (default): show found-product card with Add-to-Cart button.
+  Scanner: {mode?: 'cart'} | undefined;
   Cart: undefined;
   Checkout: undefined;
+  CustomerPicker: undefined;
 };
 
 export type TransactionsStackParamList = {
   TransactionList: undefined;
+  SaleDetail: {saleId: number};
   Receipt: {saleId: number};
+};
+
+export type ItemsStackParamList = {
+  ItemsList: undefined;
+  ProductDetail: {productId: number};
+  // mode = 'detail': on found product, replace Scanner with ProductDetail.
+  Scanner: {mode: 'detail'};
+};
+
+export type CustomersStackParamList = {
+  CustomersList: undefined;
+  CustomerDetail: {customerId: number};
 };
 
 // Screen prop types

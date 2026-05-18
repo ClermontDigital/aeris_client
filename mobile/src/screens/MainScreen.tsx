@@ -17,6 +17,7 @@ import {useSessionTimeout} from '../hooks/useSessionTimeout';
 import {useSessionStore} from '../stores/sessionStore';
 import ConnectionService from '../services/ConnectionService';
 import PrintService from '../services/PrintService';
+import {COLORS} from '../constants/theme';
 
 const MainScreen: React.FC = () => {
   const {settings} = useSettings();
@@ -191,11 +192,11 @@ const MainScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#003049'},
+  container: {flex: 1, backgroundColor: COLORS.primary},
   webviewContainer: {flex: 1, position: 'relative'},
   lockOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 48, 73, 0.95)',
+    backgroundColor: COLORS.modalBg,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 100,

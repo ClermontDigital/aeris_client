@@ -1,4 +1,4 @@
-import React, {useCallback} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -7,21 +7,32 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {Ionicons} from '@expo/vector-icons';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  BORDER_RADIUS,
+  ICON_SIZE,
+} from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
+import {useHaptics} from '../hooks/useHaptics';
+import EmptyState from '../components/EmptyState';
 import type {CartItem} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
+import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
 
-const formatCurrency = (cents: number) => '$' + (cents / 100).toFixed(2);
-
 export default function CartScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const haptics = useHaptics();
   const {
     items,
     discountCents,
@@ -42,6 +53,78 @@ export default function CartScreen() {
   const total = getTotalCents();
   const itemCount = getItemCount();
 
+  // The discount input is dollars-as-text on screen but the store holds
+  // cents. We mirror the store value into local state so the user can type
+  // freely (decimal in progress, intermediate empty string) without the
+  // store clobbering each keystroke. Commit on blur/submit.
+  const [discountInput, setDiscountInput] = useState<string>(
+    discountCents > 0 ? (discountCents / 100).toFixed(2) : '',
+  );
+  const [discountOverCap, setDiscountOverCap] = useState(false);
+  const overCapHapticFiredRef = useRef(false);
+  // If another path resets discountCents (e.g. clear cart), reflect it.
+  useEffect(() => {
+    setDiscountInput(discountCents > 0 ? (discountCents / 100).toFixed(2) : '');
+  }, [discountCents]);
+
+  const handleDiscountChange = useCallback(
+    (text: string) => {
+      setDiscountInput(text);
+      const trimmed = text.trim();
+      if (trimmed === '') {
+        setDiscountOverCap(false);
+        overCapHapticFiredRef.current = false;
+        return;
+      }
+      const dollars = parseFloat(trimmed);
+      if (!Number.isFinite(dollars) || dollars < 0) {
+        setDiscountOverCap(false);
+        overCapHapticFiredRef.current = false;
+        return;
+      }
+      const requestedCents = Math.round(dollars * 100);
+      const state = useCartStore.getState();
+      const cap = state.getSubtotalCents() + state.getTaxCents();
+      if (requestedCents > cap) {
+        if (!overCapHapticFiredRef.current) {
+          haptics.error();
+          overCapHapticFiredRef.current = true;
+        }
+        setDiscountOverCap(true);
+      } else {
+        setDiscountOverCap(false);
+        overCapHapticFiredRef.current = false;
+      }
+    },
+    [haptics],
+  );
+
+  const commitDiscount = useCallback(() => {
+    const trimmed = discountInput.trim();
+    if (trimmed === '') {
+      setDiscount(0);
+      setDiscountOverCap(false);
+      overCapHapticFiredRef.current = false;
+      return;
+    }
+    const dollars = parseFloat(trimmed);
+    if (!Number.isFinite(dollars) || dollars < 0) {
+      setDiscount(0);
+      setDiscountInput('');
+      setDiscountOverCap(false);
+      overCapHapticFiredRef.current = false;
+      return;
+    }
+    const requested = Math.round(dollars * 100);
+    setDiscount(requested);
+    const after = useCartStore.getState().discountCents;
+    if (after !== requested) {
+      setDiscountInput(after > 0 ? (after / 100).toFixed(2) : '');
+    }
+    setDiscountOverCap(false);
+    overCapHapticFiredRef.current = false;
+  }, [discountInput, setDiscount]);
+
   const handleClearCart = useCallback(() => {
     Alert.alert(
       'Clear Cart',
@@ -54,7 +137,20 @@ export default function CartScreen() {
   }, [clear]);
 
   const handleCheckout = useCallback(() => {
+    haptics.medium();
     navigation.navigate('Checkout');
+  }, [navigation, haptics]);
+
+  const handleBackToProducts = useCallback(() => {
+    // Pop back if we have history (came from ProductGrid → Cart navigate),
+    // otherwise jump to ProductGrid directly. Both land on the same screen
+    // either way; popping preserves any existing scroll/search state on
+    // ProductGrid.
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('ProductGrid');
+    }
   }, [navigation]);
 
   const handleSwipeDelete = useCallback(
@@ -89,42 +185,77 @@ export default function CartScreen() {
         <View style={styles.quantityStepper}>
           <TouchableOpacity
             style={styles.stepperButton}
-            onPress={() =>
-              updateQuantity(item.product.id, item.quantity - 1)
-            }>
-            <Text style={styles.stepperButtonText}>-</Text>
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            accessibilityRole="button"
+            accessibilityLabel="Decrease quantity"
+            onPress={() => {
+              haptics.light();
+              updateQuantity(item.product.id, item.quantity - 1);
+            }}>
+            <Ionicons
+              name="remove"
+              size={ICON_SIZE.action}
+              color={COLORS.text}
+            />
           </TouchableOpacity>
           <Text style={styles.quantityText}>{item.quantity}</Text>
           <TouchableOpacity
             style={styles.stepperButton}
-            onPress={() =>
-              updateQuantity(item.product.id, item.quantity + 1)
-            }>
-            <Text style={styles.stepperButtonText}>+</Text>
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            accessibilityRole="button"
+            accessibilityLabel="Increase quantity"
+            onPress={() => {
+              haptics.light();
+              updateQuantity(item.product.id, item.quantity + 1);
+            }}>
+            <Ionicons name="add" size={ICON_SIZE.action} color={COLORS.text} />
           </TouchableOpacity>
         </View>
         <TouchableOpacity
           style={styles.deleteButton}
-          onPress={() => handleSwipeDelete(item.product.id)}>
-          <Text style={styles.deleteButtonText}>X</Text>
+          accessibilityRole="button"
+          accessibilityLabel="Remove item"
+          onPress={() => {
+            haptics.light();
+            handleSwipeDelete(item.product.id);
+          }}>
+          <Ionicons
+            name="trash-outline"
+            size={ICON_SIZE.action}
+            color={COLORS.danger}
+          />
         </TouchableOpacity>
       </View>
     );
   };
 
   const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyText}>Your cart is empty</Text>
-      <Text style={styles.emptySubtext}>
-        Add products from the Quick Sale screen
-      </Text>
-    </View>
+    <EmptyState
+      icon="cart-outline"
+      title="Your cart is empty"
+      description="Add products from the Quick Sale screen"
+    />
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={handleBackToProducts}
+          accessibilityRole="button"
+          accessibilityLabel="Back to products">
+          <Ionicons
+            name="chevron-back"
+            size={ICON_SIZE.action}
+            color={COLORS.text}
+          />
+          <Text style={styles.backText}>Products</Text>
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Cart</Text>
         <Text style={styles.headerCount}>
           {itemCount} {itemCount === 1 ? 'item' : 'items'}
@@ -138,24 +269,29 @@ export default function CartScreen() {
         keyExtractor={item => String(item.product.id)}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={renderEmpty}
+        keyboardShouldPersistTaps="handled"
       />
 
       {/* Discount & Notes */}
       {items.length > 0 && (
         <View style={styles.inputsSection}>
           <View style={styles.inputRow}>
-            <Text style={styles.inputLabel}>Discount (cents)</Text>
+            <Text style={styles.inputLabel}>Discount ($)</Text>
             <TextInput
               style={styles.input}
-              value={discountCents > 0 ? String(discountCents) : ''}
-              onChangeText={text => {
-                const val = parseInt(text, 10);
-                setDiscount(isNaN(val) ? 0 : val);
-              }}
-              keyboardType="numeric"
-              placeholder="0"
+              value={discountInput}
+              onChangeText={handleDiscountChange}
+              onBlur={commitDiscount}
+              onSubmitEditing={commitDiscount}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
               placeholderTextColor={COLORS.textDim}
             />
+            {discountOverCap ? (
+              <Text style={styles.discountHelper}>
+                Max {formatCurrency(subtotal + tax)}
+              </Text>
+            ) : null}
           </View>
           <View style={styles.inputRow}>
             <Text style={styles.inputLabel}>Notes</Text>
@@ -185,12 +321,13 @@ export default function CartScreen() {
           {discountCents > 0 && (
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Discount</Text>
-              <Text style={[styles.summaryValue, {color: COLORS.danger}]}>
-                -{formatCurrency(discountCents)}
+              <Text style={[styles.summaryValue, styles.summaryDiscountValue]}>
+                −{formatCurrency(discountCents)}
               </Text>
             </View>
           )}
-          <View style={[styles.summaryRow, styles.totalRow]}>
+          <View style={styles.summaryDivider} />
+          <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{formatCurrency(total)}</Text>
           </View>
@@ -210,6 +347,7 @@ export default function CartScreen() {
           </View>
         </View>
       )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -219,19 +357,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  keyboardView: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.md,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    gap: SPACING.md,
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.xs,
+    paddingRight: SPACING.sm,
+    marginLeft: -SPACING.xs, // visual alignment to the screen edge
+  },
+  backText: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '500',
   },
   headerTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
+    flex: 1,
   },
   headerCount: {
     color: COLORS.textMuted,
@@ -269,6 +423,7 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     fontSize: FONT_SIZE.sm,
     marginTop: SPACING.xs,
+    fontVariant: ['tabular-nums'],
   },
   quantityStepper: {
     flexDirection: 'row',
@@ -278,15 +433,11 @@ const styles = StyleSheet.create({
     borderColor: COLORS.toolbarBtnBorder,
     borderRadius: BORDER_RADIUS.md,
     overflow: 'hidden',
+    gap: SPACING.xs,
   },
   stepperButton: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-  },
-  stepperButtonText: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    paddingVertical: SPACING.md,
   },
   quantityText: {
     color: COLORS.text,
@@ -294,35 +445,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     minWidth: 28,
     textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
   deleteButton: {
     marginLeft: SPACING.sm,
     padding: SPACING.sm,
   },
-  deleteButtonText: {
-    color: COLORS.danger,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '700',
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: SPACING.xxl,
-  },
-  emptyText: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    color: COLORS.textDim,
-    fontSize: FONT_SIZE.sm,
-    marginTop: SPACING.sm,
-  },
   inputsSection: {
     paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
+    paddingBottom: SPACING.md,
   },
   inputRow: {
     marginBottom: SPACING.sm,
@@ -346,8 +477,13 @@ const styles = StyleSheet.create({
     minHeight: 48,
     textAlignVertical: 'top',
   },
+  discountHelper: {
+    color: COLORS.danger,
+    fontSize: FONT_SIZE.xs,
+    marginTop: SPACING.xs,
+  },
   summaryCard: {
-    backgroundColor: COLORS.surfaceHover,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     borderTopLeftRadius: BORDER_RADIUS.xl,
@@ -355,25 +491,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.xl,
+    shadowColor: COLORS.black,
+    shadowOffset: {width: 0, height: -2},
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 4,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: SPACING.sm,
+    alignItems: 'center',
+    paddingVertical: SPACING.xs,
   },
   summaryLabel: {
     color: COLORS.textMuted,
-    fontSize: FONT_SIZE.md,
+    fontSize: FONT_SIZE.sm,
   },
   summaryValue: {
     color: COLORS.text,
-    fontSize: FONT_SIZE.md,
+    fontSize: FONT_SIZE.sm,
+    fontVariant: ['tabular-nums'],
+  },
+  summaryDiscountValue: {
+    color: COLORS.warning,
+    fontWeight: '600',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm,
   },
   totalRow: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: SPACING.sm,
-    marginTop: SPACING.xs,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: SPACING.lg,
   },
   totalLabel: {
@@ -382,9 +534,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   totalValue: {
-    color: COLORS.accent,
-    fontSize: FONT_SIZE.xl,
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   buttonRow: {
     flexDirection: 'row',
