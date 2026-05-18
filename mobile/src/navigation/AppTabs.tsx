@@ -207,40 +207,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'visible',
   },
-  // Cream shoulders flanking the navy tab. Each shoulder is a half-pill
-  // (rounded on both inner-top and inner-bottom corners) so the curve
-  // doesn't terminate at a sharp point. Tall enough to reach roughly
-  // the top of the wordmark so the cream reads at the same vertical
-  // level as the logo.
+  // Cream shoulders flanking the navy island at the bottom of the
+  // header. Each shoulder's inner top corner curves up to meet the
+  // navy tongue, so the navy reads as a continuous downward bulge.
   bottomFlank: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 18,
     bottom: 0,
+    height: 28,
     flexDirection: 'row',
   },
   shoulderLeft: {
     flex: 1,
     backgroundColor: COLORS.background,
-    borderTopRightRadius: 29,
+    borderTopRightRadius: 28,
   },
-  // Narrower than the navy tongue so the shoulder extends INTO the
-  // tongue's top-corner radius area — cream shows through the tongue's
-  // rounded top corners, forming the second curve.
+  // Width tuned tight to the 130pt wordmark — narrower than before so
+  // the cream working area expands on both sides.
   islandSpacer: {
-    width: 130,
+    width: 170,
   },
   shoulderRight: {
     flex: 1,
     backgroundColor: COLORS.background,
-    borderTopLeftRadius: 29,
+    borderTopLeftRadius: 28,
   },
-  // Navy tab that extends below the bar with all four corners rounded.
-  // Top corners cut away to expose the cream shoulder underneath (since
-  // the islandSpacer is narrower than the tongue); together with the
-  // shoulder's top-inner curve this forms an S-shaped cream/navy
-  // boundary that smooths the previously sharp transition.
+  // Navy tab that extends below the bar into the cream body. Sits
+  // behind the wordmark and shares its width with the islandSpacer
+  // above so the upper inverse curve from the shoulders meets the
+  // lower rounded corners as one continuous pill.
   navyTongue: {
     position: 'absolute',
     left: '50%',
@@ -249,8 +245,6 @@ const styles = StyleSheet.create({
     width: 170,
     height: 50,
     backgroundColor: COLORS.navy,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
     borderBottomLeftRadius: 26,
     borderBottomRightRadius: 26,
   },
