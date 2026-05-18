@@ -101,77 +101,52 @@ describe('authManager', () => {
     expect(c.getAuthToken()).toBeNull();
   });
 
-  test('initialize() does not wait on slow relay validation before flipping initialized=true (#M3)', async () => {
-    // Persist a token + user so doInitialize takes the optimistic-session path.
+  test('initialize() restores optimistic session without firing a probe call', async () => {
+    // Persist a token + user so doInitialize takes the restore path.
     await tokenStore.setToken('persisted-token');
     await tokenStore.setUser({ id: 1, name: 'Me', email: 'me@aeris', role: 'cashier' });
     await tokenStore.setExpiresAt('2030-01-01');
 
     const c = getRelayClient();
-    let resolveSummary: ((v: unknown) => void) | null = null;
-    jest.spyOn(c, 'getDailySummary').mockImplementation(
-      () =>
-        new Promise<never>((res) => {
-          resolveSummary = res as (v: unknown) => void;
-        }),
-    );
+    const summarySpy = jest.spyOn(c, 'getDailySummary');
 
-    const initPromise = authManager.initialize();
-    // Give the microtask queue time to drain through the synchronous
-    // tokenStore reads + the immediate setState.
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    // initialize() is still pending on the unresolved getDailySummary,
-    // but state should already reflect optimistic auth.
-    const optimistic = authManager.getState();
-    expect(optimistic.initialized).toBe(true);
-    expect(optimistic.isAuthenticated).toBe(true);
-    expect(optimistic.errorKind).toBeNull();
-
-    // Now resolve the validation — initialize() completes cleanly.
-    resolveSummary!(undefined);
-    await initPromise;
-    expect(authManager.getState().errorKind).toBeNull();
-  });
-
-  test('initialize() with 401 on cold-start still resolves readyPromise (auth:get-state does not hang)', async () => {
-    await tokenStore.setToken('expired-token');
-    await tokenStore.setUser({ id: 1, name: 'Me', email: 'me@aeris', role: 'cashier' });
-    await tokenStore.setExpiresAt('2030-01-01');
-
-    const c = getRelayClient();
-    const err = new Error('expired') as Error & { status: number };
-    err.status = 401;
-    jest.spyOn(c, 'getDailySummary').mockRejectedValue(err);
-
-    // Kick off init in the background.
-    const initPromise = authManager.initialize();
-
-    // auth:get-state must resolve within a tight window even though
-    // getDailySummary rejected — readyPromise has to fire on every branch.
-    const getStateResult = await Promise.race([
-      (async () => {
-        await initPromise;
-        return authManager.getState();
-      })(),
-      new Promise<'timeout'>((res) => setTimeout(() => res('timeout'), 1000)),
-    ]);
-    expect(getStateResult).not.toBe('timeout');
-  });
-
-  test('initialize() validation network error keeps the optimistic session + errorKind=network (#M3)', async () => {
-    await tokenStore.setToken('persisted-token');
-    await tokenStore.setUser({ id: 1, name: 'Me', email: 'me@aeris', role: 'cashier' });
-    await tokenStore.setExpiresAt('2030-01-01');
-
-    const c = getRelayClient();
-    jest.spyOn(c, 'getDailySummary').mockRejectedValue(new Error('offline'));
     await authManager.initialize();
     const s = authManager.getState();
     expect(s.initialized).toBe(true);
     expect(s.isAuthenticated).toBe(true);
-    expect(s.errorKind).toBe('network');
+    expect(s.user?.email).toBe('me@aeris');
+    expect(s.errorKind).toBeNull();
+    expect(c.getAuthToken()).toBe('persisted-token');
+    // The duplicate cold-start validation that previously surfaced as a
+    // spurious "Couldn't reach the server" banner is gone — the renderer's
+    // first real query drives 401 detection via onUnauthorized.
+    expect(summarySpy).not.toHaveBeenCalled();
+  });
+
+  test('initialize() with no persisted token resolves to unauthenticated', async () => {
+    await authManager.initialize();
+    const s = authManager.getState();
+    expect(s.initialized).toBe(true);
+    expect(s.isAuthenticated).toBe(false);
+    expect(s.errorKind).toBeNull();
+    expect(getRelayClient().getAuthToken()).toBeNull();
+  });
+
+  test('auth:get-state IPC awaits initialize() so renderer never reads pre-init state', async () => {
+    await tokenStore.setToken('persisted-token');
+    await tokenStore.setUser({ id: 1, name: 'Me', email: 'me@aeris', role: 'cashier' });
+    await tokenStore.setExpiresAt('2030-01-01');
+
+    authManager.registerAuthIpc();
+    const handler = (ipcMain as unknown as {
+      __invoke: (channel: string) => Promise<unknown>;
+    }).__invoke('auth:get-state');
+    // Even though we never called initialize() directly, the handler must
+    // kick + await it so the returned state is coherent (initialized: true,
+    // isAuthenticated: true).
+    const state = (await handler) as { initialized: boolean; isAuthenticated: boolean };
+    expect(state.initialized).toBe(true);
+    expect(state.isAuthenticated).toBe(true);
   });
 
   test('logout preserves the PIN across login cycles', async () => {
