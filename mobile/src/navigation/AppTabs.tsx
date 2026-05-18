@@ -67,14 +67,17 @@ const AppTabs: React.FC = () => {
 
   return (
     <View style={styles.root}>
-      {/* Navy strip across the device's top safe-area inset. The wordmark
-          is the production Aeris2 light-on-dark logo (sourced from
-          public/images/aeris-logo-light.png) so chrome reads as one
-          brand across web, desktop, and mobile. */}
+      {/* Navy strip across the device's top safe-area inset. A cream
+          "notch" rises from the bottom of the navy area to spotlight
+          the wordmark — the pill spans the navy/cream boundary so its
+          upper half reads as a carved cutout in the header. Inside the
+          pill we render the dark wordmark variant so it stays
+          visible against the cream fill. */}
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View style={styles.topBarRow}>
+          <View style={styles.logoNotch} pointerEvents="none" />
           <Image
-            source={require('../../assets/images/aeris-wordmark.png')}
+            source={require('../../assets/images/aeris-wordmark-dark.png')}
             style={styles.brandWordmark}
             accessibilityIgnoresInvertColors
             accessibilityLabel="Aeris"
@@ -191,16 +194,31 @@ const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.navy},
   topBar: {backgroundColor: COLORS.navy},
   topBarRow: {
-    minHeight: 56,
+    minHeight: 68,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Native asset is 250x73 (3.42 aspect); render at 130x38 so it stays
+  // Cream pill anchored to the bottom edge of the navy bar — the upper
+  // half rises into the navy as a carved notch, the lower half blends
+  // with the cream body underneath so the seam disappears. Width sized
+  // to comfortably enclose the wordmark with padding.
+  logoNotch: {
+    position: 'absolute',
+    left: '50%',
+    bottom: -28,
+    marginLeft: -110,
+    width: 220,
+    height: 56,
+    backgroundColor: COLORS.background,
+    borderRadius: 28,
+  },
+  // Native asset is 2000x612 (3.27 aspect); render at 130x38 so it stays
   // crisp across phone DPIs while leaving room for the safe-area inset
   // and the gear icon on the right.
   brandWordmark: {
     width: 130,
     height: 38,
+    zIndex: 1,
   },
   gearBtn: {
     position: 'absolute',
