@@ -224,23 +224,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     borderTopRightRadius: 29,
-    borderBottomRightRadius: 29,
   },
-  // Width tuned tight to the 130pt wordmark — narrower than before so
-  // the cream working area expands on both sides.
+  // Narrower than the navy tongue so the shoulder extends INTO the
+  // tongue's top-corner radius area — cream shows through the tongue's
+  // rounded top corners, forming the second curve.
   islandSpacer: {
-    width: 170,
+    width: 130,
   },
   shoulderRight: {
     flex: 1,
     backgroundColor: COLORS.background,
     borderTopLeftRadius: 29,
-    borderBottomLeftRadius: 29,
   },
-  // Navy tab that extends below the bar into the cream body. Sits
-  // behind the wordmark and shares its width with the islandSpacer
-  // above so the upper inverse curve from the shoulders meets the
-  // lower rounded corners as one continuous pill.
+  // Navy tab that extends below the bar with all four corners rounded.
+  // Top corners cut away to expose the cream shoulder underneath (since
+  // the islandSpacer is narrower than the tongue); together with the
+  // shoulder's top-inner curve this forms an S-shaped cream/navy
+  // boundary that smooths the previously sharp transition.
   navyTongue: {
     position: 'absolute',
     left: '50%',
@@ -249,6 +249,8 @@ const styles = StyleSheet.create({
     width: 170,
     height: 50,
     backgroundColor: COLORS.navy,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderBottomLeftRadius: 26,
     borderBottomRightRadius: 26,
   },
