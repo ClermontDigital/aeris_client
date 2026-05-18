@@ -1,6 +1,15 @@
-import React, {useState} from 'react';
-import {View, Image, Pressable, StyleSheet, TouchableOpacity, GestureResponderEvent} from 'react-native';
+import React, {useState, useMemo} from 'react';
+import {
+  View,
+  Image,
+  Pressable,
+  StyleSheet,
+  TouchableOpacity,
+  GestureResponderEvent,
+  useWindowDimensions,
+} from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
+import Svg, {Path} from 'react-native-svg';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
@@ -16,15 +25,13 @@ import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
 import {useCartStore} from '../stores/cartStore';
 import {getItemCount} from '@aeris/shared';
-import {COLORS, SPACING, FONT_SIZE} from '../constants/theme';
+import {COLORS, FONT_SIZE} from '../constants/theme';
 import type {AppTabParamList} from '../types/navigation.types';
 
 const Tab = createBottomTabNavigator<AppTabParamList>();
 
 // Custom tab button: thin crimson top stripe marks the active tab so the
-// row keeps a consistent height + baseline. Replaces the prior full-cell
-// crimson fill that visually overpowered inactive tabs and broke
-// alignment per the screenshot feedback.
+// row keeps a consistent height + baseline.
 const TabButton: React.FC<BottomTabBarButtonProps> = ({
   accessibilityState,
   children,
@@ -48,39 +55,74 @@ const TabButton: React.FC<BottomTabBarButtonProps> = ({
   );
 };
 
+// Pendant-shaped tongue: wide shoulders at the top where the wordmark
+// sits, tapering narrower toward the rounded bottom. Each cream cutout
+// is bounded on its inside edge by a quadratic Bézier with HORIZONTAL
+// tangent at the top (joins the flat chrome edge with no 90° corner)
+// and VERTICAL tangent at the bottom (joins the straight tongue side
+// with no 90° corner). Both tangents are forced by placing the single
+// quadratic control point at the intersection of the chrome edge and
+// the tongue side.
+const BAND_TOP = 30;
+const BAND_H = 48;
+const TONGUE_TOP_W = 200;
+const TONGUE_BOTTOM_W = 140;
+const TONGUE_PROTRUSION = 24;
+const TONGUE_RADIUS = 22;
+
 const AppTabs: React.FC = () => {
   const connectionMode = useSettingsStore(s => s.settings.connectionMode);
   const baseUrl = useSettingsStore(s => s.settings.baseUrl);
-  // The AERIS tab embeds the deployment's web UI directly in a WebView.
-  // In relay mode the device shouldn't reach the deployment per the
-  // architecture, so the tab is only useful when we happen to be on the
-  // deployment's network. Hide it otherwise — saves the user a confusing
-  // NSURLErrorDomain -1004 if they tap it expecting the tab to work.
   const {isServerReachable} = useNetworkStatus(baseUrl);
   const showErpTab = connectionMode !== 'relay' || isServerReachable;
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const [settingsVisible, setSettingsVisible] = useState(false);
-  // Sum line quantities so the badge matches what QuickSale + Cart show
-  // (5 of one SKU is "5", not "1"). Selector returns a primitive so
-  // zustand's referential-equality bail-out still fires on no-op updates.
   const cartCount = useCartStore(s => getItemCount(s.items));
+  const {width: screenWidth} = useWindowDimensions();
+
+  const paths = useMemo(() => {
+    const cx = screenWidth / 2;
+    // Top points: wide tongue shoulders. Bottom points: narrow tongue base.
+    const ttiL = cx - TONGUE_TOP_W / 2;
+    const ttiR = cx + TONGUE_TOP_W / 2;
+    const tbiL = cx - TONGUE_BOTTOM_W / 2;
+    const tbiR = cx + TONGUE_BOTTOM_W / 2;
+    const tongueBottomY = BAND_H + TONGUE_PROTRUSION;
+    return {
+      // Quadratic control at (tbiL, 0) forces a horizontal tangent at
+      // the chrome edge and a vertical tangent at the tongue side —
+      // smooth shoulder, no visible corner.
+      creamLeft:
+        `M 0 0 L ${ttiL} 0 ` +
+        `Q ${tbiL} 0, ${tbiL} ${BAND_H} ` +
+        `L 0 ${BAND_H} Z`,
+      creamRight:
+        `M ${screenWidth} 0 L ${ttiR} 0 ` +
+        `Q ${tbiR} 0, ${tbiR} ${BAND_H} ` +
+        `L ${screenWidth} ${BAND_H} Z`,
+      tongue:
+        `M ${tbiL} ${BAND_H} L ${tbiR} ${BAND_H} ` +
+        `L ${tbiR} ${tongueBottomY - TONGUE_RADIUS} ` +
+        `A ${TONGUE_RADIUS} ${TONGUE_RADIUS} 0 0 1 ${tbiR - TONGUE_RADIUS} ${tongueBottomY} ` +
+        `L ${tbiL + TONGUE_RADIUS} ${tongueBottomY} ` +
+        `A ${TONGUE_RADIUS} ${TONGUE_RADIUS} 0 0 1 ${tbiL} ${tongueBottomY - TONGUE_RADIUS} Z`,
+    };
+  }, [screenWidth]);
+
+  const svgHeight = BAND_H + TONGUE_PROTRUSION;
 
   return (
     <View style={styles.root}>
-      {/* Navy header with a navy tab protruding down into the cream
-          body. Cream shoulders punch cream into the bottom side
-          corners (upper inverse curves); a navy tongue extends below
-          the bar with rounded bottom corners. Together they form a
-          continuous navy pill framing the wordmark. */}
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View style={styles.topBarRow}>
-          <View style={styles.bottomFlank} pointerEvents="none">
-            <View style={styles.shoulderLeft} />
-            <View style={styles.islandSpacer} />
-            <View style={styles.shoulderRight} />
+          <View style={[styles.svgWrap, {height: svgHeight}]} pointerEvents="none">
+            <Svg width={screenWidth} height={svgHeight}>
+              <Path d={paths.creamLeft} fill={COLORS.background} />
+              <Path d={paths.creamRight} fill={COLORS.background} />
+              <Path d={paths.tongue} fill={COLORS.navy} />
+            </Svg>
           </View>
-          <View style={styles.navyTongue} pointerEvents="none" />
           <Image
             source={require('../../assets/images/aeris-wordmark.png')}
             style={styles.brandWordmark}
@@ -95,9 +137,6 @@ const AppTabs: React.FC = () => {
           haptics.light();
           setSettingsVisible(true);
         }}
-        // Anchor below the safe-area + topBarRow so the gear lands in
-        // the cream area beside the navy tongue. The hook gives the
-        // exact device-specific top inset (50ish on notched iPhones).
         style={[styles.gearBtn, {top: insets.top + 36}]}
         accessibilityRole="button"
         accessibilityLabel="Open settings"
@@ -109,9 +148,6 @@ const AppTabs: React.FC = () => {
         screenOptions={{
           headerShown: false,
           tabBarStyle: styles.tabBar,
-          // Active tab: crimson icon + label, plus a 3-px top stripe from
-          // the custom TabButton. Drops the full-cell crimson background
-          // so all tabs keep an identical baseline.
           tabBarActiveTintColor: COLORS.crimson,
           tabBarInactiveTintColor: COLORS.textDim,
           tabBarLabelStyle: styles.tabBarLabel,
@@ -141,9 +177,6 @@ const AppTabs: React.FC = () => {
                 : cartCount > 99
                   ? '99+'
                   : String(cartCount),
-            // Announce the actual count (not the "99+" display string) so
-            // VoiceOver users hear the real number when the cart overflows.
-            // When the cart is empty we fall back to the default tab label.
             tabBarAccessibilityLabel:
               cartCount > 0
                 ? `Sale tab, ${cartCount} ${cartCount === 1 ? 'item' : 'items'} in cart`
@@ -207,62 +240,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'visible',
   },
-  // Cream shoulders flanking the navy island. Taller than before —
-  // reach the top of the wordmark so the cream sides sit at the same
-  // vertical level as the logo. Single top-inner curve forms the
-  // first half of the S-shape boundary.
-  bottomFlank: {
+  // The Svg lives flush to the left edge and the cream/navy boundary
+  // resolves itself within the path data — no flex/centre layout to
+  // fight with. `top: BAND_TOP` puts the band below the navy chrome
+  // strip so the wordmark, which is centred in topBarRow, straddles
+  // the chrome and the tongue.
+  svgWrap: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 18,
-    bottom: 0,
-    flexDirection: 'row',
+    top: BAND_TOP,
   },
-  shoulderLeft: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderTopRightRadius: 28,
-  },
-  islandSpacer: {
-    width: 170,
-  },
-  shoulderRight: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: 28,
-  },
-  // Navy tongue is intentionally WIDER than the islandSpacer (210 vs
-  // 170) so its rounded top corners overlap the shoulders' inner
-  // edges. With borderTopLeftRadius/Right on the tongue, the corner
-  // is cut away and the cream shoulder beneath shows through —
-  // forming the second half of the S-curve (navy descends back into
-  // the cream). Bottom corners stay rounded for the pill silhouette
-  // protruding into the cream body below.
-  navyTongue: {
-    position: 'absolute',
-    left: '50%',
-    marginLeft: -105,
-    bottom: -22,
-    width: 210,
-    height: 56,
-    backgroundColor: COLORS.navy,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
-  },
-  // Native asset is 250x73 (3.42 aspect); render at 130x38 so it
-  // hugs the navy tongue tightly with minimal padding.
   brandWordmark: {
     width: 130,
     height: 38,
     marginBottom: -16,
     zIndex: 2,
   },
-  // Settings gear sits in the cream area beside the navy tongue,
-  // tinted navy so it reads against the cream. The `top` is composed
-  // in the component with the device's top safe-area inset.
   gearBtn: {
     position: 'absolute',
     right: 12,
@@ -281,8 +275,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Transparent placeholder so all tabs share identical layout — only the
-  // focused tab paints crimson, preserving the row's vertical baseline.
   indicator: {
     position: 'absolute',
     top: 0,
@@ -306,8 +298,6 @@ const styles = StyleSheet.create({
     minWidth: 18,
     height: 18,
     lineHeight: 18,
-    // paddingHorizontal lets 2- and 3-char strings ("99+") expand the pill
-    // rather than clip; minWidth (no fixed width) keeps the empty pill round.
     paddingHorizontal: 4,
   },
 });
