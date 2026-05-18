@@ -207,15 +207,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'visible',
   },
-  // Cream shoulders flanking the navy island at the bottom of the
-  // header. Each shoulder's inner top corner curves up to meet the
-  // navy tongue, so the navy reads as a continuous downward bulge.
+  // Cream shoulders flanking the navy island. Taller than before —
+  // reach the top of the wordmark so the cream sides sit at the same
+  // vertical level as the logo. Single top-inner curve forms the
+  // first half of the S-shape boundary.
   bottomFlank: {
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 18,
     bottom: 0,
-    height: 28,
     flexDirection: 'row',
   },
   shoulderLeft: {
@@ -223,8 +224,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderTopRightRadius: 28,
   },
-  // Width tuned tight to the 130pt wordmark — narrower than before so
-  // the cream working area expands on both sides.
   islandSpacer: {
     width: 170,
   },
@@ -233,18 +232,23 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderTopLeftRadius: 28,
   },
-  // Navy tab that extends below the bar into the cream body. Sits
-  // behind the wordmark and shares its width with the islandSpacer
-  // above so the upper inverse curve from the shoulders meets the
-  // lower rounded corners as one continuous pill.
+  // Navy tongue is intentionally WIDER than the islandSpacer (210 vs
+  // 170) so its rounded top corners overlap the shoulders' inner
+  // edges. With borderTopLeftRadius/Right on the tongue, the corner
+  // is cut away and the cream shoulder beneath shows through —
+  // forming the second half of the S-curve (navy descends back into
+  // the cream). Bottom corners stay rounded for the pill silhouette
+  // protruding into the cream body below.
   navyTongue: {
     position: 'absolute',
     left: '50%',
-    marginLeft: -85,
+    marginLeft: -105,
     bottom: -22,
-    width: 170,
-    height: 50,
+    width: 210,
+    height: 56,
     backgroundColor: COLORS.navy,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderBottomLeftRadius: 26,
     borderBottomRightRadius: 26,
   },
