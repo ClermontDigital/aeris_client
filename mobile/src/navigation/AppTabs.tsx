@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {View, Image, Pressable, StyleSheet, TouchableOpacity, GestureResponderEvent} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
@@ -59,6 +59,7 @@ const AppTabs: React.FC = () => {
   const {isServerReachable} = useNetworkStatus(baseUrl);
   const showErpTab = connectionMode !== 'relay' || isServerReachable;
   const haptics = useHaptics();
+  const insets = useSafeAreaInsets();
   const [settingsVisible, setSettingsVisible] = useState(false);
   // Sum line quantities so the badge matches what QuickSale + Cart show
   // (5 of one SKU is "5", not "1"). Selector returns a primitive so
@@ -67,10 +68,11 @@ const AppTabs: React.FC = () => {
 
   return (
     <View style={styles.root}>
-      {/* Navy header with a downward-bulging navy island hosting the
-          wordmark — cream "shoulders" on each side curve up into the
-          navy with rounded inner corners. Net effect: the navy reads
-          as a tab protruding into the cream body, framing the logo. */}
+      {/* Navy header with a navy tab protruding down into the cream
+          body. Cream shoulders punch cream into the bottom side
+          corners (upper inverse curves); a navy tongue extends below
+          the bar with rounded bottom corners. Together they form a
+          continuous navy pill framing the wordmark. */}
       <SafeAreaView edges={['top']} style={styles.topBar}>
         <View style={styles.topBarRow}>
           <View style={styles.bottomFlank} pointerEvents="none">
@@ -78,6 +80,7 @@ const AppTabs: React.FC = () => {
             <View style={styles.islandSpacer} />
             <View style={styles.shoulderRight} />
           </View>
+          <View style={styles.navyTongue} pointerEvents="none" />
           <Image
             source={require('../../assets/images/aeris-wordmark.png')}
             style={styles.brandWordmark}
@@ -85,19 +88,22 @@ const AppTabs: React.FC = () => {
             accessibilityLabel="Aeris"
             resizeMode="contain"
           />
-          <TouchableOpacity
-            onPress={() => {
-              haptics.light();
-              setSettingsVisible(true);
-            }}
-            style={styles.gearBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Open settings"
-            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-            <Ionicons name="settings-outline" size={22} color={COLORS.cream} />
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
+      <TouchableOpacity
+        onPress={() => {
+          haptics.light();
+          setSettingsVisible(true);
+        }}
+        // Anchor below the safe-area + topBarRow so the gear lands in
+        // the cream area beside the navy tongue. The hook gives the
+        // exact device-specific top inset (50ish on notched iPhones).
+        style={[styles.gearBtn, {top: insets.top + 36}]}
+        accessibilityRole="button"
+        accessibilityLabel="Open settings"
+        hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+        <Ionicons name="settings-outline" size={22} color={COLORS.navy} />
+      </TouchableOpacity>
       <Tab.Navigator
         initialRouteName="Dashboard"
         screenOptions={{
@@ -194,55 +200,73 @@ const AppTabs: React.FC = () => {
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.navy},
-  topBar: {backgroundColor: COLORS.navy},
+  topBar: {backgroundColor: COLORS.navy, overflow: 'visible'},
   topBarRow: {
-    minHeight: 72,
+    minHeight: 76,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
-  // Cream shoulders flanking a navy island at the bottom of the header.
-  // Each shoulder's inner top corner curves up to meet the island, so
-  // the navy reads as a downward-protruding tab around the wordmark.
+  // Cream shoulders flanking the navy island at the bottom of the
+  // header. Each shoulder's inner top corner curves up to meet the
+  // navy tongue, so the navy reads as a continuous downward bulge.
   bottomFlank: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: 32,
+    height: 28,
     flexDirection: 'row',
   },
   shoulderLeft: {
     flex: 1,
     backgroundColor: COLORS.background,
-    borderTopRightRadius: 32,
+    borderTopRightRadius: 28,
   },
-  // Spacer = the navy island where the wordmark sits. Transparent so
-  // the navy bar shows through. Width tuned to hug the wordmark with
-  // a comfortable margin.
+  // Width tuned tight to the 130pt wordmark — narrower than before so
+  // the cream working area expands on both sides.
   islandSpacer: {
-    width: 220,
+    width: 170,
   },
   shoulderRight: {
     flex: 1,
     backgroundColor: COLORS.background,
-    borderTopLeftRadius: 32,
+    borderTopLeftRadius: 28,
   },
-  // Native asset is 250x73 (3.42 aspect); render at 130x38 so it stays
-  // crisp across phone DPIs while leaving room for the safe-area inset
-  // and the gear icon on the right.
+  // Navy tab that extends below the bar into the cream body. Sits
+  // behind the wordmark and shares its width with the islandSpacer
+  // above so the upper inverse curve from the shoulders meets the
+  // lower rounded corners as one continuous pill.
+  navyTongue: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -85,
+    bottom: -22,
+    width: 170,
+    height: 50,
+    backgroundColor: COLORS.navy,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
+  },
+  // Native asset is 250x73 (3.42 aspect); render at 130x38 so it
+  // hugs the navy tongue tightly with minimal padding.
   brandWordmark: {
     width: 130,
     height: 38,
-    zIndex: 1,
+    marginBottom: -16,
+    zIndex: 2,
   },
+  // Settings gear sits in the cream area beside the navy tongue,
+  // tinted navy so it reads against the cream. The `top` is composed
+  // in the component with the device's top safe-area inset.
   gearBtn: {
     position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 56,
+    right: 12,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 3,
   },
   tabBar: {
     backgroundColor: COLORS.primary,
