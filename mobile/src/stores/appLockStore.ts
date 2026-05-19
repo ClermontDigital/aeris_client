@@ -69,7 +69,23 @@ export const useAppLockStore = create<AppLockState>((set, get) => ({
     set({hasPin: true});
   },
 
-  verifyPin: async (pin: string) => AppLockService.verifyPin(pin),
+  verifyPin: async (pin: string) => {
+    const ok = await AppLockService.verifyPin(pin);
+    if (!ok && get().hasPin) {
+      // AppLockService.verifyPin wipes the stored payload when it's stale
+      // (legacy bare-hash string, missing salt, non-JSON). If the wipe just
+      // fired, hasPin in storage now reads false but our cached state is
+      // still true — the user would otherwise see "wrong PIN" five times
+      // and get force-logged-out. Re-read presence and flip the flag so
+      // App.tsx unmounts AppLockScreen and the user lands in the app
+      // PIN-less (Settings → Set PIN reseeds it).
+      const stillHasPin = await AppLockService.hasPin();
+      if (!stillHasPin) {
+        set({hasPin: false, isLocked: false, failedAttempts: 0});
+      }
+    }
+    return ok;
+  },
 
   setBiometricEnabled: async (enabled: boolean) => {
     await AppLockService.setBiometricEnabled(enabled);
