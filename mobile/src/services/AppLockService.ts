@@ -10,6 +10,19 @@ interface StoredPin {
   salt: string;
 }
 
+function isStoredPin(value: unknown): value is StoredPin {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  // Both fields must be non-empty strings — an empty {hash:"",salt:""}
+  // would otherwise silently fail forever without triggering the wipe.
+  return (
+    typeof v.hash === 'string' &&
+    typeof v.salt === 'string' &&
+    v.hash.length > 0 &&
+    v.salt.length > 0
+  );
+}
+
 class AppLockService {
   async hasPin(): Promise<boolean> {
     const raw = await SecureStorage.getItem(PIN_HASH_KEY);
@@ -24,16 +37,32 @@ class AppLockService {
   }
 
   async verifyPin(pin: string): Promise<boolean> {
-    const raw = await SecureStorage.getItem(PIN_HASH_KEY);
-    if (!raw) return false;
-    let data: StoredPin;
     try {
-      data = JSON.parse(raw) as StoredPin;
-    } catch {
+      const raw = await SecureStorage.getItem(PIN_HASH_KEY);
+      if (!raw) return false;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        // Stored value isn't valid JSON — almost certainly a legacy
+        // bare-hash string from a prior build. Drop it so the user gets
+        // routed to PIN setup on the next attempt rather than re-tripping
+        // this branch on every unlock.
+        console.warn('AppLockService.verifyPin: stored PIN payload not JSON, clearing');
+        await SecureStorage.removeItem(PIN_HASH_KEY);
+        return false;
+      }
+      if (!isStoredPin(parsed)) {
+        console.warn('AppLockService.verifyPin: stored PIN payload shape mismatch, clearing');
+        await SecureStorage.removeItem(PIN_HASH_KEY);
+        return false;
+      }
+      await EncryptionService.init();
+      return await EncryptionService.verifyPin(pin, parsed);
+    } catch (e) {
+      console.warn('AppLockService.verifyPin: unexpected failure', e);
       return false;
     }
-    await EncryptionService.init();
-    return EncryptionService.verifyPin(pin, data);
   }
 
   async clearPin(): Promise<void> {

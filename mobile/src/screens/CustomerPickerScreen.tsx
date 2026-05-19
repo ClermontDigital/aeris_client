@@ -31,7 +31,7 @@ function localFilter(items: Customer[], q: string): Customer[] {
   if (!trimmed) return items;
   return items.filter(c => {
     return (
-      c.name.toLowerCase().includes(trimmed) ||
+      (c.name ?? '').toLowerCase().includes(trimmed) ||
       (c.email ?? '').toLowerCase().includes(trimmed) ||
       (c.phone ?? '').toLowerCase().includes(trimmed)
     );

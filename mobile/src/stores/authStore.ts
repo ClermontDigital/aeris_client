@@ -20,6 +20,20 @@ const LEGACY_BACKGROUNDED_AT_KEY = 'aeris_auth_backgrounded_at';
 // "we couldn't reach the server".
 export type AuthErrorKind = 'expired' | 'invalid' | 'network' | null;
 
+// Shape guard for the persisted User payload. Only the load-bearing fields
+// are enforced — `id` and `email` are required for relay/RPC identity, and
+// `name` (if present) must be a string so downstream screens that format
+// it don't blow up. Other User fields (role, location_id) are nullable
+// upstream so we tolerate their absence here.
+function isPersistedUser(value: unknown): value is User {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.id !== 'number') return false;
+  if (typeof v.email !== 'string') return false;
+  if (v.name !== undefined && typeof v.name !== 'string') return false;
+  return true;
+}
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -68,6 +82,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       const response = await ApiClient.login(email, password);
       const {access_token, expires_at, user} = response;
+      // Same shape guard as restoreSession — a relay deploy that changes
+      // the user payload shape would otherwise crash downstream screens
+      // immediately after a successful login. Reject loudly here so the
+      // user sees "Sign in failed" rather than the generic ErrorBoundary.
+      if (!isPersistedUser(user)) {
+        const err = new Error('Login response missing required user fields');
+        (err as Error & {status?: number}).status = 422;
+        throw err;
+      }
       ApiClient.setAuthToken(access_token);
       await SecureStorage.setItem(AUTH_TOKEN_KEY, access_token);
       await SecureStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
@@ -198,7 +221,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // "stay logged in until logout or API rejection".
       let user: User;
       try {
-        user = JSON.parse(userJson) as User;
+        const parsed: unknown = JSON.parse(userJson);
+        // Shape-check the persisted user. After weeks idle, a payload from
+        // a prior build (or partial write) may be missing fields or have
+        // the wrong types; downstream screens crash on the first
+        // `user.name.toUpperCase()` style access, surfacing as the generic
+        // "undefined is not a function" ErrorBoundary. Bail out cleanly
+        // and route the user back to login instead.
+        if (!isPersistedUser(parsed)) {
+          throw new Error('user shape mismatch');
+        }
+        user = parsed;
       } catch {
         console.warn('authStore: stored user JSON malformed, clearing');
         await SecureStorage.removeItem(AUTH_USER_KEY);
@@ -246,7 +279,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const {access_token, expires_at, user} = response;
         ApiClient.setAuthToken(access_token);
         await SecureStorage.setItem(AUTH_TOKEN_KEY, access_token);
-        if (user) {
+        // Only persist + commit `user` if it shape-checks. A malformed
+        // user blob from a refresh response would otherwise replace the
+        // valid in-memory user and crash the next render. The previous
+        // valid `user` in state stays as-is when the refresh skips this.
+        const userOk = user !== undefined && isPersistedUser(user);
+        if (userOk) {
           await SecureStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
         }
         if (expires_at) {
@@ -257,7 +295,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({
           token: access_token,
           expiresAt: expires_at ?? null,
-          ...(user ? {user} : {}),
+          ...(userOk ? {user} : {}),
           error: null,
           errorKind: null,
         });
