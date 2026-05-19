@@ -21,7 +21,7 @@ import {
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
-import StatCard from '../components/StatCard';
+import StatCard, {pickStatRowFontSize} from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 import type {Sale} from '../types/api.types';
@@ -274,29 +274,42 @@ export default function TransactionListScreen() {
       </View>
 
       {/* Stat strip — derived from the currently-loaded page so the values
-          stay coherent with the visible list rows. */}
-      <View style={styles.statStrip}>
-        <View style={styles.statCell}>
-          <StatCard
-            label="Today"
-            value={String(stats.todayCount)}
-            sublabel="sales"
-          />
-        </View>
-        <View style={styles.statCell}>
-          <StatCard
-            label="Today Revenue"
-            value={formatCurrency(stats.todayRevenueCents)}
-          />
-        </View>
-        <View style={styles.statCell}>
-          <StatCard
-            label="Avg Sale"
-            value={formatCurrency(stats.avgCents)}
-            sublabel="visible"
-          />
-        </View>
-      </View>
+          stay coherent with the visible list rows. Single shared font
+          size across all three cells so "0" vs "$1,234.56" doesn't render
+          at visually different scales. */}
+      {(() => {
+        const todayCountStr = String(stats.todayCount);
+        const todayRevStr = formatCurrency(stats.todayRevenueCents);
+        const avgStr = formatCurrency(stats.avgCents);
+        const fs = pickStatRowFontSize([todayCountStr, todayRevStr, avgStr]);
+        return (
+          <View style={styles.statStrip}>
+            <View style={styles.statCell}>
+              <StatCard
+                label="Today"
+                value={todayCountStr}
+                sublabel="sales"
+                valueFontSize={fs}
+              />
+            </View>
+            <View style={styles.statCell}>
+              <StatCard
+                label="Today Revenue"
+                value={todayRevStr}
+                valueFontSize={fs}
+              />
+            </View>
+            <View style={styles.statCell}>
+              <StatCard
+                label="Avg Sale"
+                value={avgStr}
+                sublabel="visible"
+                valueFontSize={fs}
+              />
+            </View>
+          </View>
+        );
+      })()}
 
       {/* Date Filter — pill style mirroring desktop's .aeris-nav-active */}
       <View style={styles.filterRow}>

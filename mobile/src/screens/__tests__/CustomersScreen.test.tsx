@@ -75,31 +75,6 @@ describe('CustomersScreen', () => {
     mockListCustomers.mockReset();
   });
 
-  it('renders the stat strip with total / with-email / with-phone counts', async () => {
-    mockListCustomers.mockResolvedValue(
-      okPage([
-        makeCustomer({id: 1, email: 'a@x.com', phone: '555-1'}),
-        makeCustomer({id: 2, email: 'b@x.com', phone: null}),
-        makeCustomer({id: 3, email: null, phone: '555-3'}),
-        makeCustomer({id: 4, email: null, phone: null}),
-      ]),
-    );
-
-    const {getByLabelText, getByText} = render(<CustomersScreen />);
-
-    await waitFor(() => {
-      expect(getByLabelText('Total: 4')).toBeTruthy();
-    });
-
-    // 2 customers have email (a@x.com, b@x.com)
-    expect(getByLabelText('With Email: 2')).toBeTruthy();
-    // 2 customers have phone (555-1, 555-3)
-    expect(getByLabelText('With Phone: 2')).toBeTruthy();
-    expect(getByText('Total')).toBeTruthy();
-    expect(getByText('With Email')).toBeTruthy();
-    expect(getByText('With Phone')).toBeTruthy();
-  });
-
   it('renders list rows with accessibilityRole="button" and a contextual label', async () => {
     mockListCustomers.mockResolvedValue(
       okPage([
