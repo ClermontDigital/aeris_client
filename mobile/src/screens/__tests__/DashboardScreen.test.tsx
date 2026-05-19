@@ -19,13 +19,20 @@ beforeAll(() => {
   }
 });
 
-// Mock ApiClient — the screen only reads getDailySummary, so a focused
-// jest.fn lets us drive both happy-path and error paths.
+// Mock ApiClient — the screen reads getDailySummary and getTransactions
+// (the latter feeds the recent-customers widget). Both are stubbed; the
+// transactions stub defaults to an empty page so tests that don't care
+// don't have to set it explicitly.
 const mockGetDailySummary = jest.fn();
+const mockGetTransactions = jest.fn().mockResolvedValue({
+  data: [],
+  meta: {current_page: 1, last_page: 1, per_page: 50, total: 0},
+});
 jest.mock('../../services/ApiClient', () => ({
   __esModule: true,
   default: {
     getDailySummary: (...args: unknown[]) => mockGetDailySummary(...args),
+    getTransactions: (...args: unknown[]) => mockGetTransactions(...args),
   },
 }));
 
@@ -35,6 +42,14 @@ jest.mock('../../services/ApiClient', () => ({
 jest.mock('../../stores/authStore', () => ({
   useAuthStore: (selector: (s: {user: {name: string}}) => unknown) =>
     selector({user: {name: 'Alex Tester'}}),
+}));
+
+// Settings store — dashboard reads dashboardSecondaryWidget. Default to
+// 'top_products' to preserve the prior test behaviour.
+jest.mock('../../stores/settingsStore', () => ({
+  useSettingsStore: (
+    selector: (s: {settings: {dashboardSecondaryWidget: string}}) => unknown,
+  ) => selector({settings: {dashboardSecondaryWidget: 'top_products'}}),
 }));
 
 // Haptics: stable no-op reference. Returning a fresh object each call would

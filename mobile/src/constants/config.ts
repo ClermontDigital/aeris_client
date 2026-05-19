@@ -14,6 +14,9 @@ export const DEFAULT_CONFIG = {
   sessionCleanupDays: 3,
   enableSessionManagement: false,
   hapticsEnabled: true,
+  // Dashboard's secondary widget default. User can flip it in-place from
+  // the dashboard or change the default from Settings.
+  dashboardSecondaryWidget: 'top_products' as const,
 };
 
 export const STORAGE_KEYS = {

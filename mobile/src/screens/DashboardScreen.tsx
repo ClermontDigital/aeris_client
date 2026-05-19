@@ -14,8 +14,10 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
 import ApiClient from '../services/ApiClient';
-import type {DailySummary} from '../types/api.types';
+import type {DailySummary, Sale} from '../types/api.types';
 import type {AppTabParamList} from '../types/navigation.types';
+import type {DashboardSecondaryWidget} from '../types/settings.types';
+import {useSettingsStore} from '../stores/settingsStore';
 import {
   COLORS,
   SPACING,
@@ -27,7 +29,7 @@ import {
 import {useAuthStore} from '../stores/authStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {formatCurrency} from '../utils/format';
-import StatCard from '../components/StatCard';
+import StatCard, {pickStatRowFontSize} from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 
@@ -46,15 +48,55 @@ const firstName = (full: string | undefined): string => {
   return trimmed.split(/\s+/)[0];
 };
 
+// Walk recent sales newest-first, keep the first occurrence of each
+// distinct customer_name (trimmed, case-insensitive). Walk-in sales
+// (customer_name: null/empty) are skipped. Returns up to `limit` entries.
+function pickRecentUniqueCustomers(
+  sales: Sale[],
+  limit: number,
+): Array<{name: string; lastSaleAt: string; saleId: number}> {
+  const seen = new Set<string>();
+  const out: Array<{name: string; lastSaleAt: string; saleId: number}> = [];
+  for (const s of sales) {
+    const raw = (s.customer_name ?? '').trim();
+    if (!raw) continue;
+    const key = raw.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({name: raw, lastSaleAt: s.created_at, saleId: s.id});
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const haptics = useHaptics();
   const userName = useAuthStore(s => s.user?.name);
+  const defaultWidget = useSettingsStore(
+    s => s.settings.dashboardSecondaryWidget ?? 'top_products',
+  );
+  const [activeWidget, setActiveWidget] =
+    useState<DashboardSecondaryWidget>(defaultWidget);
   const [summary, setSummary] = useState<DailySummary | null>(null);
+  const [recentCustomers, setRecentCustomers] = useState<
+    Array<{name: string; lastSaleAt: string; saleId: number}>
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // Honour Settings changes when the user re-enters the dashboard. We don't
+  // overwrite an in-flight in-place toggle — the user expects the toggle
+  // to stick for the rest of the session.
+  const lastDefaultRef = useRef(defaultWidget);
+  useEffect(() => {
+    if (lastDefaultRef.current !== defaultWidget) {
+      lastDefaultRef.current = defaultWidget;
+      setActiveWidget(defaultWidget);
+    }
+  }, [defaultWidget]);
 
   const fetchSummary = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -65,8 +107,19 @@ const DashboardScreen: React.FC = () => {
     setError(null);
 
     try {
-      const data = await ApiClient.getDailySummary();
+      // Always pull daily summary (drives the hero card + stat strip).
+      // Pull recent transactions in parallel so the recent-customers widget
+      // is ready the moment the user toggles to it — avoids a second
+      // loading state on switch. 50 sales is enough to find 5 unique
+      // customers in any realistic dataset.
+      const [data, transactionsPage] = await Promise.all([
+        ApiClient.getDailySummary(),
+        ApiClient.getTransactions({page: 1, per_page: 50}).catch(() => null),
+      ]);
       setSummary(data);
+      if (transactionsPage) {
+        setRecentCustomers(pickRecentUniqueCustomers(transactionsPage.data, 5));
+      }
       setLastUpdated(new Date());
     } catch (e) {
       const message =
@@ -208,17 +261,25 @@ const DashboardScreen: React.FC = () => {
           </View>
         </View>
 
-        <View style={styles.statsGrid}>
-          <View style={styles.statCell}>
-            <StatCard label="Sales" value={String(salesCount)} />
-          </View>
-          <View style={styles.statCell}>
-            <StatCard label="Items Sold" value={String(itemsSold)} />
-          </View>
-          <View style={styles.statCell}>
-            <StatCard label="Avg Sale" value={formatCurrency(avgSale)} />
-          </View>
-        </View>
+        {(() => {
+          const salesStr = String(salesCount);
+          const itemsStr = String(itemsSold);
+          const avgStr = formatCurrency(avgSale);
+          const fs = pickStatRowFontSize([salesStr, itemsStr, avgStr]);
+          return (
+            <View style={styles.statsGrid}>
+              <View style={styles.statCell}>
+                <StatCard label="Sales" value={salesStr} valueFontSize={fs} />
+              </View>
+              <View style={styles.statCell}>
+                <StatCard label="Items Sold" value={itemsStr} valueFontSize={fs} />
+              </View>
+              <View style={styles.statCell}>
+                <StatCard label="Avg Sale" value={avgStr} valueFontSize={fs} />
+              </View>
+            </View>
+          );
+        })()}
 
         <Text style={styles.sectionLabel}>Quick Actions</Text>
         <View style={styles.quickActions}>
@@ -244,39 +305,121 @@ const DashboardScreen: React.FC = () => {
           />
         </View>
 
-        <Text style={styles.sectionLabel}>Top Products</Text>
-        {topProducts.length > 0 ? (
+        <View style={styles.widgetHeader}>
+          <Text style={styles.widgetTitle}>
+            {activeWidget === 'top_products' ? 'Top Products' : 'Recent Customers'}
+          </Text>
+          <TouchableOpacity
+            style={styles.widgetToggle}
+            accessibilityRole="button"
+            accessibilityLabel={
+              activeWidget === 'top_products'
+                ? 'Switch to recent customers'
+                : 'Switch to top products'
+            }
+            onPress={() => {
+              haptics.selection();
+              setActiveWidget(prev =>
+                prev === 'top_products' ? 'recent_customers' : 'top_products',
+              );
+            }}>
+            <Ionicons
+              name={
+                activeWidget === 'top_products' ? 'people-outline' : 'bag-handle-outline'
+              }
+              size={ICON_SIZE.action - 2}
+              color={COLORS.textMuted}
+            />
+            <Text style={styles.widgetToggleText}>
+              {activeWidget === 'top_products' ? 'Customers' : 'Products'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeWidget === 'top_products' ? (
+          topProducts.length > 0 ? (
+            <View style={styles.topProductsCard}>
+              {topProducts.slice(0, 5).map((product, index) => (
+                <View
+                  key={product.id}
+                  style={[
+                    styles.productRow,
+                    index === Math.min(topProducts.length, 5) - 1 &&
+                      styles.productRowLast,
+                  ]}>
+                  <View style={styles.productRank}>
+                    <Text style={styles.productRankText}>{index + 1}</Text>
+                  </View>
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productName} numberOfLines={1}>
+                      {product.name}
+                    </Text>
+                    <Text style={styles.productMeta}>
+                      {product.quantity} sold
+                    </Text>
+                  </View>
+                  <Text style={styles.productRevenue}>
+                    {formatCurrency(product.revenue_cents)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <EmptyState
+              title="No sales yet today"
+              description="Your first sale will appear here."
+              icon="bag-handle-outline"
+            />
+          )
+        ) : recentCustomers.length > 0 ? (
           <View style={styles.topProductsCard}>
-            {topProducts.slice(0, 5).map((product, index) => (
-              <View
-                key={product.id}
+            {recentCustomers.map((customer, index) => (
+              <TouchableOpacity
+                key={customer.saleId}
                 style={[
                   styles.productRow,
-                  index === Math.min(topProducts.length, 5) - 1 &&
-                    styles.productRowLast,
-                ]}>
+                  index === recentCustomers.length - 1 && styles.productRowLast,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${customer.name}, view sale`}
+                onPress={() => {
+                  haptics.light();
+                  navigation.navigate('Transactions', {
+                    screen: 'SaleDetail',
+                    params: {saleId: customer.saleId},
+                  } as never);
+                }}>
                 <View style={styles.productRank}>
-                  <Text style={styles.productRankText}>{index + 1}</Text>
+                  <Ionicons
+                    name="person-outline"
+                    size={ICON_SIZE.action - 4}
+                    color={COLORS.textMuted}
+                  />
                 </View>
                 <View style={styles.productInfo}>
                   <Text style={styles.productName} numberOfLines={1}>
-                    {product.name}
+                    {customer.name}
                   </Text>
                   <Text style={styles.productMeta}>
-                    {product.quantity} sold
+                    {new Date(customer.lastSaleAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
                   </Text>
                 </View>
-                <Text style={styles.productRevenue}>
-                  {formatCurrency(product.revenue_cents)}
-                </Text>
-              </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={ICON_SIZE.action - 4}
+                  color={COLORS.textMuted}
+                />
+              </TouchableOpacity>
             ))}
           </View>
         ) : (
           <EmptyState
-            title="No sales yet today"
-            description="Your first sale will appear here."
-            icon="bag-handle-outline"
+            title="No recent customers"
+            description="Named customers from recent sales will appear here."
+            icon="people-outline"
           />
         )}
 
@@ -368,6 +511,36 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: SPACING.sm,
     marginTop: SPACING.xs,
+  },
+  widgetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  widgetTitle: {
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  widgetToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+  },
+  widgetToggleText: {
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    fontSize: FONT_SIZE.sm,
   },
   heroCard: {
     backgroundColor: COLORS.surface,
