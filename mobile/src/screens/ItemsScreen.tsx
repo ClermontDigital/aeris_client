@@ -25,7 +25,7 @@ import {useHaptics} from '../hooks/useHaptics';
 import type {Product} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
-import StatCard from '../components/StatCard';
+import StatCard, {pickStatRowFontSize} from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 
@@ -213,31 +213,42 @@ const ItemsScreen: React.FC = () => {
         <Text style={styles.headerTitle}>Items</Text>
       </View>
 
-      <View style={styles.statsStrip}>
-        <View style={styles.statCell}>
-          <StatCard
-            label="Total"
-            value={String(stats.total)}
-            icon="cube-outline"
-          />
-        </View>
-        <View style={styles.statCell}>
-          <StatCard
-            label="Low Stock"
-            value={String(stats.lowStock)}
-            icon="alert-circle-outline"
-            tone={stats.lowStock > 0 ? 'warning' : 'default'}
-          />
-        </View>
-        <View style={styles.statCell}>
-          <StatCard
-            label="Out"
-            value={String(stats.outOfStock)}
-            icon="close-circle-outline"
-            tone={stats.outOfStock > 0 ? 'danger' : 'default'}
-          />
-        </View>
-      </View>
+      {(() => {
+        const totalStr = String(stats.total);
+        const lowStr = String(stats.lowStock);
+        const outStr = String(stats.outOfStock);
+        const fs = pickStatRowFontSize([totalStr, lowStr, outStr]);
+        return (
+          <View style={styles.statsStrip}>
+            <View style={styles.statCell}>
+              <StatCard
+                label="Total"
+                value={totalStr}
+                icon="cube-outline"
+                valueFontSize={fs}
+              />
+            </View>
+            <View style={styles.statCell}>
+              <StatCard
+                label="Low Stock"
+                value={lowStr}
+                icon="alert-circle-outline"
+                tone={stats.lowStock > 0 ? 'warning' : 'default'}
+                valueFontSize={fs}
+              />
+            </View>
+            <View style={styles.statCell}>
+              <StatCard
+                label="Out"
+                value={outStr}
+                icon="close-circle-outline"
+                tone={stats.outOfStock > 0 ? 'danger' : 'default'}
+                valueFontSize={fs}
+              />
+            </View>
+          </View>
+        );
+      })()}
 
       <View style={styles.searchRow}>
         <Ionicons

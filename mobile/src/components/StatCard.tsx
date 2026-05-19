@@ -19,6 +19,31 @@ export interface StatCardProps {
   tone?: StatCardTone;
   icon?: keyof typeof Ionicons.glyphMap;
   onPress?: () => void;
+  // Override the value font size. Used by 3-up stat strips that compute a
+  // single size from the widest value in the row, so cards stay visually
+  // consistent instead of each shrinking independently. See
+  // pickStatRowFontSize in components/StatCard.tsx for the helper.
+  valueFontSize?: number;
+}
+
+// Helper for callers rendering a row of stat cards. Returns a single font
+// size that fits the widest value at the typical 3-up column width on the
+// narrowest iPhone we support (~96px per cell after gutters/padding). Per-
+// card adjustsFontSizeToFit produces visual mismatch when a row mixes "0"
+// and "$1,234.56" — this gives every card in the strip the same scaled
+// size based on the longest string.
+export function pickStatRowFontSize(values: ReadonlyArray<string | number>): number {
+  let longest = 0;
+  for (const v of values) {
+    const len = String(v ?? '').length;
+    if (len > longest) longest = len;
+  }
+  if (longest <= 5) return FONT_SIZE.xxl; // "$0.00" or shorter
+  if (longest <= 7) return 22; // "$99.99"
+  if (longest <= 9) return FONT_SIZE.xl; // "$1,234.56"
+  if (longest <= 11) return 18; // "$12,345.67"
+  if (longest <= 13) return 16; // "$1,234,567.89"
+  return 14;
 }
 
 // Mirrors client/src/renderer/components/StatCard.tsx so dashboard +
@@ -31,6 +56,7 @@ const StatCard: React.FC<StatCardProps> = ({
   tone = 'default',
   icon,
   onPress,
+  valueFontSize,
 }) => {
   const valueColor =
     tone === 'danger'
@@ -51,20 +77,23 @@ const StatCard: React.FC<StatCardProps> = ({
           style={styles.icon}
         />
       ) : null}
-      {/* numberOfLines + adjustsFontSizeToFit keeps long values (e.g.
-          formatted currency) on a single line on narrow iPhones — the
-          three-up stat strips on Transactions and Dashboard otherwise
-          wrap to a second row. minimumFontScale stops the auto-shrink
-          from going so small it becomes illegible. */}
+      {/* valueFontSize overrides the default xxl so every card in a strip
+          can be sized uniformly from the widest value. Falls back to
+          adjustsFontSizeToFit only when the caller didn't pre-compute a
+          size (single-card layouts where per-card shrink is fine). */}
       <Text
-        style={[styles.value, {color: valueColor}]}
+        style={[
+          styles.value,
+          {color: valueColor},
+          valueFontSize ? {fontSize: valueFontSize} : null,
+        ]}
         numberOfLines={1}
-        adjustsFontSizeToFit
+        adjustsFontSizeToFit={!valueFontSize}
         minimumFontScale={0.6}
         allowFontScaling={false}>
         {value}
       </Text>
-      <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+      <Text style={styles.label} numberOfLines={1}>
         {label}
       </Text>
       {sublabel ? (

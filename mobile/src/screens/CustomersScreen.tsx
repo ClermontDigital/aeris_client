@@ -25,7 +25,6 @@ import {useHaptics} from '../hooks/useHaptics';
 import type {Customer} from '../types/api.types';
 import type {CustomersStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
-import StatCard from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 
@@ -112,19 +111,6 @@ const CustomersScreen: React.FC = () => {
 
   const visible = useMemo(() => localFilter(items, search), [items, search]);
 
-  // Stat strip metrics derive from currently-loaded pages.
-  const stats = useMemo(() => {
-    let withEmail = 0;
-    let withPhone = 0;
-    for (const c of items) {
-      if (c.email && c.email.trim()) withEmail += 1;
-      if ((c.phone && c.phone.trim()) || (c.mobile && c.mobile.trim())) {
-        withPhone += 1;
-      }
-    }
-    return {total: items.length, withEmail, withPhone};
-  }, [items]);
-
   const renderItem = ({item}: {item: Customer}) => (
     <TouchableOpacity
       style={styles.row}
@@ -196,30 +182,6 @@ const CustomersScreen: React.FC = () => {
       edges={['left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Customers</Text>
-      </View>
-
-      <View style={styles.statsStrip}>
-        <View style={styles.statCell}>
-          <StatCard
-            label="Total"
-            value={String(stats.total)}
-            icon="people-outline"
-          />
-        </View>
-        <View style={styles.statCell}>
-          <StatCard
-            label="With Email"
-            value={String(stats.withEmail)}
-            icon="mail-outline"
-          />
-        </View>
-        <View style={styles.statCell}>
-          <StatCard
-            label="With Phone"
-            value={String(stats.withPhone)}
-            icon="call-outline"
-          />
-        </View>
       </View>
 
       <View style={styles.searchRow}>
@@ -302,13 +264,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xxl,
     fontWeight: '700',
   },
-  statsStrip: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.sm,
-  },
-  statCell: {flex: 1},
   bannerWrap: {
     paddingHorizontal: SPACING.md,
     marginBottom: SPACING.sm,
