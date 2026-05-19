@@ -129,6 +129,11 @@ const StatCard: React.FC<StatCardProps> = ({
 
 const styles = StyleSheet.create({
   card: {
+    // Fixed minHeight so cards in a 2- or 3-up strip line up even when
+    // only some of them have a sublabel — without this, a card with
+    // `sublabel` renders ~14px taller than one without, and the row
+    // looks uneven. 96 covers icon + value + label + sublabel + padding.
+    minHeight: 96,
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,
     borderWidth: 1,

@@ -14,15 +14,6 @@ export const DEFAULT_CONFIG = {
   sessionCleanupDays: 3,
   enableSessionManagement: false,
   hapticsEnabled: true,
-  // Dashboard's secondary widget default. User can flip it in-place from
-  // the dashboard or change the default from Settings. Default is
-  // recent_customers because the rolling-30-day top-products aggregation
-  // is unreliable until the relay grows a native date-range aggregation
-  // endpoint — when many days return empty top_products, the widget
-  // shows "No sales in the last 30 days" even when the user clearly
-  // has prior sales. Recent customers reads from a single transactions
-  // page and is always accurate.
-  dashboardSecondaryWidget: 'recent_customers' as const,
 };
 
 export const STORAGE_KEYS = {
