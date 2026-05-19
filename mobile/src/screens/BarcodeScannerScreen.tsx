@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   StyleSheet,
   Alert,
+  Linking,
 } from 'react-native';
 import {CameraView, useCameraPermissions} from 'expo-camera';
 import {useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
@@ -174,20 +175,38 @@ const BarcodeScannerScreen: React.FC = () => {
     );
   }
 
-  // Permission denied
+  // Permission denied. We have two flavours:
+  // - First-time / soft-deny: canAskAgain=true → the OS-level prompt will
+  //   appear on requestPermission(). Show "Grant Permission".
+  // - Hard-deny (user disabled it in Settings, or denied with "Don't ask
+  //   again" on Android): canAskAgain=false → requestPermission() silently
+  //   no-ops. Show "Open Settings" instead so the user has a path forward,
+  //   not a dead button (Apple Review tests this flow).
   if (!permission.granted) {
+    const hardDenied = !permission.canAskAgain;
     return (
       <View style={styles.centered}>
         <Ionicons name="camera-outline" size={64} color={COLORS.textDim} />
         <Text style={styles.permissionTitle}>Camera Access Required</Text>
         <Text style={styles.permissionText}>
-          The barcode scanner needs access to your camera to scan product
-          barcodes.
+          {hardDenied
+            ? 'Camera access is turned off for AERIS. Open Settings to re-enable it so you can scan product barcodes.'
+            : 'The barcode scanner needs access to your camera to scan product barcodes.'}
         </Text>
         <TouchableOpacity
           style={styles.permissionButton}
-          onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
+          accessibilityRole="button"
+          accessibilityLabel={hardDenied ? 'Open Settings' : 'Grant camera permission'}
+          onPress={() => {
+            if (hardDenied) {
+              Linking.openSettings();
+            } else {
+              requestPermission();
+            }
+          }}>
+          <Text style={styles.permissionButtonText}>
+            {hardDenied ? 'Open Settings' : 'Grant Permission'}
+          </Text>
         </TouchableOpacity>
       </View>
     );
