@@ -37,25 +37,53 @@ const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}>
       <Text style={styles.title}>{title}</Text>
-      <View style={styles.dotsRow}>{dots}</View>
-      {error && <Text style={styles.error}>{error}</Text>}
+      {/* Dots indicator is a status, not a button — give VoiceOver a
+          meaningful read-out of progress instead of letting it read each
+          dot individually as "empty view". */}
+      <View
+        style={styles.dotsRow}
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={`PIN entry, ${pin.length} of 4 digits entered`}>
+        {dots}
+      </View>
+      {error && (
+        <Text style={styles.error} accessibilityLiveRegion="polite">
+          {error}
+        </Text>
+      )}
       <View style={styles.grid}>
         {digits.map((d, i) =>
           d === '' ? (
-            <View key={i} style={styles.emptyKey} />
+            <View key={i} style={styles.emptyKey} importantForAccessibility="no" />
           ) : d === 'DEL' ? (
-            <TouchableOpacity key={i} style={styles.key} onPress={handleDelete} onLongPress={handleClear}>
+            <TouchableOpacity
+              key={i}
+              style={styles.key}
+              onPress={handleDelete}
+              onLongPress={handleClear}
+              accessibilityRole="button"
+              accessibilityLabel="Delete last digit. Long press to clear PIN.">
               <Text style={styles.keyText}>DEL</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity key={i} style={styles.key} onPress={() => handleDigit(d)}>
+            <TouchableOpacity
+              key={i}
+              style={styles.key}
+              onPress={() => handleDigit(d)}
+              accessibilityRole="button"
+              accessibilityLabel={`Digit ${d}`}>
               <Text style={styles.keyText}>{d}</Text>
             </TouchableOpacity>
           ),
         )}
       </View>
       {onCancel && (
-        <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={onCancel}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel PIN entry">
           <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
       )}

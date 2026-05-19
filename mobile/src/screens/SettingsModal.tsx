@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
 } from 'react-native';
@@ -369,6 +370,44 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
                 onPress={handleLogout}>
                 <Text style={styles.logoutText}>Log out</Text>
               </TouchableOpacity>
+              {/* Apple App Store Review Guideline 5.1.1(v) — apps that
+                  create accounts must offer in-app deletion. AERIS accounts
+                  are administrator-provisioned (not user-signed-up), so we
+                  route the request to the public account-deletion page
+                  rather than calling a self-serve delete RPC. The page
+                  collects the user's identifier and confirms with the
+                  workspace admin; this satisfies the "initiated from
+                  inside the app" requirement. */}
+              <TouchableOpacity
+                style={styles.deleteAccountBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Delete account"
+                onPress={() => {
+                  haptics.light();
+                  Alert.alert(
+                    'Delete account',
+                    'AERIS accounts are managed by your workspace administrator. Opening the account deletion page in your browser — your admin will be notified to process the request.',
+                    [
+                      {text: 'Cancel', style: 'cancel'},
+                      {
+                        text: 'Continue',
+                        style: 'destructive',
+                        onPress: () => {
+                          Linking.openURL(
+                            'https://aeris.team/account/delete',
+                          ).catch(() => {
+                            Alert.alert(
+                              'Could not open browser',
+                              "Visit https://aeris.team/account/delete on any device to request account deletion, or contact your workspace administrator.",
+                            );
+                          });
+                        },
+                      },
+                    ],
+                  );
+                }}>
+                <Text style={styles.deleteAccountText}>Delete account</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
         </ScrollView>
@@ -451,6 +490,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoutText: {color: COLORS.white, fontSize: 16, fontWeight: '600'},
+  deleteAccountBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+    backgroundColor: 'transparent',
+  },
+  deleteAccountText: {color: COLORS.danger, fontSize: 14, fontWeight: '600'},
   lockSection: {
     marginTop: 20,
     paddingTop: 16,
