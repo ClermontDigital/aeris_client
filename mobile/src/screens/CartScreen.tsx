@@ -37,6 +37,8 @@ export default function CartScreen() {
     items,
     discountCents,
     notes,
+    customerId,
+    customerName,
     updateQuantity,
     removeItem,
     setDiscount,
@@ -262,6 +264,43 @@ export default function CartScreen() {
         </Text>
       </View>
 
+      {/* Customer chip — same picker the Checkout screen uses. Surfacing
+          customer attribution here (before total/checkout) is the cue for
+          the operator to register the sale against the right account. */}
+      {items.length > 0 && (
+        <TouchableOpacity
+          style={styles.customerChip}
+          activeOpacity={0.7}
+          onPress={() => {
+            haptics.light();
+            navigation.navigate('CustomerPicker');
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={
+            customerId != null && customerName
+              ? `Change customer, currently ${customerName}`
+              : 'Select customer or walk-in'
+          }>
+          <Ionicons
+            name={customerId != null ? 'person' : 'walk-outline'}
+            size={ICON_SIZE.action}
+            color={customerId != null ? COLORS.crimson : COLORS.textMuted}
+          />
+          <View style={styles.customerChipText}>
+            <Text style={styles.customerChipLabel}>Customer</Text>
+            <Text style={styles.customerChipValue} numberOfLines={1}>
+              {customerId != null && customerName ? customerName : 'Walk-in'}
+            </Text>
+          </View>
+          <Text style={styles.customerChipChange}>Change</Text>
+          <Ionicons
+            name="chevron-forward"
+            size={ICON_SIZE.action - 4}
+            color={COLORS.textMuted}
+          />
+        </TouchableOpacity>
+      )}
+
       {/* Cart Items */}
       <FlatList
         data={items}
@@ -390,6 +429,40 @@ const styles = StyleSheet.create({
   headerCount: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.md,
+  },
+  customerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+  },
+  customerChipText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  customerChipLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  customerChipValue: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  customerChipChange: {
+    color: COLORS.accent,
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '600',
   },
   listContent: {
     padding: SPACING.md,
