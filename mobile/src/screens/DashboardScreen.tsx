@@ -317,10 +317,13 @@ const DashboardScreen: React.FC = () => {
         })()}
 
         <Text style={styles.sectionLabel}>Quick Actions</Text>
+        {/* Labels mirror the bottom tab labels so the same destination
+            has the same name everywhere in the app — no "New Sale" here
+            but "Sale" at the bottom, etc. */}
         <View style={styles.quickActions}>
           <QuickAction
             icon="cart-outline"
-            label="New Sale"
+            label="Sale"
             onPress={() => goToTab('QuickSale')}
           />
           <QuickAction
@@ -335,7 +338,7 @@ const DashboardScreen: React.FC = () => {
           />
           <QuickAction
             icon="receipt-outline"
-            label="Sales"
+            label="Transactions"
             onPress={() => goToTab('Transactions')}
           />
         </View>

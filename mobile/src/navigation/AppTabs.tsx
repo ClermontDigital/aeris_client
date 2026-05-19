@@ -254,7 +254,10 @@ const styles = StyleSheet.create({
   brandWordmark: {
     width: 130,
     height: 38,
-    marginBottom: -16,
+    // Small upward nudge against the safe-area top — the wordmark was
+    // sitting a touch low under the notch on iPhones with smaller bezels.
+    marginTop: -6,
+    marginBottom: -10,
     zIndex: 2,
   },
   gearBtn: {
