@@ -51,9 +51,27 @@ const StatCard: React.FC<StatCardProps> = ({
           style={styles.icon}
         />
       ) : null}
-      <Text style={[styles.value, {color: valueColor}]}>{value}</Text>
-      <Text style={styles.label}>{label}</Text>
-      {sublabel ? <Text style={styles.sublabel}>{sublabel}</Text> : null}
+      {/* numberOfLines + adjustsFontSizeToFit keeps long values (e.g.
+          formatted currency) on a single line on narrow iPhones — the
+          three-up stat strips on Transactions and Dashboard otherwise
+          wrap to a second row. minimumFontScale stops the auto-shrink
+          from going so small it becomes illegible. */}
+      <Text
+        style={[styles.value, {color: valueColor}]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+        allowFontScaling={false}>
+        {value}
+      </Text>
+      <Text style={styles.label} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+        {label}
+      </Text>
+      {sublabel ? (
+        <Text style={styles.sublabel} numberOfLines={1}>
+          {sublabel}
+        </Text>
+      ) : null}
     </>
   );
 

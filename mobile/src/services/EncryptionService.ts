@@ -36,6 +36,19 @@ class EncryptionService {
 
   async verifyPin(pin: string, data: {hash: string; salt: string}): Promise<boolean> {
     if (!this.key) throw new Error('EncryptionService not initialized');
+    // Defence against schema drift: an older build (or a corrupted keychain
+    // entry) may have persisted the PIN as a bare hash string or as
+    // {hash} without a salt. Without this guard, data.hash.length blows up
+    // with TypeError after weeks idle, surfacing as the generic
+    // "undefined is not a function" ErrorBoundary screen. Returning false
+    // lets the caller route the user back to PIN setup.
+    if (!data || typeof data !== 'object') return false;
+    if (typeof data.hash !== 'string' || typeof data.salt !== 'string') return false;
+    // Empty-string fields pass the typeof check but would silently mismatch
+    // forever — and AppLockService accepts them via isStoredPin, so the
+    // stale payload never gets wiped. Reject loudly so the caller routes
+    // to PIN setup instead.
+    if (data.hash.length === 0 || data.salt.length === 0) return false;
     const computed = await this.deriveKey(pin, data.salt, this.key);
     // Constant-time comparison to prevent timing attacks
     if (computed.length !== data.hash.length) return false;
