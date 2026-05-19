@@ -45,9 +45,6 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
   const [hapticsEnabled, setHapticsEnabled] = useState(
     settings.hapticsEnabled !== false,
   );
-  const [dashboardWidget, setDashboardWidget] = useState<
-    'top_products' | 'recent_customers'
-  >(settings.dashboardSecondaryWidget ?? 'top_products');
 
   useEffect(() => {
     // Sync local form state when the modal opens or persisted settings
@@ -60,7 +57,6 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
     setSessionTimeout(settings.sessionTimeout);
     setEnableSessions(settings.enableSessionManagement);
     setHapticsEnabled(settings.hapticsEnabled !== false);
-    setDashboardWidget(settings.dashboardSecondaryWidget ?? 'top_products');
   }, [
     settings.baseUrl,
     settings.relayUrl,
@@ -68,7 +64,6 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
     settings.sessionTimeout,
     settings.enableSessionManagement,
     settings.hapticsEnabled,
-    settings.dashboardSecondaryWidget,
     visible,
   ]);
 
@@ -141,7 +136,6 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
       sessionTimeout,
       enableSessionManagement: enableSessions,
       hapticsEnabled,
-      dashboardSecondaryWidget: dashboardWidget,
     });
     onClose();
   };
@@ -268,50 +262,6 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
           <View style={styles.switchRow}>
             <Text style={styles.label}>Haptic Feedback</Text>
             <Switch value={hapticsEnabled} onValueChange={setHapticsEnabled} />
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Dashboard secondary widget</Text>
-            <View style={styles.segmented}>
-              <TouchableOpacity
-                style={[
-                  styles.segmentedButton,
-                  dashboardWidget === 'top_products' && styles.segmentedButtonActive,
-                ]}
-                onPress={() => {
-                  haptics.selection();
-                  setDashboardWidget('top_products');
-                }}>
-                <Text
-                  style={[
-                    styles.segmentedText,
-                    dashboardWidget === 'top_products' && styles.segmentedTextActive,
-                  ]}>
-                  Top products
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.segmentedButton,
-                  dashboardWidget === 'recent_customers' && styles.segmentedButtonActive,
-                ]}
-                onPress={() => {
-                  haptics.selection();
-                  setDashboardWidget('recent_customers');
-                }}>
-                <Text
-                  style={[
-                    styles.segmentedText,
-                    dashboardWidget === 'recent_customers' && styles.segmentedTextActive,
-                  ]}>
-                  Recent customers
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.fieldHint}>
-              The dashboard widget can also be toggled in place from the
-              dashboard itself.
-            </Text>
           </View>
 
           {isAuthenticated && hasPin ? (
