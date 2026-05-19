@@ -159,6 +159,64 @@ export class RelayClient {
     );
   }
 
+  // Top products aggregated over a rolling window. The marketplace dispatcher
+  // has no native range aggregation, so we fan out N calls to dashboard.summary
+  // (one per day) and aggregate client-side. Concurrency is capped at 5 to
+  // avoid hammering the relay. Days for which the summary fetch fails are
+  // simply skipped — partial data is better than nothing.
+  async getRollingTopProducts(
+    days = 30,
+    limit = 5,
+    locationId?: number,
+  ): Promise<DailySummary['top_products']> {
+    const dates: string[] = [];
+    const today = new Date();
+    for (let i = 0; i < days; i++) {
+      const d = new Date(
+        Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i),
+      );
+      dates.push(d.toISOString().slice(0, 10));
+    }
+
+    const CONCURRENCY = 5;
+    type TopProduct = DailySummary['top_products'][number];
+    const agg = new Map<number, TopProduct>();
+
+    for (let i = 0; i < dates.length; i += CONCURRENCY) {
+      const batch = dates.slice(i, i + CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map(date => this.getDailySummary(date, locationId)),
+      );
+      for (const r of results) {
+        if (r.status !== 'fulfilled') continue;
+        for (const tp of r.value.top_products ?? []) {
+          // Skip malformed entries — defensive against schema drift since
+          // we're aggregating across many responses.
+          if (!tp || typeof tp.id !== 'number' || typeof tp.name !== 'string') {
+            continue;
+          }
+          const existing = agg.get(tp.id);
+          if (existing) {
+            existing.quantity = (existing.quantity ?? 0) + (tp.quantity ?? 0);
+            existing.revenue_cents =
+              (existing.revenue_cents ?? 0) + (tp.revenue_cents ?? 0);
+          } else {
+            agg.set(tp.id, {
+              id: tp.id,
+              name: tp.name,
+              quantity: tp.quantity ?? 0,
+              revenue_cents: tp.revenue_cents ?? 0,
+            });
+          }
+        }
+      }
+    }
+
+    return Array.from(agg.values())
+      .sort((a, b) => (b.quantity ?? 0) - (a.quantity ?? 0))
+      .slice(0, limit);
+  }
+
   // --- Products ---
   async searchProducts(
     query: string,

@@ -91,6 +91,9 @@ export class ApiClient {
   // --- Dashboard ---
   getDailySummary = (...args: Parameters<RelayClient['getDailySummary']>) =>
     this.active.getDailySummary(...args);
+  getRollingTopProducts = (
+    ...args: Parameters<RelayClient['getRollingTopProducts']>
+  ) => this.active.getRollingTopProducts(...args);
 
   // --- Products ---
   searchProducts = (...args: Parameters<RelayClient['searchProducts']>) =>

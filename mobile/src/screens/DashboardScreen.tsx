@@ -79,9 +79,15 @@ const DashboardScreen: React.FC = () => {
   const [activeWidget, setActiveWidget] =
     useState<DashboardSecondaryWidget>(defaultWidget);
   const [summary, setSummary] = useState<DailySummary | null>(null);
+  const [rollingTop, setRollingTop] = useState<DailySummary['top_products']>([]);
+  const [rollingLoading, setRollingLoading] = useState(false);
   const [recentCustomers, setRecentCustomers] = useState<
     Array<{name: string; lastSaleAt: string; saleId: number}>
   >([]);
+  // 30 daily-summary RPCs are expensive; cache the result for the session
+  // and refetch only on explicit pull-to-refresh or after a 1-hour TTL.
+  const rollingCacheRef = useRef<{at: number; data: DailySummary['top_products']} | null>(null);
+  const ROLLING_TTL_MS = 60 * 60 * 1000;
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +127,31 @@ const DashboardScreen: React.FC = () => {
         setRecentCustomers(pickRecentUniqueCustomers(transactionsPage.data, 5));
       }
       setLastUpdated(new Date());
+
+      // Rolling top-products is a fan-out of ~30 RPCs and slower than the
+      // critical-path fetches above. Run after — never blocking the main
+      // dashboard render — and respect the cache so we don't fan out on
+      // every focus/AppState change.
+      const cached = rollingCacheRef.current;
+      const cacheFresh =
+        !isRefresh && cached && Date.now() - cached.at < ROLLING_TTL_MS;
+      if (cacheFresh && cached) {
+        setRollingTop(cached.data);
+      } else {
+        setRollingLoading(true);
+        ApiClient.getRollingTopProducts(30, 5)
+          .then((top: DailySummary['top_products']) => {
+            rollingCacheRef.current = {at: Date.now(), data: top};
+            setRollingTop(top);
+          })
+          .catch((e: unknown) => {
+            // Swallow — the widget falls back to today's top_products from
+            // the daily summary if rolling fails. Not worth showing an
+            // error banner for what's already a secondary widget.
+            console.warn('getRollingTopProducts failed:', e);
+          })
+          .finally(() => setRollingLoading(false));
+      }
     } catch (e) {
       const message =
         e instanceof Error ? e.message : 'Failed to load dashboard';
@@ -208,7 +239,11 @@ const DashboardScreen: React.FC = () => {
   const itemsSold = summary?.items_sold ?? 0;
   const avgSale = summary?.average_sale_cents ?? 0;
   const revenue = summary?.revenue_cents ?? 0;
-  const topProducts = summary?.top_products ?? [];
+  // Prefer the rolling 30-day aggregation. If rolling is still loading or
+  // returned nothing, fall back to today's top_products so the widget isn't
+  // empty during the rolling fan-out's first ~1-2s on slow networks.
+  const topProducts =
+    rollingTop.length > 0 ? rollingTop : summary?.top_products ?? [];
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -307,7 +342,9 @@ const DashboardScreen: React.FC = () => {
 
         <View style={styles.widgetHeader}>
           <Text style={styles.widgetTitle}>
-            {activeWidget === 'top_products' ? 'Top Products' : 'Recent Customers'}
+            {activeWidget === 'top_products'
+              ? 'Top Products (30 days)'
+              : 'Recent Customers'}
           </Text>
           <TouchableOpacity
             style={styles.widgetToggle}
@@ -364,10 +401,17 @@ const DashboardScreen: React.FC = () => {
                 </View>
               ))}
             </View>
+          ) : rollingLoading ? (
+            <View style={styles.widgetLoading}>
+              <ActivityIndicator color={COLORS.accent} />
+              <Text style={styles.widgetLoadingText}>
+                Aggregating last 30 days…
+              </Text>
+            </View>
           ) : (
             <EmptyState
-              title="No sales yet today"
-              description="Your first sale will appear here."
+              title="No sales in the last 30 days"
+              description="Top products will appear here once you've recorded some sales."
               icon="bag-handle-outline"
             />
           )
@@ -540,6 +584,17 @@ const styles = StyleSheet.create({
   widgetToggleText: {
     color: COLORS.textMuted,
     fontWeight: '600',
+    fontSize: FONT_SIZE.sm,
+  },
+  widgetLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.lg,
+    justifyContent: 'center',
+  },
+  widgetLoadingText: {
+    color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
   },
   heroCard: {
