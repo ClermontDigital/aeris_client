@@ -1,11 +1,7 @@
 import {create} from 'zustand';
 import StorageService from '../services/StorageService';
 import {STORAGE_KEYS, DEFAULT_CONFIG, normalizeBaseUrl, resolveFetchUrl} from '../constants/config';
-import type {
-  Settings,
-  DashboardSecondaryWidget,
-} from '../types/settings.types';
-import {DASHBOARD_SECONDARY_WIDGETS} from '../types/settings.types';
+import type {Settings} from '../types/settings.types';
 import type {ConnectionMode} from '../types/api.types';
 
 // Mirror of shared/src/types/api.types.ts — ConnectionMode is a literal union,
@@ -34,12 +30,6 @@ function pickConnectionMode(v: unknown): ConnectionMode {
     : DEFAULT_CONFIG.connectionMode;
 }
 
-function pickDashboardWidget(v: unknown): DashboardSecondaryWidget {
-  return DASHBOARD_SECONDARY_WIDGETS.includes(v as DashboardSecondaryWidget)
-    ? (v as DashboardSecondaryWidget)
-    : DEFAULT_CONFIG.dashboardSecondaryWidget;
-}
-
 /**
  * Build a Settings object from an unknown blob pulled out of storage.
  * Per-field type validation defends against shape drift: an older build
@@ -65,7 +55,6 @@ function coerceSettings(stored: unknown): Settings {
         ? s.workspaceCode
         : DEFAULT_CONFIG.workspaceCode,
     hapticsEnabled: pickBoolean(s.hapticsEnabled, DEFAULT_CONFIG.hapticsEnabled),
-    dashboardSecondaryWidget: pickDashboardWidget(s.dashboardSecondaryWidget),
   };
 }
 

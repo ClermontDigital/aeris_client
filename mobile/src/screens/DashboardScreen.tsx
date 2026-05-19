@@ -16,8 +16,6 @@ import {Ionicons} from '@expo/vector-icons';
 import ApiClient from '../services/ApiClient';
 import type {DailySummary, Sale} from '../types/api.types';
 import type {AppTabParamList} from '../types/navigation.types';
-import type {DashboardSecondaryWidget} from '../types/settings.types';
-import {useSettingsStore} from '../stores/settingsStore';
 import {
   COLORS,
   SPACING,
@@ -73,36 +71,14 @@ const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const haptics = useHaptics();
   const userName = useAuthStore(s => s.user?.name);
-  const defaultWidget = useSettingsStore(
-    s => s.settings.dashboardSecondaryWidget ?? 'top_products',
-  );
-  const [activeWidget, setActiveWidget] =
-    useState<DashboardSecondaryWidget>(defaultWidget);
   const [summary, setSummary] = useState<DailySummary | null>(null);
-  const [rollingTop, setRollingTop] = useState<DailySummary['top_products']>([]);
-  const [rollingLoading, setRollingLoading] = useState(false);
   const [recentCustomers, setRecentCustomers] = useState<
     Array<{name: string; lastSaleAt: string; saleId: number}>
   >([]);
-  // 30 daily-summary RPCs are expensive; cache the result for the session
-  // and refetch only on explicit pull-to-refresh or after a 1-hour TTL.
-  const rollingCacheRef = useRef<{at: number; data: DailySummary['top_products']} | null>(null);
-  const ROLLING_TTL_MS = 60 * 60 * 1000;
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-
-  // Honour Settings changes when the user re-enters the dashboard. We don't
-  // overwrite an in-flight in-place toggle — the user expects the toggle
-  // to stick for the rest of the session.
-  const lastDefaultRef = useRef(defaultWidget);
-  useEffect(() => {
-    if (lastDefaultRef.current !== defaultWidget) {
-      lastDefaultRef.current = defaultWidget;
-      setActiveWidget(defaultWidget);
-    }
-  }, [defaultWidget]);
 
   const fetchSummary = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -113,11 +89,10 @@ const DashboardScreen: React.FC = () => {
     setError(null);
 
     try {
-      // Always pull daily summary (drives the hero card + stat strip).
-      // Pull recent transactions in parallel so the recent-customers widget
-      // is ready the moment the user toggles to it — avoids a second
-      // loading state on switch. 50 sales is enough to find 5 unique
-      // customers in any realistic dataset.
+      // Daily summary drives the hero card + stat strip. Recent
+      // transactions in parallel feeds the Recent Customers list below
+      // — 50 sales is enough to find 5 unique named customers in any
+      // realistic dataset.
       const [data, transactionsPage] = await Promise.all([
         ApiClient.getDailySummary(),
         ApiClient.getTransactions({page: 1, per_page: 50}).catch(() => null),
@@ -127,31 +102,6 @@ const DashboardScreen: React.FC = () => {
         setRecentCustomers(pickRecentUniqueCustomers(transactionsPage.data, 5));
       }
       setLastUpdated(new Date());
-
-      // Rolling top-products is a fan-out of ~30 RPCs and slower than the
-      // critical-path fetches above. Run after — never blocking the main
-      // dashboard render — and respect the cache so we don't fan out on
-      // every focus/AppState change.
-      const cached = rollingCacheRef.current;
-      const cacheFresh =
-        !isRefresh && cached && Date.now() - cached.at < ROLLING_TTL_MS;
-      if (cacheFresh && cached) {
-        setRollingTop(cached.data);
-      } else {
-        setRollingLoading(true);
-        ApiClient.getRollingTopProducts(30, 5)
-          .then((top: DailySummary['top_products']) => {
-            rollingCacheRef.current = {at: Date.now(), data: top};
-            setRollingTop(top);
-          })
-          .catch((e: unknown) => {
-            // Swallow — the widget falls back to today's top_products from
-            // the daily summary if rolling fails. Not worth showing an
-            // error banner for what's already a secondary widget.
-            console.warn('getRollingTopProducts failed:', e);
-          })
-          .finally(() => setRollingLoading(false));
-      }
     } catch (e) {
       const message =
         e instanceof Error ? e.message : 'Failed to load dashboard';
@@ -200,18 +150,6 @@ const DashboardScreen: React.FC = () => {
   const greeting = greetingFor(new Date().getHours());
   const name = firstName(userName);
 
-  // Dashboard is a direct Tab.Screen, so useNavigation() already returns the
-  // tab navigator — calling `.navigate(siblingTabName)` jumps tabs directly.
-  // The earlier getParent() chase walked up to RootNavigator (which only
-  // knows 'Auth' / 'App') and silently no-op'd, so the tiles did nothing.
-  const goToTab = useCallback(
-    (tab: keyof AppTabParamList) => {
-      haptics.light();
-      navigation.navigate(tab);
-    },
-    [haptics, navigation],
-  );
-
   if (isLoading && !summary) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -239,11 +177,6 @@ const DashboardScreen: React.FC = () => {
   const itemsSold = summary?.items_sold ?? 0;
   const avgSale = summary?.average_sale_cents ?? 0;
   const revenue = summary?.revenue_cents ?? 0;
-  // Prefer the rolling 30-day aggregation. If rolling is still loading or
-  // returned nothing, fall back to today's top_products so the widget isn't
-  // empty during the rolling fan-out's first ~1-2s on slow networks.
-  const topProducts =
-    rollingTop.length > 0 ? rollingTop : summary?.top_products ?? [];
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -316,109 +249,8 @@ const DashboardScreen: React.FC = () => {
           );
         })()}
 
-        <Text style={styles.sectionLabel}>Quick Actions</Text>
-        {/* Labels mirror the bottom tab labels so the same destination
-            has the same name everywhere in the app — no "New Sale" here
-            but "Sale" at the bottom, etc. */}
-        <View style={styles.quickActions}>
-          <QuickAction
-            icon="cart-outline"
-            label="Sale"
-            onPress={() => goToTab('QuickSale')}
-          />
-          <QuickAction
-            icon="cube-outline"
-            label="Items"
-            onPress={() => goToTab('Items')}
-          />
-          <QuickAction
-            icon="people-outline"
-            label="Customers"
-            onPress={() => goToTab('Customers')}
-          />
-          <QuickAction
-            icon="receipt-outline"
-            label="Transactions"
-            onPress={() => goToTab('Transactions')}
-          />
-        </View>
-
-        <View style={styles.widgetHeader}>
-          <Text style={styles.widgetTitle}>
-            {activeWidget === 'top_products'
-              ? 'Top Products (30 days)'
-              : 'Recent Customers'}
-          </Text>
-          <TouchableOpacity
-            style={styles.widgetToggle}
-            accessibilityRole="button"
-            accessibilityLabel={
-              activeWidget === 'top_products'
-                ? 'Switch to recent customers'
-                : 'Switch to top products'
-            }
-            onPress={() => {
-              haptics.selection();
-              setActiveWidget(prev =>
-                prev === 'top_products' ? 'recent_customers' : 'top_products',
-              );
-            }}>
-            <Ionicons
-              name={
-                activeWidget === 'top_products' ? 'people-outline' : 'bag-handle-outline'
-              }
-              size={ICON_SIZE.action - 2}
-              color={COLORS.textMuted}
-            />
-            <Text style={styles.widgetToggleText}>
-              {activeWidget === 'top_products' ? 'Customers' : 'Products'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {activeWidget === 'top_products' ? (
-          topProducts.length > 0 ? (
-            <View style={styles.topProductsCard}>
-              {topProducts.slice(0, 5).map((product, index) => (
-                <View
-                  key={product.id}
-                  style={[
-                    styles.productRow,
-                    index === Math.min(topProducts.length, 5) - 1 &&
-                      styles.productRowLast,
-                  ]}>
-                  <View style={styles.productRank}>
-                    <Text style={styles.productRankText}>{index + 1}</Text>
-                  </View>
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productName} numberOfLines={1}>
-                      {product.name}
-                    </Text>
-                    <Text style={styles.productMeta}>
-                      {product.quantity} sold
-                    </Text>
-                  </View>
-                  <Text style={styles.productRevenue}>
-                    {formatCurrency(product.revenue_cents)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : rollingLoading ? (
-            <View style={styles.widgetLoading}>
-              <ActivityIndicator color={COLORS.accent} />
-              <Text style={styles.widgetLoadingText}>
-                Aggregating last 30 days…
-              </Text>
-            </View>
-          ) : (
-            <EmptyState
-              title="No sales in the last 30 days"
-              description="Top products will appear here once you've recorded some sales."
-              icon="bag-handle-outline"
-            />
-          )
-        ) : recentCustomers.length > 0 ? (
+        <Text style={styles.sectionLabel}>Recent Customers</Text>
+        {recentCustomers.length > 0 ? (
           <View style={styles.topProductsCard}>
             {recentCustomers.map((customer, index) => (
               <TouchableOpacity
@@ -484,24 +316,6 @@ const DashboardScreen: React.FC = () => {
   );
 };
 
-const QuickAction: React.FC<{
-  icon: React.ComponentProps<typeof Ionicons>['name'];
-  label: string;
-  onPress: () => void;
-}> = ({icon, label, onPress}) => (
-  <TouchableOpacity
-    style={styles.quickActionTile}
-    activeOpacity={0.7}
-    onPress={onPress}
-    accessibilityRole="button"
-    accessibilityLabel={label}>
-    <View style={styles.quickActionIconWrap}>
-      <Ionicons name={icon} size={ICON_SIZE.hero} color={COLORS.crimson} />
-    </View>
-    <Text style={styles.quickActionLabel}>{label}</Text>
-  </TouchableOpacity>
-);
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -559,47 +373,6 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
     marginTop: SPACING.xs,
   },
-  widgetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.sm,
-    marginTop: SPACING.xs,
-  },
-  widgetTitle: {
-    fontSize: FONT_SIZE.sm,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  widgetToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: BORDER_RADIUS.md,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-  },
-  widgetToggleText: {
-    color: COLORS.textMuted,
-    fontWeight: '600',
-    fontSize: FONT_SIZE.sm,
-  },
-  widgetLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    paddingVertical: SPACING.lg,
-    justifyContent: 'center',
-  },
-  widgetLoadingText: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.sm,
-  },
   heroCard: {
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,
@@ -641,37 +414,6 @@ const styles = StyleSheet.create({
   },
   // Cell wraps StatCard so flex:1 sizing lives outside the shared component.
   statCell: {flex: 1},
-  quickActions: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginBottom: SPACING.lg,
-  },
-  quickActionTile: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xs,
-    alignItems: 'center',
-    ...SHADOW.card,
-  },
-  quickActionIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: BORDER_RADIUS.full,
-    backgroundColor: COLORS.cream,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: SPACING.xs,
-  },
-  quickActionLabel: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.text,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
   topProductsCard: {
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.lg,

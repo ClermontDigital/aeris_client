@@ -26,7 +26,7 @@ import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 import type {Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
-import {formatCurrency} from '../utils/format';
+import {formatCurrency, formatCurrencyWhole} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<TransactionsStackParamList>;
 
@@ -172,13 +172,7 @@ export default function TransactionListScreen() {
       (sum, t) => sum + (t.total_cents || 0),
       0,
     );
-    const visibleCount = transactions.length;
-    const visibleSum = transactions.reduce(
-      (sum, t) => sum + (t.total_cents || 0),
-      0,
-    );
-    const avgCents = visibleCount > 0 ? Math.round(visibleSum / visibleCount) : 0;
-    return {todayCount, todayRevenueCents, avgCents};
+    return {todayCount, todayRevenueCents};
   }, [transactions]);
 
   const renderTransaction = ({item}: {item: Sale}) => (
@@ -274,36 +268,27 @@ export default function TransactionListScreen() {
       </View>
 
       {/* Stat strip — derived from the currently-loaded page so the values
-          stay coherent with the visible list rows. Single shared font
-          size across all three cells so "0" vs "$1,234.56" doesn't render
-          at visually different scales. */}
+          stay coherent with the visible list rows. Two cards: count of
+          sales today, and today's total revenue (whole-dollar to avoid
+          crowding the narrow column with decimals). Shared font size so
+          "5" and "$1,235" render at the same visual scale. */}
       {(() => {
         const todayCountStr = String(stats.todayCount);
-        const todayRevStr = formatCurrency(stats.todayRevenueCents);
-        const avgStr = formatCurrency(stats.avgCents);
-        const fs = pickStatRowFontSize([todayCountStr, todayRevStr, avgStr]);
+        const todayRevStr = formatCurrencyWhole(stats.todayRevenueCents);
+        const fs = pickStatRowFontSize([todayCountStr, todayRevStr]);
         return (
           <View style={styles.statStrip}>
             <View style={styles.statCell}>
               <StatCard
-                label="Today"
+                label="Sales Today"
                 value={todayCountStr}
-                sublabel="sales"
                 valueFontSize={fs}
               />
             </View>
             <View style={styles.statCell}>
               <StatCard
-                label="Today Revenue"
+                label="Revenue Today"
                 value={todayRevStr}
-                valueFontSize={fs}
-              />
-            </View>
-            <View style={styles.statCell}>
-              <StatCard
-                label="Avg Sale"
-                value={avgStr}
-                sublabel="visible"
                 valueFontSize={fs}
               />
             </View>
