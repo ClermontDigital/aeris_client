@@ -1,7 +1,7 @@
 import React from 'react';
 import {View, TouchableOpacity, Text, StyleSheet} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
-import {COLORS, FONT_SIZE, BORDER_RADIUS, SPACING, BUTTON_SIZE} from '../constants/theme';
+import {COLORS, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS, SPACING, BUTTON_SIZE} from '../constants/theme';
 
 interface ToolbarProps {
   canGoBack: boolean;
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
     borderRadius: BORDER_RADIUS.lg,
   },
-  sessionText: {color: COLORS.white, fontSize: FONT_SIZE.sm + 1, fontWeight: '600'},
+  sessionText: {color: COLORS.white, fontSize: FONT_SIZE.sm + 1, fontFamily: FONT_FAMILY.medium},
 });
 
 export default Toolbar;

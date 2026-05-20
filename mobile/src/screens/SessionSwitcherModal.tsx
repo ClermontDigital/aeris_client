@@ -4,7 +4,7 @@ import Modal from 'react-native-modal';
 import SessionCard from '../components/SessionCard';
 import PinPad from '../components/PinPad';
 import {useSessionStore} from '../stores/sessionStore';
-import {COLORS, FONT_SIZE, SPACING, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, FONT_SIZE, FONT_FAMILY, SPACING, BORDER_RADIUS} from '../constants/theme';
 
 interface Props {
   visible: boolean;
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   // PinPad supplies its own navy card, so the outer wrapper here is
   // transparent / flush.
   pinContent: {alignItems: 'center'},
-  title: {fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.sm + 4},
+  title: {fontSize: FONT_SIZE.xl, fontFamily: FONT_FAMILY.bold, color: COLORS.text, marginBottom: SPACING.sm + 4},
   scrollView: {flexGrow: 0},
   buttons: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: SPACING.md},
   newBtn: {
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm + 2,
     borderRadius: BORDER_RADIUS.md,
   },
-  newText: {color: COLORS.white, fontWeight: '600'},
+  newText: {color: COLORS.white, fontFamily: FONT_FAMILY.medium},
   closeText: {color: COLORS.textMuted, fontSize: FONT_SIZE.md + 1},
 });
 

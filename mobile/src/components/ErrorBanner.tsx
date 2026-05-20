@@ -5,6 +5,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -92,7 +93,7 @@ const styles = StyleSheet.create({
   message: {
     flex: 1,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
   retryBtn: {
     marginLeft: SPACING.sm,
@@ -100,7 +101,7 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     textDecorationLine: 'underline',
   },
   dismissBtn: {

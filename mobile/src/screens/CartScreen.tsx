@@ -18,6 +18,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -418,12 +419,12 @@ const styles = StyleSheet.create({
   backText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
   headerTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     flex: 1,
   },
   headerCount: {
@@ -456,13 +457,13 @@ const styles = StyleSheet.create({
   customerChipValue: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     marginTop: 2,
   },
   customerChipChange: {
     color: COLORS.accent,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   listContent: {
     padding: SPACING.md,
@@ -485,7 +486,7 @@ const styles = StyleSheet.create({
   cartItemName: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   cartItemSku: {
     color: COLORS.textMuted,
@@ -515,7 +516,7 @@ const styles = StyleSheet.create({
   quantityText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     minWidth: 28,
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
@@ -587,7 +588,7 @@ const styles = StyleSheet.create({
   },
   summaryDiscountValue: {
     color: COLORS.warning,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   summaryDivider: {
     height: 1,
@@ -604,12 +605,12 @@ const styles = StyleSheet.create({
   totalLabel: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   totalValue: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   buttonRow: {
@@ -627,7 +628,7 @@ const styles = StyleSheet.create({
   clearButtonText: {
     color: COLORS.danger,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   checkoutButton: {
     flex: 2,
@@ -639,6 +640,6 @@ const styles = StyleSheet.create({
   checkoutButtonText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
 });

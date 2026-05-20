@@ -1,9 +1,11 @@
-import React, {useEffect, useRef} from 'react';
+import React, {useCallback, useEffect, useRef} from 'react';
 import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState, AppStateStatus} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {NavigationContainer} from '@react-navigation/native';
 import {activateKeepAwakeAsync} from 'expo-keep-awake';
 import * as NavigationBar from 'expo-navigation-bar';
+import {useFonts} from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import {useSettingsStore} from './stores/settingsStore';
 import {useAuthStore} from './stores/authStore';
 import {useProductCacheStore} from './stores/productCacheStore';
@@ -12,7 +14,14 @@ import ApiClient from './services/ApiClient';
 import RootNavigator from './navigation/RootNavigator';
 import AppLockScreen from './screens/AppLockScreen';
 import PinSetupScreen from './screens/PinSetupScreen';
-import {COLORS} from './constants/theme';
+import {COLORS, FONT_FAMILY} from './constants/theme';
+
+// Keep the native splash visible while Poppins loads in parallel with the
+// rest of the boot sequence. preventAutoHideAsync returns a promise that
+// resolves with a boolean and rejects only if called after auto-hide has
+// already fired; swallow the warning so a hot-reload doesn't spam the
+// console.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -52,14 +61,43 @@ class ErrorBoundary extends React.Component<
 }
 
 const errorStyles = StyleSheet.create({
-  container: {flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#003049', padding: 24},
-  title: {fontSize: 22, fontWeight: '700', color: '#dc2626', marginBottom: 12},
-  message: {fontSize: 14, color: '#e2e8f0', textAlign: 'center', marginBottom: 24},
-  button: {backgroundColor: '#667eea', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8},
-  buttonText: {color: '#fff', fontSize: 16, fontWeight: '600'},
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.navy,
+    padding: 24,
+  },
+  title: {fontSize: 22, fontFamily: FONT_FAMILY.bold, color: COLORS.crimson, marginBottom: 12},
+  message: {fontSize: 14, color: COLORS.textOnDark, textAlign: 'center', marginBottom: 24},
+  button: {
+    backgroundColor: COLORS.crimson,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  buttonText: {color: COLORS.textOnDark, fontSize: 16, fontFamily: FONT_FAMILY.medium},
 });
 
 const App: React.FC = () => {
+  // Poppins via expo-font. useFonts kicks off the load on first render in
+  // parallel with the init useEffect below — they do not gate each other,
+  // so the total cold-start cost is max(font_load, init), not the sum.
+  // Capture the error too: if a font asset fails to decode (corrupt asset
+  // on a bad OTA, OOM on low-end Android), we must NOT sit on a black
+  // screen forever — proceed without Poppins and let the system font
+  // fall through.
+  const [fontsLoaded, fontError] = useFonts({
+    'Poppins-Light': require('../assets/fonts/Poppins-Light.ttf'),
+    'Poppins-Regular': require('../assets/fonts/Poppins-Regular.ttf'),
+    'Poppins-Medium': require('../assets/fonts/Poppins-Medium.ttf'),
+    'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
+  });
+  if (fontError) {
+    console.warn('[App] Poppins font failed to load — falling back to system font.', fontError);
+  }
+  const fontsReady = fontsLoaded || !!fontError;
+
   const initSettings = useSettingsStore(s => s.init);
   const settings = useSettingsStore(s => s.settings);
   const restoreSession = useAuthStore(s => s.restoreSession);
@@ -73,6 +111,15 @@ const App: React.FC = () => {
   const isLocked = useAppLockStore(s => s.isLocked);
   const hasPin = useAppLockStore(s => s.hasPin);
   const lockInitialized = useAppLockStore(s => s.initialized);
+
+  // Hide the native splash once fonts have loaded OR errored. The errored
+  // branch lets the user into the app rendered with the system font rather
+  // than stuck staring at the brand splash.
+  const onLayoutRootView = useCallback(async () => {
+    if (fontsReady) {
+      await SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,11 +252,20 @@ const App: React.FC = () => {
   // mount. Unauthed users skip the gate (login/setup is allowed pre-init).
   const showSplash = isAuthenticated && !lockInitialized;
 
+  // Hold the entire tree until Poppins has loaded OR errored. The native
+  // splash stays up (preventAutoHideAsync above) so the user sees the
+  // brand splash instead of a blank screen. fontError lets us proceed to
+  // the app rather than wedge on a black screen if the asset is bad.
+  if (!fontsReady) {
+    return null;
+  }
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
         <StatusBar hidden />
         <NavigationContainer
+          onReady={onLayoutRootView}
           theme={{
             dark: true,
             colors: {
@@ -221,10 +277,10 @@ const App: React.FC = () => {
               notification: COLORS.accent,
             },
             fonts: {
-              regular: { fontFamily: 'System', fontWeight: '400' },
-              medium: { fontFamily: 'System', fontWeight: '500' },
-              bold: { fontFamily: 'System', fontWeight: '700' },
-              heavy: { fontFamily: 'System', fontWeight: '800' },
+              regular: { fontFamily: FONT_FAMILY.regular, fontWeight: '400' },
+              medium: { fontFamily: FONT_FAMILY.medium, fontWeight: '500' },
+              bold: { fontFamily: FONT_FAMILY.bold, fontWeight: '700' },
+              heavy: { fontFamily: FONT_FAMILY.bold, fontWeight: '800' },
             },
           }}
         >

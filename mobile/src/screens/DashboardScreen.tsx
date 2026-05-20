@@ -20,8 +20,10 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
+  LETTER_SPACING,
   SHADOW,
 } from '../constants/theme';
 import {useAuthStore} from '../stores/authStore';
@@ -30,6 +32,8 @@ import {formatCurrency} from '../utils/format';
 import StatCard, {pickStatRowFontSize} from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
+import MotionCard from '../components/MotionCard';
+import PillButton from '../components/PillButton';
 
 type Nav = BottomTabNavigationProp<AppTabParamList, 'Dashboard'>;
 
@@ -191,7 +195,11 @@ const DashboardScreen: React.FC = () => {
           />
         }>
         <View style={styles.header}>
-          <Text style={styles.greeting}>
+          <Text
+            style={styles.greeting}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}>
             {greeting}
             {name ? ', ' : ''}
             {name ? <Text style={styles.greetingName}>{name}</Text> : null}
@@ -217,7 +225,7 @@ const DashboardScreen: React.FC = () => {
             with a clear CTA to start a sale. Recent Customers below still
             renders normally — that history is unrelated to today's pace. */}
         {salesCount === 0 ? (
-          <View style={styles.quietDayCard}>
+          <MotionCard style={styles.quietDayCard} delay={0}>
             <View style={styles.quietDayIcon}>
               <Ionicons
                 name="cafe-outline"
@@ -230,27 +238,29 @@ const DashboardScreen: React.FC = () => {
               No sales posted today yet. Start a sale and your live totals
               will show up here.
             </Text>
-            <TouchableOpacity
-              style={styles.quietDayCta}
-              accessibilityRole="button"
+            <PillButton
+              variant="solid"
+              label="Start a Sale"
+              icon="cart-outline"
               accessibilityLabel="Start a new sale"
-              onPress={() => {
-                haptics.light();
-                navigation.navigate('QuickSale');
-              }}>
-              <Ionicons
-                name="cart-outline"
-                size={ICON_SIZE.action - 2}
-                color={COLORS.textOnDark}
-              />
-              <Text style={styles.quietDayCtaText}>Start a Sale</Text>
-            </TouchableOpacity>
-          </View>
+              onPress={() => navigation.navigate('QuickSale')}
+            />
+          </MotionCard>
         ) : (
           <>
-            <View style={styles.heroCard}>
+            <MotionCard style={styles.heroCard} delay={0}>
               <Text style={styles.heroLabel}>Revenue</Text>
-              <Text style={styles.heroValue}>{formatCurrency(revenue)}</Text>
+              {/* Revenue at displayXl Poppins-Bold is the largest numeric on
+                  the screen — auto-shrink so $1,234,567+ doesn't overflow
+                  the card on iPhone SE. */}
+              <Text
+                style={styles.heroValue}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.5}
+                allowFontScaling={false}>
+                {formatCurrency(revenue)}
+              </Text>
               <View style={styles.heroFootnote}>
                 <Ionicons
                   name="trending-up"
@@ -262,7 +272,7 @@ const DashboardScreen: React.FC = () => {
                   {`${salesCount} ${salesCount === 1 ? 'sale' : 'sales'} so far`}
                 </Text>
               </View>
-            </View>
+            </MotionCard>
 
             {(() => {
               const salesStr = String(salesCount);
@@ -270,7 +280,7 @@ const DashboardScreen: React.FC = () => {
               const avgStr = formatCurrency(avgSale);
               const fs = pickStatRowFontSize([salesStr, itemsStr, avgStr]);
               return (
-                <View style={styles.statsGrid}>
+                <MotionCard style={styles.statsGrid} delay={80}>
                   <View style={styles.statCell}>
                     <StatCard label="Sales" value={salesStr} valueFontSize={fs} />
                   </View>
@@ -280,7 +290,7 @@ const DashboardScreen: React.FC = () => {
                   <View style={styles.statCell}>
                     <StatCard label="Avg Sale" value={avgStr} valueFontSize={fs} />
                   </View>
-                </View>
+                </MotionCard>
               );
             })()}
           </>
@@ -288,7 +298,7 @@ const DashboardScreen: React.FC = () => {
 
         <Text style={styles.sectionLabel}>Recent Customers</Text>
         {recentCustomers.length > 0 ? (
-          <View style={styles.topProductsCard}>
+          <MotionCard style={styles.topProductsCard} delay={160}>
             {recentCustomers.map((customer, index) => (
               <TouchableOpacity
                 key={customer.saleId}
@@ -330,7 +340,7 @@ const DashboardScreen: React.FC = () => {
                 />
               </TouchableOpacity>
             ))}
-          </View>
+          </MotionCard>
         ) : (
           <EmptyState
             title="No recent customers"
@@ -388,10 +398,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
   },
   greeting: {
-    fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontSize: FONT_SIZE.displayLg,
+    fontFamily: FONT_FAMILY.medium,
     color: COLORS.text,
-    letterSpacing: -0.4,
+    letterSpacing: LETTER_SPACING.tightLg,
   },
   greetingName: {
     color: COLORS.crimson,
@@ -403,7 +413,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: FONT_SIZE.sm,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     color: COLORS.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -412,7 +422,7 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
+    borderRadius: BORDER_RADIUS.xxl,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     padding: SPACING.lg,
@@ -421,7 +431,7 @@ const styles = StyleSheet.create({
   },
   quietDayCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
+    borderRadius: BORDER_RADIUS.xxl,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     padding: SPACING.lg,
@@ -440,7 +450,7 @@ const styles = StyleSheet.create({
   },
   quietDayTitle: {
     fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     color: COLORS.text,
     marginBottom: SPACING.xs,
   },
@@ -452,33 +462,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     lineHeight: 20,
   },
-  quietDayCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    backgroundColor: COLORS.crimson,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  quietDayCtaText: {
-    color: COLORS.textOnDark,
-    fontSize: FONT_SIZE.md,
-    fontWeight: '700',
-  },
   heroLabel: {
     fontSize: FONT_SIZE.sm,
     color: COLORS.textMuted,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: SPACING.xs,
   },
   heroValue: {
-    fontSize: FONT_SIZE.title,
+    fontSize: FONT_SIZE.displayXl,
     color: COLORS.crimson,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+    fontFamily: FONT_FAMILY.bold,
+    letterSpacing: LETTER_SPACING.tightXl,
     fontVariant: ['tabular-nums'],
   },
   heroFootnote: {
@@ -500,7 +496,7 @@ const styles = StyleSheet.create({
   statCell: {flex: 1},
   topProductsCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
+    borderRadius: BORDER_RADIUS.xxl,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     paddingHorizontal: SPACING.md,
@@ -528,7 +524,7 @@ const styles = StyleSheet.create({
   productRankText: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   productInfo: {
@@ -538,7 +534,7 @@ const styles = StyleSheet.create({
   productName: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   productMeta: {
     color: COLORS.textMuted,
@@ -549,7 +545,7 @@ const styles = StyleSheet.create({
   productRevenue: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   lastUpdated: {

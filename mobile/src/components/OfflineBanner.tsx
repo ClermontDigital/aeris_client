@@ -1,6 +1,6 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
-import {COLORS, FONT_SIZE, SPACING} from '../constants/theme';
+import {COLORS, FONT_SIZE, FONT_FAMILY, SPACING} from '../constants/theme';
 
 interface Props {
   isConnected: boolean;
@@ -34,8 +34,8 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     gap: SPACING.md,
   },
-  text: {color: COLORS.cream, fontSize: FONT_SIZE.md, fontWeight: '500'},
-  retry: {color: COLORS.cream, fontSize: FONT_SIZE.md, fontWeight: '700', textDecorationLine: 'underline'},
+  text: {color: COLORS.cream, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
+  retry: {color: COLORS.cream, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bold, textDecorationLine: 'underline'},
 });
 
 export default OfflineBanner;

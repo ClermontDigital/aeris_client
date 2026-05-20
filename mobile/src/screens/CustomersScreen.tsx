@@ -17,6 +17,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -262,7 +263,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   bannerWrap: {
     paddingHorizontal: SPACING.md,
@@ -300,7 +301,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   rowLeft: {flex: 1, marginRight: SPACING.md},
-  rowName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  rowName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
   rowMeta: {color: COLORS.textMuted, fontSize: FONT_SIZE.xs, marginTop: 2},
   rowRight: {flexDirection: 'row', alignItems: 'center'},
   balanceCol: {alignItems: 'flex-end'},
@@ -308,7 +309,7 @@ const styles = StyleSheet.create({
   rowBalance: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     fontVariant: ['tabular-nums'],
   },
   rowBalanceOwed: {color: COLORS.crimson},

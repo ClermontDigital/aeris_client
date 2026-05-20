@@ -5,6 +5,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -65,7 +66,7 @@ const styles = StyleSheet.create({
   title: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textAlign: 'center',
   },
   description: {
@@ -86,7 +87,7 @@ const styles = StyleSheet.create({
   actionLabel: {
     color: COLORS.cream,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
 });
 

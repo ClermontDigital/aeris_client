@@ -11,7 +11,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import {Ionicons} from '@expo/vector-icons';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {ProductDetail} from '../types/api.types';
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   name: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     letterSpacing: -0.3,
     marginBottom: SPACING.xs,
   },
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
   badgeText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
   categoryPillText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   stockPill: {
     flexDirection: 'row',
@@ -434,14 +434,14 @@ const styles = StyleSheet.create({
   stockPillText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   card: {...cardBase},
   descriptionCard: {...cardBase},
   price: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.title,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     letterSpacing: -0.5,
     marginBottom: SPACING.sm,
   },
@@ -454,24 +454,24 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: SPACING.sm,
   },
   sectionCount: {
     color: COLORS.textDim,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
   totalOnHand: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   totalOnHandUnit: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
   body: {color: COLORS.textLight, fontSize: FONT_SIZE.md, lineHeight: 22},
   kvRow: {
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   },
   kvRowLast: {borderBottomWidth: 0, paddingBottom: 0},
   kvLabel: {color: COLORS.textMuted, fontSize: FONT_SIZE.md},
-  kvValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  kvValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
   marginNegative: {color: COLORS.danger},
   tableRow: {
     flexDirection: 'row',
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   tableRowLast: {borderBottomWidth: 0, paddingBottom: 0},
   tableLabelWrap: {flexDirection: 'row', alignItems: 'center', flex: 1},
   tableLabel: {color: COLORS.textLight, fontSize: FONT_SIZE.md, flex: 1},
-  tableValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '700'},
+  tableValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bold},
   emptyHint: {color: COLORS.textDim, fontSize: FONT_SIZE.sm, fontStyle: 'italic'},
   variantRow: {
     flexDirection: 'row',
@@ -508,19 +508,19 @@ const styles = StyleSheet.create({
   },
   variantRowLast: {borderBottomWidth: 0, paddingBottom: 0},
   variantLeft: {flex: 1, marginRight: SPACING.md},
-  variantName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  variantName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
   variantSku: {color: COLORS.textMuted, fontSize: FONT_SIZE.xs, marginTop: 2},
   variantRight: {alignItems: 'flex-end'},
   variantPrice: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   variantStock: {color: COLORS.textMuted, fontSize: FONT_SIZE.xs, marginTop: 2},
   errorTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginBottom: SPACING.sm,
     textAlign: 'center',
   },
@@ -537,8 +537,8 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.lg,
     marginBottom: SPACING.sm,
   },
-  primaryBtnText: {color: COLORS.white, fontWeight: '700', fontSize: FONT_SIZE.md},
-  linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  primaryBtnText: {color: COLORS.white, fontFamily: FONT_FAMILY.bold, fontSize: FONT_SIZE.md},
+  linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
   backBtn: {
     flexDirection: 'row',
     backgroundColor: COLORS.text,
@@ -552,6 +552,6 @@ const styles = StyleSheet.create({
   backBtnText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
 });

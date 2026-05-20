@@ -5,6 +5,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
   SHADOW,
@@ -146,7 +147,7 @@ const styles = StyleSheet.create({
   icon: {marginBottom: SPACING.xs},
   value: {
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     // tabular-nums keeps stat columns aligned when stacked in a grid
     fontVariant: ['tabular-nums'],
   },

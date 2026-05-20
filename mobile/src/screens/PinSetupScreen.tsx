@@ -5,7 +5,7 @@ import PinPad from '../components/PinPad';
 import {useAppLockStore} from '../stores/appLockStore';
 import AppLockService from '../services/AppLockService';
 import {useHaptics} from '../hooks/useHaptics';
-import {COLORS, SPACING, FONT_SIZE} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY} from '../constants/theme';
 
 type Stage = 'enter' | 'confirm';
 
@@ -139,7 +139,7 @@ const PinSetupScreen: React.FC<Props> = ({onDone}) => {
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: COLORS.background, alignItems: 'center'},
   header: {paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl, alignItems: 'center'},
-  heading: {fontSize: FONT_SIZE.title, fontWeight: '700', color: COLORS.navy, marginBottom: SPACING.sm},
+  heading: {fontSize: FONT_SIZE.title, fontFamily: FONT_FAMILY.bold, color: COLORS.navy, marginBottom: SPACING.sm},
   subheading: {fontSize: FONT_SIZE.md, color: COLORS.textMuted, textAlign: 'center', maxWidth: 320},
   pinWrap: {flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%'},
   backBtn: {paddingVertical: SPACING.md, paddingBottom: SPACING.lg},

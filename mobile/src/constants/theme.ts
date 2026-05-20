@@ -39,12 +39,15 @@ export const COLORS = {
   accent: CRIMSON,          // primary action color (was purple #667eea — retired)
   accentHover: CRIMSON_DARK,
 
-  // --- Backgrounds: flipped from navy → cream to match web/desktop ---
-  // NOTE: `background` keeps CREAM for now to preserve current screen look;
-  // Phase 3 will migrate page surfaces to `paper` and reserve `cream` for
-  // chip/badge surfaces only — easy to confuse, hence the two distinct
-  // tokens here.
-  background: CREAM,                              // main app body
+  // --- Backgrounds: page is PAPER (cooler off-white), CREAM is reserved ---
+  // WHY: the marketing website renders body surfaces against #f7f2ef, a
+  // cooler off-white than the wheat cream chips/badges sit on. Mobile now
+  // matches: `background` = paper for every screen container, and CREAM is
+  // only used directly where the design wants the warm pendant/chip tone
+  // (AppTabs pendant shoulders, login card backdrop, chip pills, etc).
+  // Phase 3 audited every COLORS.background consumer; any callsite that
+  // semantically wanted CREAM was switched to COLORS.cream directly.
+  background: PAPER,                              // main app body
   surface: '#ffffff',                             // elevated card on cream
   surfaceHover: CREAM_LIGHT,                      // card hover
   surfaceBorder: 'rgba(0, 42, 64, 0.1)',          // navy 10%
@@ -120,6 +123,19 @@ export const FONT_SIZE = {
   display: 28,
   displayLg: 36,
   displayXl: 43,
+} as const;
+
+// Poppins-based font-family tokens. The marketing site (and now the desktop
+// client) ships Poppins; mobile loads the four weights actually used on the
+// web via expo-font (see App.tsx + app.json plugin entry). Use these instead
+// of `fontWeight` props so weight + family land together — on Android the
+// `fontWeight` numeric fallback silently snaps to the closest installed
+// family weight, which produces inconsistent rendering across devices.
+export const FONT_FAMILY = {
+  light: 'Poppins-Light',     // 300 — body / paragraph copy
+  regular: 'Poppins-Regular', // 400 — nav labels, default text
+  medium: 'Poppins-Medium',   // 500 — workhorse for headlines + CTAs
+  bold: 'Poppins-Bold',       // 700 — emphasis on stats
 } as const;
 
 // Display tracking from the web. Negative values tighten headings the way
