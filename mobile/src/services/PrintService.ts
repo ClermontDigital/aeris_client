@@ -20,12 +20,35 @@ class PrintService {
     }
   }
 
-  async printUrl(url: string): Promise<void> {
+  // Print a URL by fetching its HTML with the user's session cookies.
+  // `allowedHost` must be supplied — the caller's configured baseUrl host —
+  // so a cookie-bearing fetch can't be redirected to an arbitrary third-
+  // party host. Without this gate, a redirect inside the WebView could
+  // navigate `currentUrl` off-host and a Print tap would leak the
+  // Laravel session cookie to wherever the WebView ended up.
+  async printUrl(url: string, allowedHost: string): Promise<void> {
     try {
       // Validate URL scheme to prevent fetching file://, javascript:, etc.
       const parsed = new URL(url);
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
         Alert.alert('Print Error', 'Only HTTP/HTTPS URLs can be printed.');
+        return;
+      }
+
+      // Host gate. If the WebView drifted off the deployment host (an SSO
+      // bounce, a third-party redirect), refuse to send cookies there.
+      let allowedHostname: string;
+      try {
+        allowedHostname = new URL(allowedHost).hostname.toLowerCase();
+      } catch {
+        Alert.alert('Print Error', 'Server URL is not valid; cannot print.');
+        return;
+      }
+      if (parsed.hostname.toLowerCase() !== allowedHostname) {
+        Alert.alert(
+          'Print Error',
+          'This page is on a different host than your AERIS server. Printing is blocked to protect your session.',
+        );
         return;
       }
 

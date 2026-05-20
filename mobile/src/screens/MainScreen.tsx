@@ -118,7 +118,10 @@ const MainScreen: React.FC = () => {
   );
 
   const handlePrint = useCallback(() => {
-    PrintService.printUrl(webView.currentUrl || settings.baseUrl);
+    // settings.baseUrl is the allowedHost — printUrl refuses to forward
+    // Laravel session cookies to any host other than the configured
+    // deployment, even if the WebView drifted off-host.
+    PrintService.printUrl(webView.currentUrl || settings.baseUrl, settings.baseUrl);
   }, [webView.currentUrl, settings.baseUrl]);
 
   return (
