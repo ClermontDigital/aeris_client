@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.textOnDark,
   },
   dotFilled: {backgroundColor: COLORS.textOnDark},
-  error: {color: COLORS.dangerLight, fontSize: FONT_SIZE.md, marginBottom: SPACING.sm + 4},
+  error: {color: COLORS.danger, fontSize: FONT_SIZE.md, marginBottom: SPACING.sm + 4},
   grid: {flexDirection: 'row', flexWrap: 'wrap', width: 240, justifyContent: 'center'},
   key: {
     width: 72,

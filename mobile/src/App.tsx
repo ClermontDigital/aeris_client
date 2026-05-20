@@ -157,14 +157,22 @@ const App: React.FC = () => {
     };
   }, [initSettings, restoreSession, restoreCache, clearLocalSession, initAppLock]);
 
-  // (isAuthenticated, hasPin) flip from false→true exactly once per session;
-  // lockNow itself bails out when hasPin is false, so this useEffect is safe
-  // to re-run.
+  // Cold-start lock — applies ONLY when the lock store finishes initialising
+  // and already-has-a-PIN. Previously this fired on every `hasPin` transition,
+  // which meant the moment the user finished PIN SETUP we immediately mounted
+  // AppLockScreen and asked them to enter the PIN they just created — looked
+  // like setup failed. Now we one-shot lock at boot if a PIN was already
+  // configured pre-mount; the post-setup path stays unlocked because
+  // `pinAlreadyConfiguredAtBootRef` was never flipped.
+  const pinAlreadyConfiguredAtBootRef = useRef(false);
   useEffect(() => {
+    if (!lockInitialized) return;
+    if (pinAlreadyConfiguredAtBootRef.current) return;
     if (isAuthenticated && hasPin) {
+      pinAlreadyConfiguredAtBootRef.current = true;
       lockNow();
     }
-  }, [isAuthenticated, hasPin, lockNow]);
+  }, [isAuthenticated, hasPin, lockNow, lockInitialized]);
 
   // Foreground-from-background lock with a 5-second debounce so transient
   // OS interruptions (Apple Pay sheet, control-centre, incoming call banner)

@@ -1,22 +1,40 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {View, Text, StyleSheet, Alert, TouchableOpacity, BackHandler, Platform} from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  Alert,
+  TouchableOpacity,
+  BackHandler,
+  Platform,
+} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import PinPad from '../components/PinPad';
 import {useAppLockStore} from '../stores/appLockStore';
+import {useAuthStore} from '../stores/authStore';
 import AppLockService from '../services/AppLockService';
 import {useHaptics} from '../hooks/useHaptics';
-import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  FONT_FAMILY,
+  LETTER_SPACING,
+  BORDER_RADIUS,
+} from '../constants/theme';
 
 type Stage = 'enter' | 'confirm';
 
-interface Props {
-  onDone?: () => void;
-}
-
-const PinSetupScreen: React.FC<Props> = ({onDone}) => {
+// Lock chrome mirrors AppLockScreen: navy backdrop, brand block at top,
+// PinPad in the middle, sign-out escape hatch top-right. Same visual
+// language as the unlock screen so a user moving between "set" and
+// "unlock" sees one continuous PIN surface.
+const PinSetupScreen: React.FC = () => {
   const haptics = useHaptics();
   const setPin = useAppLockStore(s => s.setPin);
   const unlock = useAppLockStore(s => s.unlock);
+  const resetAppLock = useAppLockStore(s => s.reset);
   const setBiometricEnabled = useAppLockStore(s => s.setBiometricEnabled);
 
   const [stage, setStage] = useState<Stage>('enter');
@@ -50,19 +68,17 @@ const PinSetupScreen: React.FC<Props> = ({onDone}) => {
   const promptBiometricThenFinish = useCallback(() => {
     if (!biometricAvailable) {
       unlock();
-      onDone?.();
       return;
     }
     Alert.alert(
       'Enable biometric unlock?',
-      `${biometricLabel} can be used in addition to your PIN.`,
+      `${biometricLabel} can be used in addition to your PIN. You can change this later in Settings.`,
       [
         {
           text: 'Not now',
           style: 'cancel',
           onPress: () => {
             unlock();
-            onDone?.();
           },
         },
         {
@@ -70,12 +86,11 @@ const PinSetupScreen: React.FC<Props> = ({onDone}) => {
           onPress: async () => {
             await setBiometricEnabled(true);
             unlock();
-            onDone?.();
           },
         },
       ],
     );
-  }, [biometricAvailable, biometricLabel, setBiometricEnabled, unlock, onDone]);
+  }, [biometricAvailable, biometricLabel, setBiometricEnabled, unlock]);
 
   const handleSubmit = useCallback(
     async (pin: string) => {
@@ -88,7 +103,7 @@ const PinSetupScreen: React.FC<Props> = ({onDone}) => {
       }
       if (pin !== firstPin) {
         haptics.error();
-        setError("PINs don't match. Try again.");
+        setError("PINs didn't match. Try again from the start.");
         setFirstPin('');
         setStage('enter');
         return;
@@ -107,43 +122,167 @@ const PinSetupScreen: React.FC<Props> = ({onDone}) => {
     [stage, firstPin, haptics, setPin, promptBiometricThenFinish],
   );
 
-  const title = stage === 'enter' ? 'Set a 4-digit PIN' : 'Confirm your PIN';
+  const handleSignOut = useCallback(() => {
+    Alert.alert(
+      'Sign out',
+      'You can finish setting up your PIN after you sign back in.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Sign out',
+          style: 'destructive',
+          onPress: async () => {
+            await resetAppLock();
+            await useAuthStore.getState().logout();
+          },
+        },
+      ],
+    );
+  }, [resetAppLock]);
+
+  const padTitle = stage === 'enter' ? 'Choose a PIN' : 'Re-enter to confirm';
+  const stepLabel = stage === 'enter' ? 'Step 1 of 2' : 'Step 2 of 2';
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Text style={styles.heading}>App lock</Text>
+      <TouchableOpacity
+        style={styles.signOutBtn}
+        onPress={handleSignOut}
+        accessibilityRole="button"
+        accessibilityLabel="Sign out and finish setup later">
+        <Text style={styles.signOutText}>Sign out</Text>
+      </TouchableOpacity>
+
+      <View style={styles.brand}>
+        <Image
+          source={require('../../assets/images/app-icon.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <Text
+          style={styles.heading}
+          accessibilityRole="header">
+          Create your app PIN
+        </Text>
         <Text style={styles.subheading}>
-          Your PIN protects customer and business information when the app is
-          locked.
+          A 4-digit PIN locks the app between sessions so customer and
+          business info stays protected.
         </Text>
       </View>
+
       <View style={styles.pinWrap}>
-        <PinPad title={title} onSubmit={handleSubmit} error={error} />
+        <View
+          style={styles.stepPill}
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={`${stepLabel}: ${padTitle}`}>
+          <Text style={styles.stepText}>{stepLabel}</Text>
+        </View>
+        <PinPad title={padTitle} onSubmit={handleSubmit} error={error} />
       </View>
-      {stage === 'confirm' && (
+
+      {stage === 'confirm' ? (
         <TouchableOpacity
-          style={styles.backBtn}
+          style={styles.startOverBtn}
           onPress={() => {
+            haptics.light();
             setStage('enter');
             setFirstPin('');
             setError(undefined);
-          }}>
-          <Text style={styles.backText}>Start over</Text>
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Start over">
+          <Text style={styles.startOverText}>Start over</Text>
         </TouchableOpacity>
+      ) : (
+        // Reserve the same vertical space when on stage 'enter' so the
+        // layout doesn't jump when the user advances to confirm.
+        <View style={styles.startOverPlaceholder} />
       )}
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: COLORS.background, alignItems: 'center'},
-  header: {paddingHorizontal: SPACING.lg, paddingTop: SPACING.xl, alignItems: 'center'},
-  heading: {fontSize: FONT_SIZE.title, fontFamily: FONT_FAMILY.bold, color: COLORS.navy, marginBottom: SPACING.sm},
-  subheading: {fontSize: FONT_SIZE.md, color: COLORS.textMuted, textAlign: 'center', maxWidth: 320},
-  pinWrap: {flex: 1, justifyContent: 'center', alignItems: 'center', width: '100%'},
-  backBtn: {paddingVertical: SPACING.md, paddingBottom: SPACING.lg},
-  backText: {color: COLORS.navy, fontSize: FONT_SIZE.md, textDecorationLine: 'underline'},
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.navy,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  signOutBtn: {
+    position: 'absolute',
+    top: SPACING.lg,
+    right: SPACING.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    zIndex: 10,
+  },
+  signOutText: {
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.regular,
+    opacity: 0.85,
+  },
+  brand: {
+    alignItems: 'center',
+    marginTop: SPACING.xl + SPACING.md,
+    paddingHorizontal: SPACING.lg,
+  },
+  logo: {
+    width: 64,
+    height: 64,
+    marginBottom: SPACING.md,
+  },
+  heading: {
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.displayLg,
+    fontFamily: FONT_FAMILY.medium,
+    letterSpacing: LETTER_SPACING.tightLg,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  subheading: {
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.regular,
+    textAlign: 'center',
+    maxWidth: 320,
+    opacity: 0.8,
+    lineHeight: 20,
+  },
+  pinWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+    borderRadius: BORDER_RADIUS.full,
+    marginBottom: SPACING.md,
+  },
+  stepText: {
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+    letterSpacing: LETTER_SPACING.wideSm,
+  },
+  startOverBtn: {
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    marginBottom: SPACING.lg,
+  },
+  startOverText: {
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+    opacity: 0.85,
+    textDecorationLine: 'underline',
+  },
+  startOverPlaceholder: {
+    height: SPACING.md * 2 + 20,
+    marginBottom: SPACING.lg,
+  },
 });
 
 export default PinSetupScreen;
