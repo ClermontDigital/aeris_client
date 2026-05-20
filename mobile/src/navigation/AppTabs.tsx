@@ -118,12 +118,14 @@ const AppTabs: React.FC = () => {
         <View style={styles.topBarRow}>
           <View style={[styles.svgWrap, {height: svgHeight}]} pointerEvents="none">
             <Svg width={screenWidth} height={svgHeight}>
-              {/* Pendant shoulders are intentionally CREAM (wheat) to match
-                  the brand pendant. Phase 3 flipped COLORS.background to
-                  paper, so these now reference COLORS.cream directly to
-                  preserve the original warm tone. */}
-              <Path d={paths.creamLeft} fill={COLORS.cream} />
-              <Path d={paths.creamRight} fill={COLORS.cream} />
+              {/* Pendant shoulders match the page background (paper) so the
+                  pendant chrome flows seamlessly into the page below — the
+                  prior warm-cream shoulders read as a stray colour band
+                  between navy chrome and paper page. The path names retain
+                  their `creamLeft` / `creamRight` keys for legacy, but they
+                  fill with whatever the page surface currently is. */}
+              <Path d={paths.creamLeft} fill={COLORS.background} />
+              <Path d={paths.creamRight} fill={COLORS.background} />
               <Path d={paths.tongue} fill={COLORS.navy} />
             </Svg>
           </View>
