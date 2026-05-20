@@ -18,31 +18,8 @@ import {useAuthStore} from '../stores/authStore';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useHaptics} from '../hooks/useHaptics';
 import SettingsModal from './SettingsModal';
-import {SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
 import {validateWorkspaceCode} from '../constants/config';
-
-// Exact colors from the Aeris ERP login page (Aeris2 Laravel CSS)
-const LOGIN = {
-  background: '#2d6a8c',              // Steel blue background
-  card: '#fdf0d5',                    // Cream card
-  inputBg: 'rgba(255, 255, 255, 0.9)', // Nearly opaque white
-  inputBorder: 'rgba(156, 163, 175, 0.3)', // Gray 30% opacity
-  inputFocusBorder: '#c1121f',        // Crimson focus
-  inputText: '#003049',               // Navy text
-  inputPlaceholder: '#9ca3af',        // Gray placeholder
-  buttonStart: '#c1121f',             // Crimson (button bg)
-  buttonEnd: '#d32f2f',               // Material red (gradient hint)
-  buttonText: '#ffffff',
-  navy: '#003049',                    // Navy for labels
-  crimson: '#c1121f',                 // Crimson for links/accents
-  errorText: '#c1121f',
-  helpText: '#6b7280',               // Muted gray
-  inputErrorBorder: '#c1121f',       // same as focus crimson; used on workspace error
-  expiredBg: '#fef3c7',              // amber-100; orange/warning chip backdrop
-  expiredBorder: '#f59e0b',          // amber-500; warm border so the card reads "info" not "fatal"
-  expiredText: '#92400e',             // amber-900; warm, readable on the cream card
-  expiredIcon: '#b45309',             // amber-700
-};
 
 const LoginScreen: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -167,7 +144,7 @@ const LoginScreen: React.FC = () => {
                 <Ionicons
                   name="time-outline"
                   size={20}
-                  color={LOGIN.expiredIcon}
+                  color={COLORS.warningTextDark}
                   style={styles.expiredIcon}
                 />
                 <Text style={styles.expiredText}>{error}</Text>
@@ -183,7 +160,7 @@ const LoginScreen: React.FC = () => {
                     workspaceError && styles.inputError,
                   ]}
                   placeholder="Workspace (e.g. acme-prod)"
-                  placeholderTextColor={LOGIN.inputPlaceholder}
+                  placeholderTextColor={COLORS.textMuted}
                   value={workspace}
                   onChangeText={text => {
                     if (error) clearError();
@@ -223,7 +200,7 @@ const LoginScreen: React.FC = () => {
                 ref={emailRef}
                 style={[styles.input, emailFocused && styles.inputFocused]}
                 placeholder="Username"
-                placeholderTextColor={LOGIN.inputPlaceholder}
+                placeholderTextColor={COLORS.textMuted}
                 value={email}
                 onChangeText={handleEmailChange}
                 onFocus={() => setEmailFocused(true)}
@@ -243,7 +220,7 @@ const LoginScreen: React.FC = () => {
                 ref={passwordRef}
                 style={[styles.input, passwordFocused && styles.inputFocused]}
                 placeholder="Password"
-                placeholderTextColor={LOGIN.inputPlaceholder}
+                placeholderTextColor={COLORS.textMuted}
                 value={password}
                 onChangeText={handlePasswordChange}
                 onFocus={() => setPasswordFocused(true)}
@@ -269,7 +246,7 @@ const LoginScreen: React.FC = () => {
               activeOpacity={0.8}
               accessibilityState={{disabled: !canSubmit, busy: isLoading}}>
               {isLoading ? (
-                <ActivityIndicator size="small" color={LOGIN.buttonText} />
+                <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
                 <Text style={styles.goButtonText}>GO</Text>
               )}
@@ -307,7 +284,10 @@ const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: LOGIN.background,
+    // Page-level surface BEHIND the cream card. Was a one-off steel blue
+    // (#2d6a8c) that isn't in the brand palette; collapsed to the canonical
+    // navy chrome to match the rest of the app.
+    backgroundColor: COLORS.primary,
   },
   keyboardView: {
     flex: 1,
@@ -322,7 +302,7 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: LOGIN.card,
+    backgroundColor: COLORS.cream,
     borderRadius: BORDER_RADIUS.xl,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
@@ -348,27 +328,27 @@ const styles = StyleSheet.create({
   input: {
     width: '100%',
     height: 52,
-    backgroundColor: LOGIN.inputBg,
+    backgroundColor: COLORS.inputBg,
     borderRadius: BORDER_RADIUS.md,
     paddingHorizontal: SPACING.md,
     fontSize: FONT_SIZE.lg,
-    color: LOGIN.inputText,
+    color: COLORS.text,
     borderWidth: 2,
-    borderColor: LOGIN.inputBorder,
+    borderColor: COLORS.inputBorder,
   },
   inputFocused: {
-    borderColor: LOGIN.inputFocusBorder,
+    borderColor: COLORS.inputFocusBorder,
   },
   inputError: {
-    borderColor: LOGIN.inputErrorBorder,
+    borderColor: COLORS.danger,
   },
   fieldError: {
-    color: LOGIN.errorText,
+    color: COLORS.danger,
     fontSize: FONT_SIZE.xs,
     marginTop: SPACING.xs,
   },
   errorText: {
-    color: LOGIN.errorText,
+    color: COLORS.danger,
     fontSize: FONT_SIZE.sm,
     textAlign: 'center',
     marginBottom: SPACING.md,
@@ -377,9 +357,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    backgroundColor: LOGIN.expiredBg,
+    backgroundColor: COLORS.warningBg,
     borderWidth: 1,
-    borderColor: LOGIN.expiredBorder,
+    borderColor: COLORS.warningBorder,
     borderRadius: BORDER_RADIUS.md,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
@@ -390,19 +370,19 @@ const styles = StyleSheet.create({
   },
   expiredText: {
     flex: 1,
-    color: LOGIN.expiredText,
+    color: COLORS.warningText,
     fontSize: FONT_SIZE.sm,
     lineHeight: 18,
   },
   goButton: {
     width: '100%',
     height: 52,
-    backgroundColor: LOGIN.buttonStart,
+    backgroundColor: COLORS.crimson,
     borderRadius: BORDER_RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: SPACING.sm,
-    shadowColor: LOGIN.crimson,
+    shadowColor: COLORS.crimson,
     shadowOffset: {width: 0, height: 3},
     shadowOpacity: 0.3,
     shadowRadius: 6,
@@ -412,20 +392,20 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   goButtonText: {
-    color: LOGIN.buttonText,
+    color: COLORS.white,
     fontSize: FONT_SIZE.xl,
     fontWeight: '700',
     letterSpacing: 3,
   },
   helpText: {
-    color: LOGIN.helpText,
+    color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     textAlign: 'center',
     marginTop: SPACING.md,
     lineHeight: 18,
   },
   helpLink: {
-    color: LOGIN.crimson,
+    color: COLORS.crimson,
     fontWeight: '600',
   },
   connectionLink: {
@@ -433,7 +413,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
   },
   connectionLinkText: {
-    color: LOGIN.helpText,
+    color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
     textAlign: 'center',
     textDecorationLine: 'underline',

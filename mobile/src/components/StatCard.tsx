@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
     // looks uneven. 96 covers icon + value + label + sublabel + padding.
     minHeight: 96,
     backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.lg,
+    borderRadius: BORDER_RADIUS.xxl,
     borderWidth: 1,
     borderColor: COLORS.surfaceBorder,
     padding: SPACING.md,
