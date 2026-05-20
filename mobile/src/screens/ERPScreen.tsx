@@ -68,7 +68,10 @@ const ERPScreen: React.FC = () => {
   }, [webView.webViewRef, baseUrl]);
 
   const handlePrint = useCallback(() => {
-    PrintService.printUrl(webView.currentUrl || baseUrl);
+    // Pass baseUrl as the allowedHost — printUrl refuses to forward
+    // Laravel session cookies to any host other than the configured
+    // deployment, even if the WebView drifted off-host.
+    PrintService.printUrl(webView.currentUrl || baseUrl, baseUrl);
   }, [webView.currentUrl, baseUrl]);
 
   return (

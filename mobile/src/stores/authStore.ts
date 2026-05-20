@@ -166,6 +166,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // PIN persists across logout — only Settings → Reset PIN clears it.
     // Cross-platform parity with desktop; on next login the cold-start
     // lock effect in App.tsx prompts for the existing PIN.
+    // refreshInFlight: null nukes any race where the proactive refresh
+    // timer's in-flight promise resolves AFTER logout fires and sets
+    // {token, expiresAt, user} on a logged-out store — briefly re-
+    // authenticating the user. The in-flight `run` body checks the
+    // post-await store state too (see below).
     set({
       user: null,
       token: null,
@@ -173,6 +178,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isAuthenticated: false,
       error: null,
       errorKind: null,
+      refreshInFlight: null,
     });
   },
 
@@ -195,11 +201,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isAuthenticated: false,
       error: 'Your session has expired. Please log in again.',
       errorKind: 'expired',
+      refreshInFlight: null,
     });
   },
 
   restoreSession: async () => {
     set({isLoading: true});
+    // Outer try/finally guarantees `isLoading: false` is set on every exit
+    // path — including a Keychain throw inside the malformed-user wipe
+    // branch, which previously left the app on the splash forever if a
+    // `SecureStorage.removeItem` call failed mid-wipe.
     try {
       const token = await SecureStorage.getItem(AUTH_TOKEN_KEY);
       const userJson = await SecureStorage.getItem(AUTH_USER_KEY);
@@ -208,8 +219,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (!token || !userJson) {
         // Nothing to restore — also drop any orphaned legacy stamps from
         // older builds.
-        await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
-        set({isLoading: false});
+        await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY).catch(() => {});
         return;
       }
 
@@ -234,11 +244,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user = parsed;
       } catch {
         console.warn('authStore: stored user JSON malformed, clearing');
-        await SecureStorage.removeItem(AUTH_USER_KEY);
-        await SecureStorage.removeItem(AUTH_TOKEN_KEY);
-        await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
-        await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
-        set({isLoading: false});
+        // Best-effort wipe — wrap each remove individually so a Keychain
+        // failure on one key doesn't abort the others. Each .catch
+        // suppresses; the outer finally still releases the splash.
+        await SecureStorage.removeItem(AUTH_USER_KEY).catch(() => {});
+        await SecureStorage.removeItem(AUTH_TOKEN_KEY).catch(() => {});
+        await SecureStorage.removeItem(AUTH_EXPIRES_KEY).catch(() => {});
+        await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY).catch(() => {});
         return;
       }
       ApiClient.setAuthToken(token);
@@ -247,11 +259,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         token,
         expiresAt,
         isAuthenticated: true,
-        isLoading: false,
       });
       // Best-effort cleanup of legacy stamp.
       SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY).catch(() => {});
-    } catch {
+    } catch (e) {
+      console.warn('authStore.restoreSession failed:', e);
+    } finally {
       set({isLoading: false});
     }
   },
@@ -276,6 +289,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const run = async (): Promise<void> => {
       try {
         const response = await ApiClient.refreshToken();
+        // The refresh round-trip may take seconds; the user could have
+        // tapped Logout in the meantime. Abort the commit if so —
+        // otherwise we'd silently re-authenticate them with a freshly
+        // minted token on top of a deliberately-cleared session.
+        if (!get().isAuthenticated) {
+          ApiClient.setAuthToken(null);
+          return;
+        }
         const {access_token, expires_at, user} = response;
         ApiClient.setAuthToken(access_token);
         await SecureStorage.setItem(AUTH_TOKEN_KEY, access_token);
@@ -291,6 +312,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           await SecureStorage.setItem(AUTH_EXPIRES_KEY, expires_at);
         } else {
           await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+        }
+        // Re-check post-write — the user could log out during the awaits
+        // above (Keychain writes can take ~tens of ms). If so, wipe what
+        // we just persisted.
+        if (!get().isAuthenticated) {
+          ApiClient.setAuthToken(null);
+          await SecureStorage.removeItem(AUTH_TOKEN_KEY).catch(() => {});
+          if (userOk) {
+            await SecureStorage.removeItem(AUTH_USER_KEY).catch(() => {});
+          }
+          await SecureStorage.removeItem(AUTH_EXPIRES_KEY).catch(() => {});
+          return;
         }
         set({
           token: access_token,

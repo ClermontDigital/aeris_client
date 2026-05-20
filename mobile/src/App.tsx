@@ -133,13 +133,20 @@ const App: React.FC = () => {
         activateKeepAwakeAsync();
         await initSettings();
         if (cancelled) return;
+        // Wire onUnauthorized BEFORE restoreSession so if a relay call fires
+        // immediately after the bearer is re-applied to ApiClient (e.g. the
+        // Dashboard fetches on mount and the persisted token has been
+        // server-revoked overnight), the 401 routes through clearLocalSession
+        // and the user is bounced to login cleanly. Previously this was set
+        // AFTER restoreSession + cache + lock init — leaving a race window
+        // where the first 401 of a session had no handler.
+        ApiClient.setOnUnauthorized(() => {
+          clearLocalSession();
+        });
         await restoreSession();
         if (cancelled) return;
         await Promise.all([restoreCache(), initAppLock()]);
         if (cancelled) return;
-        ApiClient.setOnUnauthorized(() => {
-          clearLocalSession();
-        });
         if (Platform.OS === 'android') {
           StatusBar.setHidden(true);
           NavigationBar.setVisibilityAsync('hidden');
@@ -174,9 +181,12 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated, hasPin, lockNow, lockInitialized]);
 
-  // Foreground-from-background lock with a 5-second debounce so transient
-  // OS interruptions (Apple Pay sheet, control-centre, incoming call banner)
-  // don't trigger an unwanted lock.
+  // Single AppState listener — both lock + refresh decisions share the
+  // 5-second debounce so transient OS interruptions (Apple Pay sheet,
+  // Control Centre, incoming call banner) don't trigger an unwanted
+  // lock OR a wasted refresh round-trip. Previously there were two
+  // listeners; only the lock one had the debounce, so Apple Pay would
+  // fire a needless refresh request mid-checkout.
   const backgroundedAtRef = useRef<number | null>(null);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
@@ -184,12 +194,28 @@ const App: React.FC = () => {
         backgroundedAtRef.current = Date.now();
         return;
       }
-      if (state === 'active') {
-        const stamped = backgroundedAtRef.current;
-        backgroundedAtRef.current = null;
-        if (stamped == null) return;
-        if (Date.now() - stamped < 5_000) return;
-        lockNow();
+      if (state !== 'active') return;
+
+      const stamped = backgroundedAtRef.current;
+      backgroundedAtRef.current = null;
+      if (stamped == null) return;
+      const backgroundedMs = Date.now() - stamped;
+      if (backgroundedMs < 5_000) return; // OS interruption, not a real bg
+
+      // Real foreground resume: lock + (if near expiry) refresh.
+      lockNow();
+
+      // Foreground after long background → if expiry is near, refresh now.
+      // The setTimeout above is paused while backgrounded on iOS, so without
+      // this hook a user who closes the app overnight wakes up to a stale
+      // token and would hit the natural-401 path on the first tap.
+      const exp = useAuthStore.getState().expiresAt;
+      const authed = useAuthStore.getState().isAuthenticated;
+      if (!authed || !exp) return;
+      const remaining = Date.parse(exp) - Date.now();
+      if (Number.isNaN(remaining)) return;
+      if (remaining < 120_000) {
+        useAuthStore.getState().refreshSession().catch(() => {});
       }
     });
     return () => sub.remove();
@@ -237,22 +263,10 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [isAuthenticated, expiresAt, refreshSession]);
 
-  // Foreground after long background → if expiry is near, refresh now.
-  // The setTimeout above is paused while backgrounded on iOS, so without
-  // this hook a user who closes the app overnight wakes up to a stale
-  // token and would hit the natural-401 path on the first tap.
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', state => {
-      if (state !== 'active') return;
-      if (!isAuthenticated || !expiresAt) return;
-      const remaining = Date.parse(expiresAt) - Date.now();
-      if (Number.isNaN(remaining)) return;
-      if (remaining < 120_000) {
-        refreshSession().catch(() => {});
-      }
-    });
-    return () => sub.remove();
-  }, [isAuthenticated, expiresAt, refreshSession]);
+  // (The separate foreground-refresh AppState listener was consolidated
+  // into the single backgrounded-debounce listener above so Apple Pay
+  // / Control-Centre interruptions don't trigger an unnecessary refresh
+  // round-trip mid-checkout.)
 
   // While the lock store is still resolving its async secure-store reads,
   // hide the navigator behind a navy splash so we never flash protected
