@@ -211,43 +211,80 @@ const DashboardScreen: React.FC = () => {
 
         <Text style={styles.sectionLabel}>Today</Text>
 
-        <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>Revenue</Text>
-          <Text style={styles.heroValue}>{formatCurrency(revenue)}</Text>
-          <View style={styles.heroFootnote}>
-            <Ionicons
-              name="trending-up"
-              size={ICON_SIZE.action - 4}
-              color={COLORS.textMuted}
-              style={styles.heroFootnoteIcon}
-            />
-            <Text style={styles.heroFootnoteText}>
-              {salesCount === 0
-                ? 'No transactions yet'
-                : `${salesCount} ${salesCount === 1 ? 'sale' : 'sales'} so far`}
+        {/* When today has no sales yet, the hero/stat strip would all read
+            $0.00 / 0, which reads as "the app is broken" rather than "you
+            haven't sold anything yet". Swap in a friendlier quiet-day card
+            with a clear CTA to start a sale. Recent Customers below still
+            renders normally — that history is unrelated to today's pace. */}
+        {salesCount === 0 ? (
+          <View style={styles.quietDayCard}>
+            <View style={styles.quietDayIcon}>
+              <Ionicons
+                name="cafe-outline"
+                size={32}
+                color={COLORS.crimson}
+              />
+            </View>
+            <Text style={styles.quietDayTitle}>Quiet so far</Text>
+            <Text style={styles.quietDayBody}>
+              No sales posted today yet. Start a sale and your live totals
+              will show up here.
             </Text>
+            <TouchableOpacity
+              style={styles.quietDayCta}
+              accessibilityRole="button"
+              accessibilityLabel="Start a new sale"
+              onPress={() => {
+                haptics.light();
+                navigation.navigate('QuickSale');
+              }}>
+              <Ionicons
+                name="cart-outline"
+                size={ICON_SIZE.action - 2}
+                color={COLORS.textOnDark}
+              />
+              <Text style={styles.quietDayCtaText}>Start a Sale</Text>
+            </TouchableOpacity>
           </View>
-        </View>
-
-        {(() => {
-          const salesStr = String(salesCount);
-          const itemsStr = String(itemsSold);
-          const avgStr = formatCurrency(avgSale);
-          const fs = pickStatRowFontSize([salesStr, itemsStr, avgStr]);
-          return (
-            <View style={styles.statsGrid}>
-              <View style={styles.statCell}>
-                <StatCard label="Sales" value={salesStr} valueFontSize={fs} />
-              </View>
-              <View style={styles.statCell}>
-                <StatCard label="Items Sold" value={itemsStr} valueFontSize={fs} />
-              </View>
-              <View style={styles.statCell}>
-                <StatCard label="Avg Sale" value={avgStr} valueFontSize={fs} />
+        ) : (
+          <>
+            <View style={styles.heroCard}>
+              <Text style={styles.heroLabel}>Revenue</Text>
+              <Text style={styles.heroValue}>{formatCurrency(revenue)}</Text>
+              <View style={styles.heroFootnote}>
+                <Ionicons
+                  name="trending-up"
+                  size={ICON_SIZE.action - 4}
+                  color={COLORS.textMuted}
+                  style={styles.heroFootnoteIcon}
+                />
+                <Text style={styles.heroFootnoteText}>
+                  {`${salesCount} ${salesCount === 1 ? 'sale' : 'sales'} so far`}
+                </Text>
               </View>
             </View>
-          );
-        })()}
+
+            {(() => {
+              const salesStr = String(salesCount);
+              const itemsStr = String(itemsSold);
+              const avgStr = formatCurrency(avgSale);
+              const fs = pickStatRowFontSize([salesStr, itemsStr, avgStr]);
+              return (
+                <View style={styles.statsGrid}>
+                  <View style={styles.statCell}>
+                    <StatCard label="Sales" value={salesStr} valueFontSize={fs} />
+                  </View>
+                  <View style={styles.statCell}>
+                    <StatCard label="Items Sold" value={itemsStr} valueFontSize={fs} />
+                  </View>
+                  <View style={styles.statCell}>
+                    <StatCard label="Avg Sale" value={avgStr} valueFontSize={fs} />
+                  </View>
+                </View>
+              );
+            })()}
+          </>
+        )}
 
         <Text style={styles.sectionLabel}>Recent Customers</Text>
         {recentCustomers.length > 0 ? (
@@ -381,6 +418,53 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     marginBottom: SPACING.md,
     ...SHADOW.card,
+  },
+  quietDayCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    padding: SPACING.lg,
+    marginBottom: SPACING.lg,
+    alignItems: 'center',
+    ...SHADOW.card,
+  },
+  quietDayIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.cream,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
+  },
+  quietDayTitle: {
+    fontSize: FONT_SIZE.xl,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: SPACING.xs,
+  },
+  quietDayBody: {
+    fontSize: FONT_SIZE.md,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
+    paddingHorizontal: SPACING.sm,
+    lineHeight: 20,
+  },
+  quietDayCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.crimson,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  quietDayCtaText: {
+    color: COLORS.textOnDark,
+    fontSize: FONT_SIZE.md,
+    fontWeight: '700',
   },
   heroLabel: {
     fontSize: FONT_SIZE.sm,
