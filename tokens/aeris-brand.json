@@ -1,0 +1,33 @@
+{
+  "$schema": "Source of truth for AERIS brand tokens across repos. Consumed by mobile/src/constants/theme.ts (hand-mirrored) and aeris_websitev3/styles/theme.css (--aeris-* block). Run tokens/verify.mjs after editing.",
+  "color": {
+    "navy":               "#002a40",
+    "navy-light":         "#1d3a52",
+    "navy-deep":          "#002239",
+    "navy-ink":           "#14212b",
+    "cream":              "#fdf0d5",
+    "cream-light":        "#fff9ec",
+    "paper":              "#f7f2ef",
+    "crimson":            "#c1121f",
+    "crimson-dark":       "#900",
+    "crimson-ink":        "#6e0000",
+    "blue-accent":        "#346e95",
+    "text-body":          "#171717",
+    "text-on-dark-muted": "#cce5f7"
+  },
+  "radius": {
+    "sm": 4,
+    "md": 8,
+    "lg": 12,
+    "xl": 16,
+    "xxl": 24,
+    "full": 9999
+  },
+  "letter-spacing": {
+    "tight-xl": -1.29,
+    "tight-lg": -0.84,
+    "tight-md": -0.6,
+    "tight-sm": -0.42,
+    "wide-sm": 0.1
+  }
+}
