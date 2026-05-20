@@ -74,17 +74,18 @@ describe('TransactionListScreen', () => {
       expect(mockGetTransactions).toHaveBeenCalled();
     });
 
-    // 'today' is the default — the pill should be styled active.
-    const todayPill = getByLabelText('Filter Today');
-    const flatStyle = Array.isArray(todayPill.props.style)
-      ? Object.assign({}, ...todayPill.props.style.flat())
-      : todayPill.props.style;
+    // 'all' is the default — the pill should be styled active so users
+    // open the screen onto populated data rather than an empty Today list.
+    const allPill = getByLabelText('Filter All');
+    const flatStyle = Array.isArray(allPill.props.style)
+      ? Object.assign({}, ...allPill.props.style.flat())
+      : allPill.props.style;
     expect(flatStyle.backgroundColor).toBe('#c1121f'); // COLORS.crimson
     expect(flatStyle.borderColor).toBe('#c1121f');
-    expect(todayPill.props.accessibilityState).toMatchObject({selected: true});
+    expect(allPill.props.accessibilityState).toMatchObject({selected: true});
 
-    const allPill = getByLabelText('Filter All');
-    expect(allPill.props.accessibilityState).toMatchObject({selected: false});
+    const todayPill = getByLabelText('Filter Today');
+    expect(todayPill.props.accessibilityState).toMatchObject({selected: false});
   });
 
   it('renders list rows with accessibilityRole="button" and a contextual label', async () => {
