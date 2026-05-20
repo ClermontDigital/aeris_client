@@ -86,7 +86,11 @@ export default function TransactionListScreen() {
   const haptics = useHaptics();
 
   const [transactions, setTransactions] = useState<Sale[]>([]);
-  const [dateFilter, setDateFilter] = useState<DateFilter>('today');
+  // Default to 'all' so the screen renders populated on first open. Filters
+  // to 'today' / 'week' are one tap away on the chip row; the previous
+  // 'today' default landed the user on an empty list whenever they hadn't
+  // sold anything that day, which read as "the app is broken".
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
