@@ -17,6 +17,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -345,7 +346,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   statsStrip: {
     flexDirection: 'row',
@@ -396,7 +397,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   rowLeft: {flex: 1, marginRight: SPACING.md},
-  rowName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  rowName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
   rowMeta: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
@@ -406,7 +407,7 @@ const styles = StyleSheet.create({
   rowPrice: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   rowStock: {
@@ -422,7 +423,7 @@ const styles = StyleSheet.create({
   footerEndText: {
     color: COLORS.textDim,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
@@ -433,7 +434,7 @@ const styles = StyleSheet.create({
   footerRetryText: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     textDecorationLine: 'underline',
   },
 });

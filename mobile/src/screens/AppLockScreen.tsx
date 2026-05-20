@@ -16,7 +16,7 @@ import {useAppLockStore} from '../stores/appLockStore';
 import {useAuthStore} from '../stores/authStore';
 import AppLockService from '../services/AppLockService';
 import {useHaptics} from '../hooks/useHaptics';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 
 const MAX_ATTEMPTS = 5;
 
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   signOutText: {color: COLORS.cream, fontSize: FONT_SIZE.md, opacity: 0.85},
   brand: {alignItems: 'center', marginTop: SPACING.xl + SPACING.lg},
   logo: {width: 72, height: 72, marginBottom: SPACING.sm},
-  appName: {color: COLORS.cream, fontSize: FONT_SIZE.title, fontWeight: '700'},
+  appName: {color: COLORS.cream, fontSize: FONT_SIZE.title, fontFamily: FONT_FAMILY.bold},
   tagline: {color: COLORS.cream, fontSize: FONT_SIZE.md, opacity: 0.7, marginTop: 2},
   pinWrap: {alignItems: 'center', justifyContent: 'center'},
   bioBtn: {
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
   },
   bioIcon: {marginRight: SPACING.sm},
-  bioText: {color: COLORS.cream, fontSize: FONT_SIZE.lg, fontWeight: '600'},
+  bioText: {color: COLORS.cream, fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.medium},
   attemptsHint: {
     color: COLORS.cream,
     opacity: 0.6,

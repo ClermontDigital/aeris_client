@@ -17,7 +17,7 @@ import {useSettings} from '../hooks/useSettings';
 import {useAuthStore} from '../stores/authStore';
 import {useAppLockStore} from '../stores/appLockStore';
 import {useHaptics} from '../hooks/useHaptics';
-import {COLORS} from '../constants/theme';
+import {COLORS, FONT_FAMILY} from '../constants/theme';
 import type {ConnectionMode} from '../types/api.types';
 
 interface Props {
@@ -369,7 +369,7 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
 const styles = StyleSheet.create({
   modal: {justifyContent: 'center', margin: 40},
   content: {backgroundColor: COLORS.surface, borderRadius: 12, padding: 24},
-  title: {fontSize: 22, fontWeight: '700', color: COLORS.navy, marginBottom: 20},
+  title: {fontSize: 22, fontFamily: FONT_FAMILY.bold, color: COLORS.navy, marginBottom: 20},
   label: {fontSize: 14, color: COLORS.textMuted, marginTop: 12, marginBottom: 4},
   input: {
     borderWidth: 1,
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
   },
   urlRow: {flexDirection: 'row', gap: 8, alignItems: 'center'},
   testBtn: {backgroundColor: COLORS.navy, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8},
-  testText: {color: COLORS.cream, fontWeight: '600'},
+  testText: {color: COLORS.cream, fontFamily: FONT_FAMILY.medium},
   modeRow: {flexDirection: 'row', gap: 8, marginTop: 4},
   modeBtn: {
     flex: 1,
@@ -391,13 +391,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.inputBorder,
     alignItems: 'center',
-    backgroundColor: COLORS.background, // cream
+    backgroundColor: COLORS.background, // page surface (paper)
   },
   modeBtnActive: {
     backgroundColor: COLORS.navy,
     borderColor: COLORS.navy,
   },
-  modeText: {color: COLORS.textMuted, fontWeight: '600'},
+  modeText: {color: COLORS.textMuted, fontFamily: FONT_FAMILY.medium},
   modeTextActive: {color: COLORS.cream},
   switchRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16},
   fieldGroup: {marginTop: 16},
@@ -420,13 +420,13 @@ const styles = StyleSheet.create({
   segmentedButtonActive: {
     backgroundColor: COLORS.navy,
   },
-  segmentedText: {color: COLORS.textMuted, fontWeight: '600', fontSize: 14},
+  segmentedText: {color: COLORS.textMuted, fontFamily: FONT_FAMILY.medium, fontSize: 14},
   segmentedTextActive: {color: COLORS.cream},
   buttons: {flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 24},
   cancelBtn: {paddingHorizontal: 16, paddingVertical: 10},
   cancelText: {color: COLORS.textMuted, fontSize: 16},
   saveBtn: {backgroundColor: COLORS.crimson, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8},
-  saveText: {color: COLORS.white, fontSize: 16, fontWeight: '600'},
+  saveText: {color: COLORS.white, fontSize: 16, fontFamily: FONT_FAMILY.medium},
   logoutSection: {
     marginTop: 20,
     paddingTop: 16,
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  logoutText: {color: COLORS.white, fontSize: 16, fontWeight: '600'},
+  logoutText: {color: COLORS.white, fontSize: 16, fontFamily: FONT_FAMILY.medium},
   deleteAccountBtn: {
     marginTop: 12,
     paddingVertical: 10,
@@ -449,7 +449,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.danger,
     backgroundColor: 'transparent',
   },
-  deleteAccountText: {color: COLORS.danger, fontSize: 14, fontWeight: '600'},
+  deleteAccountText: {color: COLORS.danger, fontSize: 14, fontFamily: FONT_FAMILY.medium},
   lockSection: {
     marginTop: 20,
     paddingTop: 16,
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     color: COLORS.navy,
     marginBottom: 4,
   },
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
   resetPinText: {
     color: COLORS.crimson,
     fontSize: 15,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
 });
 

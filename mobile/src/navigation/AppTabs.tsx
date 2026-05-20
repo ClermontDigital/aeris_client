@@ -25,7 +25,7 @@ import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
 import {useCartStore} from '../stores/cartStore';
 import {getItemCount} from '@aeris/shared';
-import {COLORS, FONT_SIZE} from '../constants/theme';
+import {COLORS, FONT_SIZE, FONT_FAMILY} from '../constants/theme';
 import type {AppTabParamList} from '../types/navigation.types';
 
 const Tab = createBottomTabNavigator<AppTabParamList>();
@@ -118,8 +118,12 @@ const AppTabs: React.FC = () => {
         <View style={styles.topBarRow}>
           <View style={[styles.svgWrap, {height: svgHeight}]} pointerEvents="none">
             <Svg width={screenWidth} height={svgHeight}>
-              <Path d={paths.creamLeft} fill={COLORS.background} />
-              <Path d={paths.creamRight} fill={COLORS.background} />
+              {/* Pendant shoulders are intentionally CREAM (wheat) to match
+                  the brand pendant. Phase 3 flipped COLORS.background to
+                  paper, so these now reference COLORS.cream directly to
+                  preserve the original warm tone. */}
+              <Path d={paths.creamLeft} fill={COLORS.cream} />
+              <Path d={paths.creamRight} fill={COLORS.cream} />
               <Path d={paths.tongue} fill={COLORS.navy} />
             </Svg>
           </View>
@@ -291,13 +295,13 @@ const styles = StyleSheet.create({
   },
   tabBarLabel: {
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   tabBarBadge: {
     backgroundColor: COLORS.cream,
     color: COLORS.crimson,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     minWidth: 18,
     height: 18,
     lineHeight: 18,

@@ -18,6 +18,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -395,12 +396,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   headerSubtitle: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -458,11 +459,11 @@ const styles = StyleSheet.create({
   categoryPillText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
   categoryPillTextActive: {
     color: COLORS.white,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   errorWrap: {
     paddingHorizontal: SPACING.md,
@@ -498,7 +499,7 @@ const styles = StyleSheet.create({
   productName: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     marginBottom: SPACING.sm,
     minHeight: 38,
     lineHeight: 19,
@@ -506,7 +507,7 @@ const styles = StyleSheet.create({
   productPrice: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginBottom: SPACING.xs,
     fontVariant: ['tabular-nums'],
   },
@@ -548,14 +549,14 @@ const styles = StyleSheet.create({
   cartBarText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   cartBarActionRow: {flexDirection: 'row', alignItems: 'center'},
   cartBarAction: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     marginRight: SPACING.xs,
   },
 });

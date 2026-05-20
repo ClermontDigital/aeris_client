@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform} from 'react-native';
-import {COLORS, FONT_SIZE, SPACING, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, FONT_SIZE, FONT_FAMILY, SPACING, BORDER_RADIUS} from '../constants/theme';
 
 interface PinPadProps {
   title: string;
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.navy,
     borderRadius: BORDER_RADIUS.xl,
   },
-  title: {fontSize: FONT_SIZE.xl, fontWeight: '600', color: COLORS.textOnDark, marginBottom: SPACING.lg},
+  title: {fontSize: FONT_SIZE.xl, fontFamily: FONT_FAMILY.medium, color: COLORS.textOnDark, marginBottom: SPACING.lg},
   dotsRow: {flexDirection: 'row', gap: SPACING.md, marginBottom: SPACING.sm + 4},
   dot: {
     width: 18,
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   emptyKey: {width: 72, height: 56, margin: 4},
-  keyText: {fontSize: 22, fontWeight: '600', color: COLORS.textOnDark},
+  keyText: {fontSize: 22, fontFamily: FONT_FAMILY.medium, color: COLORS.textOnDark},
   cancelBtn: {marginTop: SPACING.md},
   cancelText: {color: COLORS.textOnDark, fontSize: FONT_SIZE.lg, textDecorationLine: 'underline'},
 });

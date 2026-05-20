@@ -16,6 +16,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -387,7 +388,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   statStrip: {
     flexDirection: 'row',
@@ -428,7 +429,7 @@ const styles = StyleSheet.create({
   filterButtonText: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   filterButtonTextActive: {
     color: COLORS.cream,
@@ -463,7 +464,7 @@ const styles = StyleSheet.create({
   saleNumber: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     fontVariant: ['tabular-nums'],
   },
   saleDate: {
@@ -489,7 +490,7 @@ const styles = StyleSheet.create({
   saleTotal: {
     color: COLORS.textLight,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginBottom: SPACING.xs,
     fontVariant: ['tabular-nums'],
   },
@@ -502,7 +503,7 @@ const styles = StyleSheet.create({
   statusText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'capitalize',
   },
   footerLoader: {
@@ -516,7 +517,7 @@ const styles = StyleSheet.create({
   footerEndText: {
     color: COLORS.textDim,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
@@ -527,7 +528,7 @@ const styles = StyleSheet.create({
   footerRetryText: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     textDecorationLine: 'underline',
   },
 });

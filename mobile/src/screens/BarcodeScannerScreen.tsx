@@ -20,7 +20,7 @@ import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import type {Product, ProductDetail} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 
 const formatCents = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
   busyText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   topOverlay: {
     position: 'absolute',
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
   topTitle: {
     color: COLORS.cream,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   torchButton: {
     width: 40,
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
   productName: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     marginBottom: SPACING.xs,
   },
   productDetails: {
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
   productPrice: {
     color: COLORS.accent,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   productStock: {
     color: COLORS.textMuted,
@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
   addToCartText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   // Outline-on-cream so the button reads as a button against the cream
   // result card (the previous near-white surfaceHover bg was effectively
@@ -498,7 +498,7 @@ const styles = StyleSheet.create({
   dismissText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
   notFoundText: {
     color: COLORS.warning,
@@ -548,7 +548,7 @@ const styles = StyleSheet.create({
   permissionTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     marginTop: SPACING.lg,
     marginBottom: SPACING.sm,
   },
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
 });
 

@@ -16,6 +16,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -291,7 +292,7 @@ const styles = StyleSheet.create({
   saleNumber: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   saleDate: {
@@ -308,13 +309,13 @@ const styles = StyleSheet.create({
   statusText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'capitalize',
   },
   sectionTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginBottom: SPACING.sm,
   },
   row: {
@@ -329,7 +330,7 @@ const styles = StyleSheet.create({
   rowValue: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   itemRow: {
     flexDirection: 'row',
@@ -340,7 +341,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.surfaceBorder,
   },
   itemLeft: {flex: 1, marginRight: SPACING.md},
-  itemName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  itemName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
   itemMeta: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
@@ -350,7 +351,7 @@ const styles = StyleSheet.create({
   itemTotal: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   totalRow: {
@@ -373,12 +374,12 @@ const styles = StyleSheet.create({
   grandTotalLabel: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   grandTotalValue: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   paymentRow: {
@@ -394,7 +395,7 @@ const styles = StyleSheet.create({
   paymentAmount: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     fontVariant: ['tabular-nums'],
   },
   emptyText: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm},
@@ -408,7 +409,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.sm,
   },
-  primaryBtnText: {color: COLORS.white, fontWeight: '700', fontSize: FONT_SIZE.md},
+  primaryBtnText: {color: COLORS.white, fontFamily: FONT_FAMILY.bold, fontSize: FONT_SIZE.md},
   backBtn: {
     flexDirection: 'row',
     backgroundColor: COLORS.text,
@@ -421,7 +422,7 @@ const styles = StyleSheet.create({
   backBtnText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   errorWrap: {
     paddingHorizontal: SPACING.md,

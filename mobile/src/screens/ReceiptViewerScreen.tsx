@@ -15,6 +15,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -260,7 +261,7 @@ const styles = StyleSheet.create({
   businessName: {
     color: COLORS.primary,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     textAlign: 'center',
     marginBottom: SPACING.xs,
   },
@@ -278,7 +279,7 @@ const styles = StyleSheet.create({
   saleNumber: {
     color: '#374151',
     fontSize: FONT_SIZE.sm,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     fontVariant: ['tabular-nums'],
   },
   saleDate: {
@@ -299,7 +300,7 @@ const styles = StyleSheet.create({
   itemHeaderText: {
     color: '#9ca3af',
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
   },
   itemRow: {
@@ -317,7 +318,7 @@ const styles = StyleSheet.create({
   },
   itemTotalText: {
     color: '#111827',
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   // Totals
   totalsSection: {},
@@ -344,12 +345,12 @@ const styles = StyleSheet.create({
   grandTotalLabel: {
     color: '#111827',
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   grandTotalValue: {
     color: '#111827',
     fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   // Payments
@@ -357,7 +358,7 @@ const styles = StyleSheet.create({
   paymentTitle: {
     color: '#9ca3af',
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     marginBottom: SPACING.sm,
   },
@@ -399,6 +400,6 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
 });
