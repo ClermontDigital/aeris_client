@@ -18,8 +18,17 @@ import {useAuthStore} from '../stores/authStore';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useHaptics} from '../hooks/useHaptics';
 import SettingsModal from './SettingsModal';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {
+  COLORS,
+  SPACING,
+  FONT_SIZE,
+  FONT_FAMILY,
+  BORDER_RADIUS,
+  LETTER_SPACING,
+} from '../constants/theme';
 import {validateWorkspaceCode} from '../constants/config';
+import MotionCard from '../components/MotionCard';
+import PillButton from '../components/PillButton';
 
 const LoginScreen: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -129,12 +138,14 @@ const LoginScreen: React.FC = () => {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
-          <View style={styles.card}>
+          <MotionCard style={styles.card}>
             <Image
               source={require('../../assets/images/app-icon.png')}
               style={styles.logo}
               resizeMode="contain"
             />
+
+            <Text style={styles.heading}>Sign in</Text>
 
             {errorKind === 'expired' && error ? (
               <View
@@ -239,18 +250,22 @@ const LoginScreen: React.FC = () => {
               </View>
             ) : null}
 
-            <TouchableOpacity
-              style={[styles.goButton, !canSubmit && styles.goButtonDisabled]}
-              onPress={handleSignIn}
-              disabled={!canSubmit}
-              activeOpacity={0.8}
-              accessibilityState={{disabled: !canSubmit, busy: isLoading}}>
-              {isLoading ? (
-                <ActivityIndicator size="small" color={COLORS.white} />
-              ) : (
-                <Text style={styles.goButtonText}>GO</Text>
-              )}
-            </TouchableOpacity>
+            {isLoading ? (
+              // Keep the inline spinner for the brief disabled+busy window —
+              // PillButton has no loading state and the user needs visible
+              // confirmation that auth is in flight.
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color={COLORS.crimson} />
+              </View>
+            ) : (
+              <PillButton
+                variant="solid"
+                label="Sign In"
+                onPress={handleSignIn}
+                disabled={!canSubmit}
+                style={styles.signInButton}
+              />
+            )}
 
             <Text style={styles.helpText}>
               Sign in with credentials provided by your AERIS administrator.{' '}
@@ -269,7 +284,7 @@ const LoginScreen: React.FC = () => {
                 Configure
               </Text>
             </TouchableOpacity>
-          </View>
+          </MotionCard>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -303,9 +318,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 420,
     backgroundColor: COLORS.cream,
-    borderRadius: BORDER_RADIUS.xl,
+    borderRadius: BORDER_RADIUS.xxl,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: COLORS.surfaceBorder,
     padding: SPACING.xl,
     paddingTop: 40,
     paddingBottom: 36,
@@ -319,7 +334,15 @@ const styles = StyleSheet.create({
   logo: {
     width: 180,
     height: 80,
-    marginBottom: 32,
+    marginBottom: SPACING.md,
+  },
+  heading: {
+    fontSize: FONT_SIZE.displayLg,
+    fontFamily: FONT_FAMILY.medium,
+    color: COLORS.text,
+    letterSpacing: LETTER_SPACING.tightLg,
+    alignSelf: 'flex-start',
+    marginBottom: SPACING.lg,
   },
   inputContainer: {
     width: '100%',
@@ -374,28 +397,16 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     lineHeight: 18,
   },
-  goButton: {
+  signInButton: {
+    width: '100%',
+    marginTop: SPACING.sm,
+  },
+  loadingRow: {
     width: '100%',
     height: 52,
-    backgroundColor: COLORS.crimson,
-    borderRadius: BORDER_RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: SPACING.sm,
-    shadowColor: COLORS.crimson,
-    shadowOffset: {width: 0, height: 3},
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  goButtonDisabled: {
-    opacity: 0.5,
-  },
-  goButtonText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
-    letterSpacing: 3,
   },
   helpText: {
     color: COLORS.textMuted,
@@ -406,7 +417,7 @@ const styles = StyleSheet.create({
   },
   helpLink: {
     color: COLORS.crimson,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   connectionLink: {
     marginTop: SPACING.md,

@@ -12,7 +12,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {Ionicons} from '@expo/vector-icons';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useCartStore} from '../stores/cartStore';
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   walkInBtn: {
     flexDirection: 'row',
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   walkInText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   searchRow: {
     flexDirection: 'row',
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   retryText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginLeft: SPACING.md,
     textDecorationLine: 'underline',
   },
@@ -272,12 +272,12 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   rowLeft: {flex: 1, marginRight: SPACING.md},
-  rowName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  rowName: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
   rowMeta: {color: COLORS.textMuted, fontSize: FONT_SIZE.xs, marginTop: 2},
   emptyContainer: {alignItems: 'center', paddingTop: SPACING.xxl},
   emptyText: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.md,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
 });

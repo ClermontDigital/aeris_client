@@ -2,7 +2,7 @@
   "expo": {
     "name": "AERIS",
     "slug": "aeris",
-    "version": "1.3.13",
+    "version": "1.3.14",
     "orientation": "default",
     "icon": "./assets/images/app-icon.png",
     "scheme": "aeris",
@@ -63,7 +63,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#003049"
+        "backgroundColor": "#002a40"
       },
       "package": "com.aeris.erp",
       "permissions": [
@@ -101,7 +101,17 @@
         }
       ],
       "expo-secure-store",
-      "expo-font",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Poppins-Light.ttf",
+            "./assets/fonts/Poppins-Regular.ttf",
+            "./assets/fonts/Poppins-Medium.ttf",
+            "./assets/fonts/Poppins-Bold.ttf"
+          ]
+        }
+      ],
       "expo-sharing",
       "expo-splash-screen"
     ],

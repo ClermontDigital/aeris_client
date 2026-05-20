@@ -14,7 +14,7 @@ import type {CompositeNavigationProp, RouteProp} from '@react-navigation/native'
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import {Ionicons} from '@expo/vector-icons';
-import {COLORS, SPACING, FONT_SIZE, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import type {Address, Customer, Sale} from '../types/api.types';
@@ -514,27 +514,27 @@ const styles = StyleSheet.create({
   avatarText: {
     color: COLORS.crimson,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     letterSpacing: 0.5,
   },
   name: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     letterSpacing: -0.3,
     textAlign: 'center',
   },
   subtitle: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
     marginTop: SPACING.xs,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   sectionLabel: {
     fontSize: FONT_SIZE.sm,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     color: COLORS.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 1,
@@ -566,17 +566,17 @@ const styles = StyleSheet.create({
   contactLabel: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   contactValue: {
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     marginTop: 2,
   },
   contactValueLink: {color: COLORS.text},
-  contactValueEmpty: {color: COLORS.textDim, fontWeight: '500'},
+  contactValueEmpty: {color: COLORS.textDim, fontFamily: FONT_FAMILY.medium},
   balanceCard: {
     ...cardBase,
     padding: SPACING.lg,
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
   },
   balance: {
     fontSize: FONT_SIZE.title,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     color: COLORS.text,
     letterSpacing: -0.5,
   },
@@ -592,7 +592,7 @@ const styles = StyleSheet.create({
   balanceLabel: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginTop: SPACING.xs,
@@ -609,7 +609,7 @@ const styles = StyleSheet.create({
   placeholderTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     marginBottom: 2,
   },
   placeholderBody: {
@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
   errorTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginBottom: SPACING.sm,
     textAlign: 'center',
   },
@@ -637,8 +637,8 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.lg,
     marginBottom: SPACING.sm,
   },
-  primaryBtnText: {color: COLORS.white, fontWeight: '700', fontSize: FONT_SIZE.md},
-  linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md, fontWeight: '600'},
+  primaryBtnText: {color: COLORS.white, fontFamily: FONT_FAMILY.bold, fontSize: FONT_SIZE.md},
+  linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.medium},
   backBtn: {
     flexDirection: 'row',
     backgroundColor: COLORS.text,
@@ -652,7 +652,7 @@ const styles = StyleSheet.create({
   backBtnText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   termsRow: {
     flexDirection: 'row',
@@ -667,12 +667,12 @@ const styles = StyleSheet.create({
   termsLabel: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '500',
+    fontFamily: FONT_FAMILY.medium,
   },
   termsValue: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   activityRow: {
     flexDirection: 'row',
@@ -688,7 +688,7 @@ const styles = StyleSheet.create({
   activitySaleNumber: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   activitySaleDate: {
     color: COLORS.textMuted,
@@ -699,7 +699,7 @@ const styles = StyleSheet.create({
   activityAmount: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginBottom: 4,
   },
   activityStatusChip: {
@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
   activityStatusText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'capitalize',
   },
   activityChevron: {marginLeft: 4},
@@ -733,7 +733,7 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     backgroundColor: COLORS.crimson,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     paddingHorizontal: SPACING.sm,
@@ -744,7 +744,7 @@ const styles = StyleSheet.create({
   addressLabel: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },

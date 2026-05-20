@@ -148,15 +148,46 @@ jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
 }));
 
-// Mock react-native-reanimated
+// Mock react-native-reanimated. The package's bundled mock
+// (`react-native-reanimated/mock`) transitively loads react-native-worklets,
+// which ships ESM-only — Jest can't parse it under the default RN preset and
+// fails to load any file that imports reanimated (e.g. MotionCard). Roll our
+// own minimal stub instead.
 jest.mock('react-native-reanimated', () => {
-  const Reanimated = require('react-native-reanimated/mock');
+  const RN = require('react-native');
+  const passthroughTiming = (val: any) => val;
+  const passthroughDelay = (_d: any, val: any) => val;
+  const easingFn = (t: number) => t;
+  const easingFactory = () => easingFn;
   return {
-    ...Reanimated,
+    __esModule: true,
+    default: {
+      View: RN.View,
+      Text: RN.Text,
+      ScrollView: RN.ScrollView,
+      Image: RN.Image,
+      createAnimatedComponent: (c: any) => c,
+    },
+    View: RN.View,
+    Text: RN.Text,
+    ScrollView: RN.ScrollView,
+    Image: RN.Image,
+    createAnimatedComponent: (c: any) => c,
     useAnimatedStyle: jest.fn(() => ({})),
     useSharedValue: jest.fn((init: any) => ({ value: init })),
-    withTiming: jest.fn((val: any) => val),
-    withSpring: jest.fn((val: any) => val),
+    withTiming: jest.fn(passthroughTiming),
+    withSpring: jest.fn(passthroughTiming),
+    withDelay: jest.fn(passthroughDelay),
+    Easing: {
+      linear: easingFn,
+      ease: easingFn,
+      quad: easingFn,
+      cubic: easingFn,
+      in: easingFactory,
+      out: easingFactory,
+      inOut: easingFactory,
+      bezier: easingFactory,
+    },
   };
 });
 

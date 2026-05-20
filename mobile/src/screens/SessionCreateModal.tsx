@@ -3,7 +3,7 @@ import {View, Text, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform
 import Modal from 'react-native-modal';
 import PinPad from '../components/PinPad';
 import {useSessionStore} from '../stores/sessionStore';
-import {COLORS, FONT_SIZE, SPACING, BORDER_RADIUS} from '../constants/theme';
+import {COLORS, FONT_SIZE, FONT_FAMILY, SPACING, BORDER_RADIUS} from '../constants/theme';
 
 interface Props {
   visible: boolean;
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     alignItems: 'center',
   },
-  title: {fontSize: FONT_SIZE.xl, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.md},
+  title: {fontSize: FONT_SIZE.xl, fontFamily: FONT_FAMILY.bold, color: COLORS.text, marginBottom: SPACING.md},
   label: {fontSize: FONT_SIZE.md, color: COLORS.textMuted, alignSelf: 'flex-start', marginBottom: 4},
   input: {
     borderWidth: 1,
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg - 4,
   },
   cancel: {color: COLORS.danger, fontSize: FONT_SIZE.lg},
-  next: {color: COLORS.crimson, fontSize: FONT_SIZE.lg, fontWeight: '600'},
+  next: {color: COLORS.crimson, fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.medium},
 });
 
 export default SessionCreateModal;

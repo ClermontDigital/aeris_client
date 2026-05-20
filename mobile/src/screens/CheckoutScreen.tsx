@@ -20,6 +20,7 @@ import {
   COLORS,
   SPACING,
   FONT_SIZE,
+  FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
@@ -495,7 +496,7 @@ const styles = StyleSheet.create({
   summaryTotal: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   summaryItems: {
@@ -506,7 +507,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: SPACING.sm,
@@ -553,7 +554,7 @@ const styles = StyleSheet.create({
   methodButtonText: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
   },
   methodButtonTextActive: {
     color: COLORS.crimson,
@@ -570,7 +571,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     textAlign: 'center',
     marginBottom: SPACING.sm,
     fontVariant: ['tabular-nums'],
@@ -591,7 +592,7 @@ const styles = StyleSheet.create({
   changeValue: {
     color: COLORS.success,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   insufficientText: {
@@ -616,7 +617,7 @@ const styles = StyleSheet.create({
   completeSaleText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   // Success screen styles
   successContainer: {
@@ -641,19 +642,19 @@ const styles = StyleSheet.create({
   successTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginBottom: SPACING.sm,
   },
   saleNumber: {
     color: COLORS.accent,
     fontSize: FONT_SIZE.xl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   saleTotal: {
     color: COLORS.accent,
     fontSize: FONT_SIZE.xxl,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginTop: SPACING.sm,
     fontVariant: ['tabular-nums'],
   },
@@ -669,7 +670,7 @@ const styles = StyleSheet.create({
   printButtonText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   newSaleButton: {
     backgroundColor: COLORS.crimson,
@@ -680,7 +681,7 @@ const styles = StyleSheet.create({
   newSaleButtonText: {
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   viewTransactionButton: {
     backgroundColor: COLORS.surface,
@@ -693,7 +694,7 @@ const styles = StyleSheet.create({
   viewTransactionButtonText: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
   },
   customerRow: {
     flexDirection: 'row',
@@ -719,14 +720,14 @@ const styles = StyleSheet.create({
   customerLabel: {
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.xs,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   customerName: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
-    fontWeight: '600',
+    fontFamily: FONT_FAMILY.medium,
     marginTop: 2,
   },
   customerChangeBtn: {
@@ -738,7 +739,7 @@ const styles = StyleSheet.create({
   customerChangeText: {
     color: COLORS.accent,
     fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
+    fontFamily: FONT_FAMILY.bold,
     marginRight: 2,
   },
 });
