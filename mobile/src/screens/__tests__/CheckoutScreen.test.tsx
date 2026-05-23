@@ -70,7 +70,12 @@ jest.mock('../../hooks/useHaptics', () => {
 });
 
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({navigate: jest.fn()}),
+  useNavigation: () => ({navigate: jest.fn(), reset: jest.fn()}),
+  // CheckoutScreen uses useFocusEffect (v1.3.28) to reset the QuickSale
+  // stack on blur after a completed sale. In the test, focus events
+  // don't fire — the cleanup callback never runs — so a no-op stub is
+  // enough.
+  useFocusEffect: () => undefined,
 }));
 
 import CheckoutScreen from '../CheckoutScreen';

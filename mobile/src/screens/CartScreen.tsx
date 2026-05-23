@@ -9,11 +9,14 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  InputAccessoryView,
+  Keyboard,
+  Pressable,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {
   COLORS,
   SPACING,
@@ -24,6 +27,7 @@ import {
 } from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import EmptyState from '../components/EmptyState';
 import type {CartItem} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
@@ -31,9 +35,20 @@ import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
 
+// Shared nativeID for the iOS keyboard accessory bar — both TextInputs
+// reference it so they share one Done button rather than each rendering
+// their own.
+const CART_INPUT_BAR = 'cart-input-bar';
+
 export default function CartScreen() {
   const navigation = useNavigation<NavigationProp>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  // Cap list rows + summary card to 720pt and centre on iPad so the cart
+  // doesn't read as a stretched billboard. Phone layout untouched.
+  const tabletWidthCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
   const {
     items,
     discountCents,
@@ -56,36 +71,101 @@ export default function CartScreen() {
   const total = getTotalCents();
   const itemCount = getItemCount();
 
-  // The discount input is dollars-as-text on screen but the store holds
-  // cents. We mirror the store value into local state so the user can type
-  // freely (decimal in progress, intermediate empty string) without the
-  // store clobbering each keystroke. Commit on blur/submit.
+  // Discount input modes: '$' = absolute dollar amount, '%' = percent of
+  // (subtotal + tax). The store always holds cents — the percent mode just
+  // changes how we interpret the typed string at commit time. Default to
+  // '$' for back-compat with existing operators. The mode lives in local
+  // state (not persisted) so each new cart starts in $ mode.
+  type DiscountMode = '$' | '%';
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('$');
+
+  // Keyboard dismissal — iOS-canonical pattern only:
+  //   (a) `InputAccessoryView` below renders a Done bar above the keyboard
+  //   (b) FlatList `keyboardDismissMode="on-drag"` lets the operator
+  //       drag the cart list down to dismiss
+  //   (c) Wrapping the screen body in `TouchableWithoutFeedback` so any
+  //       tap outside an input dismisses (added on the SafeAreaView below)
+  // The earlier "Hide keyboard" pill was dropped in v1.3.26 — it felt
+  // clunky and competed with the canonical iOS UX. If the InputAccessoryView
+  // ever proves unreliable on a specific device, prefer tap-outside +
+  // drag-to-dismiss over re-introducing inline chrome.
+  // The discount input is text-as-typed on screen but the store holds cents.
+  // We mirror the store value into local state so the user can type freely
+  // (decimal in progress, intermediate empty string) without the store
+  // clobbering each keystroke. Commit on blur/submit.
   const [discountInput, setDiscountInput] = useState<string>(
     discountCents > 0 ? (discountCents / 100).toFixed(2) : '',
   );
   const [discountOverCap, setDiscountOverCap] = useState(false);
   const overCapHapticFiredRef = useRef(false);
   // If another path resets discountCents (e.g. clear cart), reflect it.
+  // Only updates the $ mode display — in % mode the user-typed percent
+  // stays put while the store value mirrors it.
   useEffect(() => {
-    setDiscountInput(discountCents > 0 ? (discountCents / 100).toFixed(2) : '');
-  }, [discountCents]);
+    if (discountMode === '$') {
+      setDiscountInput(discountCents > 0 ? (discountCents / 100).toFixed(2) : '');
+    }
+  }, [discountCents, discountMode]);
+
+  // Percent mode: when the cart's subtotal/tax change mid-edit (e.g. the
+  // operator bumps a quantity) the typed percent stays visible but the
+  // applied cents amount needs to re-derive against the new base. Without
+  // this the display drifts away from what's actually applied.
+  useEffect(() => {
+    if (discountMode !== '%') return;
+    if (discountInput.trim() === '') return;
+    const requested = computeRequestedCents(discountInput, '%');
+    if (requested != null) {
+      setDiscount(requested);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discountMode, discountInput, subtotal, tax]);
+
+  // When the cart empties (items.length transitions to 0) we tear down the
+  // inputs UI. In $ mode the typed value snaps back from the store on next
+  // mount, but in % mode we'd otherwise carry a stale percent that gets
+  // applied to the next freshly populated cart. Zero discountCents in that
+  // case so the next add-item starts clean.
+  useEffect(() => {
+    if (items.length === 0 && discountMode === '%') {
+      setDiscountInput('');
+      setDiscount(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length]);
+
+  // Convert a typed string + current mode into a cents amount. `null` if
+  // the input is empty or unparseable. In % mode the percentage is applied
+  // to (subtotal + tax) — same base the cap is computed against.
+  const computeRequestedCents = useCallback(
+    (text: string, mode: DiscountMode): number | null => {
+      const trimmed = text.trim();
+      if (trimmed === '') return null;
+      const parsed = parseFloat(trimmed);
+      if (!Number.isFinite(parsed) || parsed < 0) return null;
+      if (mode === '$') {
+        return Math.round(parsed * 100);
+      }
+      // Percent mode — cap at 100% so a stray "150" doesn't try to pay the
+      // customer back. The cents-side clamp in setDiscount catches the
+      // remaining cases (rounding above subtotal+tax, etc).
+      const pct = Math.min(parsed, 100);
+      const state = useCartStore.getState();
+      const base = state.getSubtotalCents() + state.getTaxCents();
+      return Math.round((base * pct) / 100);
+    },
+    [],
+  );
 
   const handleDiscountChange = useCallback(
     (text: string) => {
       setDiscountInput(text);
-      const trimmed = text.trim();
-      if (trimmed === '') {
+      const requestedCents = computeRequestedCents(text, discountMode);
+      if (requestedCents === null) {
         setDiscountOverCap(false);
         overCapHapticFiredRef.current = false;
         return;
       }
-      const dollars = parseFloat(trimmed);
-      if (!Number.isFinite(dollars) || dollars < 0) {
-        setDiscountOverCap(false);
-        overCapHapticFiredRef.current = false;
-        return;
-      }
-      const requestedCents = Math.round(dollars * 100);
       const state = useCartStore.getState();
       const cap = state.getSubtotalCents() + state.getTaxCents();
       if (requestedCents > cap) {
@@ -99,38 +179,64 @@ export default function CartScreen() {
         overCapHapticFiredRef.current = false;
       }
     },
-    [haptics],
+    [haptics, discountMode, computeRequestedCents],
   );
 
   const commitDiscount = useCallback(() => {
-    const trimmed = discountInput.trim();
-    if (trimmed === '') {
-      setDiscount(0);
-      setDiscountOverCap(false);
-      overCapHapticFiredRef.current = false;
-      return;
-    }
-    const dollars = parseFloat(trimmed);
-    if (!Number.isFinite(dollars) || dollars < 0) {
+    const requested = computeRequestedCents(discountInput, discountMode);
+    if (requested === null) {
       setDiscount(0);
       setDiscountInput('');
       setDiscountOverCap(false);
       overCapHapticFiredRef.current = false;
       return;
     }
-    const requested = Math.round(dollars * 100);
     setDiscount(requested);
     const after = useCartStore.getState().discountCents;
-    if (after !== requested) {
+    // In $ mode, snap the display back to the clamped value (e.g. cap
+    // overflow). In % mode, keep the user-typed percent — the cap clamp
+    // happens in cents, so re-rendering the percent would be lossy.
+    if (discountMode === '$' && after !== requested) {
       setDiscountInput(after > 0 ? (after / 100).toFixed(2) : '');
     }
     setDiscountOverCap(false);
     overCapHapticFiredRef.current = false;
-  }, [discountInput, setDiscount]);
+  }, [discountInput, discountMode, setDiscount, computeRequestedCents]);
+
+  // Swap mode without resetting the cart's discount. We rewrite the typed
+  // value to the equivalent in the new mode so the visible number tracks
+  // what's actually applied. Going $ → % needs a non-zero subtotal to
+  // compute a meaningful percent; if the cart is empty, drop to "".
+  const handleSwapDiscountMode = useCallback(
+    (next: DiscountMode) => {
+      if (next === discountMode) return;
+      haptics.selection();
+      setDiscountMode(next);
+      const cents = useCartStore.getState().discountCents;
+      if (cents <= 0) {
+        setDiscountInput('');
+        return;
+      }
+      if (next === '$') {
+        setDiscountInput((cents / 100).toFixed(2));
+      } else {
+        const state = useCartStore.getState();
+        const base = state.getSubtotalCents() + state.getTaxCents();
+        if (base <= 0) {
+          setDiscountInput('');
+        } else {
+          const pct = (cents / base) * 100;
+          // Keep one decimal of resolution — POS users rarely want more.
+          setDiscountInput(pct.toFixed(1).replace(/\.0$/, ''));
+        }
+      }
+    },
+    [discountMode, haptics],
+  );
 
   const handleClearCart = useCallback(() => {
     Alert.alert(
-      'Clear Cart',
+      'Clear cart',
       'Are you sure you want to remove all items from the cart?',
       [
         {text: 'Cancel', style: 'cancel'},
@@ -158,7 +264,7 @@ export default function CartScreen() {
 
   const handleSwipeDelete = useCallback(
     (productId: number) => {
-      Alert.alert('Remove Item', 'Remove this item from the cart?', [
+      Alert.alert('Remove item', 'Remove this item from the cart?', [
         {text: 'Cancel', style: 'cancel'},
         {
           text: 'Remove',
@@ -181,7 +287,7 @@ export default function CartScreen() {
           </Text>
           <Text style={styles.cartItemSku}>{item.product.sku}</Text>
           <Text style={styles.cartItemPrice}>
-            {formatCurrency(item.unit_price_cents)} x {item.quantity} ={' '}
+            {formatCurrency(item.unit_price_cents)} × {item.quantity} ={' '}
             {formatCurrency(lineTotal)}
           </Text>
         </View>
@@ -195,7 +301,7 @@ export default function CartScreen() {
               haptics.light();
               updateQuantity(item.product.id, item.quantity - 1);
             }}>
-            <Ionicons
+            <Icon
               name="remove"
               size={ICON_SIZE.action}
               color={COLORS.text}
@@ -211,7 +317,7 @@ export default function CartScreen() {
               haptics.light();
               updateQuantity(item.product.id, item.quantity + 1);
             }}>
-            <Ionicons name="add" size={ICON_SIZE.action} color={COLORS.text} />
+            <Icon name="add" size={ICON_SIZE.action} color={COLORS.text} />
           </TouchableOpacity>
         </View>
         <TouchableOpacity
@@ -222,7 +328,7 @@ export default function CartScreen() {
             haptics.light();
             handleSwipeDelete(item.product.id);
           }}>
-          <Ionicons
+          <Icon
             name="trash-outline"
             size={ICON_SIZE.action}
             color={COLORS.danger}
@@ -244,7 +350,16 @@ export default function CartScreen() {
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Tap any non-input area to dismiss the keyboard. Pressable's
+          onPress only fires when no touchable child (FlatList rows, qty
+          buttons, the input itself) intercepts the tap — so this doesn't
+          fight existing interaction. accessible={false} keeps it out of
+          the VoiceOver tree (the children carry their own labels). */}
+      <Pressable
+        style={styles.dismissArea}
+        onPress={Keyboard.dismiss}
+        accessible={false}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -252,7 +367,7 @@ export default function CartScreen() {
           onPress={handleBackToProducts}
           accessibilityRole="button"
           accessibilityLabel="Back to products">
-          <Ionicons
+          <Icon
             name="chevron-back"
             size={ICON_SIZE.action}
             color={COLORS.text}
@@ -282,7 +397,7 @@ export default function CartScreen() {
               ? `Change customer, currently ${customerName}`
               : 'Select customer or walk-in'
           }>
-          <Ionicons
+          <Icon
             name={customerId != null ? 'person' : 'walk-outline'}
             size={ICON_SIZE.action}
             color={customerId != null ? COLORS.crimson : COLORS.textMuted}
@@ -294,7 +409,7 @@ export default function CartScreen() {
             </Text>
           </View>
           <Text style={styles.customerChipChange}>Change</Text>
-          <Ionicons
+          <Icon
             name="chevron-forward"
             size={ICON_SIZE.action - 4}
             color={COLORS.textMuted}
@@ -307,16 +422,68 @@ export default function CartScreen() {
         data={items}
         renderItem={renderCartItem}
         keyExtractor={item => String(item.product.id)}
+        // tabletWidthCap on `style` (outer scroll container), not
+        // `contentContainerStyle` — the latter sits inside the scroll
+        // container and its width=100% beats maxWidth, leaving the list
+        // full-bleed while the chrome is centred at 720pt.
+        style={tabletWidthCap}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={renderEmpty}
         keyboardShouldPersistTaps="handled"
+        // Standard iOS pattern: dragging the list down dismisses the
+        // keyboard. Belt-and-braces with the always-visible Hide keyboard
+        // pill below — InputAccessoryView on this RN/Fabric version has
+        // been unreliable on some devices, so we don't lean on it alone.
+        keyboardDismissMode="on-drag"
       />
 
       {/* Discount & Notes */}
       {items.length > 0 && (
-        <View style={styles.inputsSection}>
+        <View style={[styles.inputsSection, tabletWidthCap]}>
           <View style={styles.inputRow}>
-            <Text style={styles.inputLabel}>Discount ($)</Text>
+            <View style={styles.discountHeader}>
+              <Text style={styles.inputLabel}>Discount</Text>
+              {/* $/% segmented toggle. Tap-target sized at SPACING.lg
+                  vertical for thumb reach on a small phone. */}
+              <View style={styles.discountModeToggle}>
+                <TouchableOpacity
+                  onPress={() => handleSwapDiscountMode('$')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Discount in dollars"
+                  accessibilityState={{selected: discountMode === '$'}}
+                  hitSlop={{top: 8, bottom: 8, left: 4, right: 4}}
+                  style={[
+                    styles.discountModeBtn,
+                    discountMode === '$' && styles.discountModeBtnActive,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.discountModeText,
+                      discountMode === '$' && styles.discountModeTextActive,
+                    ]}>
+                    $
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleSwapDiscountMode('%')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Discount as percentage"
+                  accessibilityState={{selected: discountMode === '%'}}
+                  hitSlop={{top: 8, bottom: 8, left: 4, right: 4}}
+                  style={[
+                    styles.discountModeBtn,
+                    discountMode === '%' && styles.discountModeBtnActive,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.discountModeText,
+                      discountMode === '%' && styles.discountModeTextActive,
+                    ]}>
+                    %
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             <TextInput
               style={styles.input}
               value={discountInput}
@@ -324,8 +491,11 @@ export default function CartScreen() {
               onBlur={commitDiscount}
               onSubmitEditing={commitDiscount}
               keyboardType="decimal-pad"
-              placeholder="0.00"
+              placeholder={discountMode === '$' ? '0.00' : '0'}
               placeholderTextColor={COLORS.textDim}
+              inputAccessoryViewID={
+                Platform.OS === 'ios' ? CART_INPUT_BAR : undefined
+              }
             />
             {discountOverCap ? (
               <Text style={styles.discountHelper}>
@@ -342,14 +512,42 @@ export default function CartScreen() {
               placeholder="Order notes..."
               placeholderTextColor={COLORS.textDim}
               multiline
+              inputAccessoryViewID={
+                Platform.OS === 'ios' ? CART_INPUT_BAR : undefined
+              }
             />
           </View>
         </View>
       )}
 
-      {/* Summary */}
+      {/* iOS-only "Done" bar above the keyboard. The decimal-pad keyboard
+          has no return key, so without this the operator can't dismiss
+          the keyboard except by tapping outside (and there's no large
+          outside area while the summary card occupies the bottom).
+          Android numeric keyboards expose a system-level back / return
+          affordance, so we don't render this on Android. */}
+      {Platform.OS === 'ios' ? (
+        <InputAccessoryView nativeID={CART_INPUT_BAR}>
+          <View style={styles.keyboardAccessory}>
+            <TouchableOpacity
+              onPress={() => Keyboard.dismiss()}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss keyboard"
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+              <Text style={styles.keyboardAccessoryDone}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      ) : null}
+
+      {/* Summary — full-bleed at the screen edges so the rounded top +
+          downward shadow visual reads as "card pinned to the bottom of
+          the screen" on every device. On iPad, only the inner content
+          gets capped/centred so we don't float a tiny card with cream
+          gutters either side. */}
       {items.length > 0 && (
         <View style={styles.summaryCard}>
+          <View style={tabletWidthCap}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Subtotal</Text>
             <Text style={styles.summaryValue}>{formatCurrency(subtotal)}</Text>
@@ -376,17 +574,23 @@ export default function CartScreen() {
           <View style={styles.buttonRow}>
             <TouchableOpacity
               style={styles.clearButton}
-              onPress={handleClearCart}>
-              <Text style={styles.clearButtonText}>Clear Cart</Text>
+              onPress={handleClearCart}
+              accessibilityRole="button"
+              accessibilityLabel="Clear cart">
+              <Text style={styles.clearButtonText}>Clear cart</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.checkoutButton}
-              onPress={handleCheckout}>
+              onPress={handleCheckout}
+              accessibilityRole="button"
+              accessibilityLabel="Checkout">
               <Text style={styles.checkoutButtonText}>Checkout</Text>
             </TouchableOpacity>
           </View>
+          </View>
         </View>
       )}
+      </Pressable>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -396,6 +600,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  dismissArea: {
+    flex: 1,
   },
   keyboardView: {
     flex: 1,
@@ -536,6 +743,59 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     marginBottom: SPACING.xs,
+  },
+  discountHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  discountModeToggle: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: BORDER_RADIUS.full,
+    padding: 2,
+  },
+  discountModeBtn: {
+    minWidth: 36,
+    paddingHorizontal: SPACING.sm + 2,
+    // ~36pt visible height; with hitSlop (8 top/bottom) the effective
+    // tap target clears Apple HIG's 44pt floor while the pill stays
+    // visually tight inside the segmented toggle.
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discountModeBtnActive: {
+    backgroundColor: COLORS.crimson,
+  },
+  discountModeText: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.semibold,
+    letterSpacing: 0.2,
+  },
+  discountModeTextActive: {
+    color: COLORS.white,
+  },
+  keyboardAccessory: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.surfaceBorder,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  keyboardAccessoryDone: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.semibold,
+    paddingHorizontal: SPACING.sm,
   },
   input: {
     backgroundColor: COLORS.inputBg,

@@ -10,7 +10,14 @@ import {
   Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Ionicons} from '@expo/vector-icons';
+import Animated, {
+  FadeIn,
+  useSharedValue,
+  useAnimatedStyle,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import Icon from '../components/Icon';
 import PinPad from '../components/PinPad';
 import {useAppLockStore} from '../stores/appLockStore';
 import {useAuthStore} from '../stores/authStore';
@@ -32,6 +39,15 @@ const AppLockScreen: React.FC = () => {
   const [error, setError] = useState<string | undefined>(undefined);
   const [biometricLabel, setBiometricLabel] = useState('Use Biometrics');
   const [attempting, setAttempting] = useState(false);
+
+  // Brand-mark shake when the PIN is wrong — reinforces the haptic.error()
+  // with a visual cue tied to the lock itself, not the input. Driven on the
+  // UI thread so it lands even when the verifyPin promise + alert work is
+  // queued on JS.
+  const shakeX = useSharedValue(0);
+  const brandStyle = useAnimatedStyle(() => ({
+    transform: [{translateX: shakeX.value}],
+  }));
 
   useEffect(() => {
     if (biometricEnabled) {
@@ -78,6 +94,12 @@ const AppLockScreen: React.FC = () => {
         return;
       }
       haptics.error();
+      shakeX.value = withSequence(
+        withTiming(-10, {duration: 50}),
+        withTiming(10, {duration: 60}),
+        withTiming(-6, {duration: 50}),
+        withTiming(0, {duration: 60}),
+      );
       const attempts = recordFailedAttempt();
       const remaining = MAX_ATTEMPTS - attempts;
       if (attempts >= MAX_ATTEMPTS) {
@@ -102,7 +124,7 @@ const AppLockScreen: React.FC = () => {
           : `Wrong PIN. ${remaining} attempts remaining.`,
       );
     },
-    [verifyPin, haptics, unlock, recordFailedAttempt, reset],
+    [verifyPin, haptics, unlock, recordFailedAttempt, reset, shakeX],
   );
 
   const handleSignOut = useCallback(() => {
@@ -125,7 +147,9 @@ const AppLockScreen: React.FC = () => {
         <Text style={styles.signOutText}>Sign out</Text>
       </TouchableOpacity>
 
-      <View style={styles.brand}>
+      <Animated.View
+        entering={FadeIn.duration(220)}
+        style={[styles.brand, brandStyle]}>
         <Image
           source={require('../../assets/images/app-icon.png')}
           style={styles.logo}
@@ -133,7 +157,7 @@ const AppLockScreen: React.FC = () => {
         />
         <Text style={styles.appName}>Aeris</Text>
         <Text style={styles.tagline}>Locked</Text>
-      </View>
+      </Animated.View>
 
       <View style={styles.pinWrap}>
         <PinPad title="Enter PIN" onSubmit={handleSubmit} error={error} />
@@ -144,7 +168,7 @@ const AppLockScreen: React.FC = () => {
           style={styles.bioBtn}
           onPress={tryBiometric}
           disabled={attempting}>
-          <Ionicons
+          <Icon
             name="finger-print"
             size={20}
             color={COLORS.cream}

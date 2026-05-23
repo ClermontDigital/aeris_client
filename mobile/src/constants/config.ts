@@ -14,6 +14,12 @@ export const DEFAULT_CONFIG = {
   sessionCleanupDays: 3,
   enableSessionManagement: false,
   hapticsEnabled: true,
+  // Default to persisting the session across cold starts — most users
+  // expect a POS app to "stay open" until they explicitly sign out. When
+  // false, the bearer token is held only in memory and the user must
+  // re-authenticate after every app kill. Surfaced as a "Keep me signed in"
+  // checkbox on LoginScreen.
+  keepSignedIn: true,
 };
 
 export const STORAGE_KEYS = {

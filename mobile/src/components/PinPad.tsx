@@ -34,7 +34,7 @@ const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.container}>
       <Text style={styles.title}>{title}</Text>
       {/* Dots indicator is a status, not a button — give VoiceOver a

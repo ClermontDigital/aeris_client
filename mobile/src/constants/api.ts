@@ -14,4 +14,17 @@ export const API_ENDPOINTS = {
   SALES_LIST: '/api/v1/sales',
   CUSTOMERS_LIST: '/api/v1/customers',
   CUSTOMERS_SEARCH: '/api/v1/customers/search',
+  // Write surface — CustomerController / ProductController / InventoryController.
+  // Parameterised URLs are exposed as functions below.
+  CUSTOMERS: '/api/v1/customers',
+  PRODUCTS: '/api/v1/products',
+  INVENTORY_ADJUST_STOCK: '/api/v1/inventory/adjust-stock',
 } as const;
+
+// Parameterised endpoint builders. Kept separate from the const map so the
+// map stays a simple string lookup table for grep-ability.
+export const CUSTOMER_BY_ID = (id: number | string): string =>
+  `/api/v1/customers/${encodeURIComponent(String(id))}`;
+
+export const PRODUCT_BY_ID = (id: number | string): string =>
+  `/api/v1/products/${encodeURIComponent(String(id))}`;

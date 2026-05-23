@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {useAuthStore} from '../stores/authStore';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useHaptics} from '../hooks/useHaptics';
@@ -47,6 +47,9 @@ const LoginScreen: React.FC = () => {
   const clearError = useAuthStore(s => s.clearError);
   const connectionMode = useSettingsStore(s => s.settings.connectionMode);
   const persistedWorkspace = useSettingsStore(s => s.settings.workspaceCode);
+  const persistedKeepSignedIn = useSettingsStore(
+    s => s.settings.keepSignedIn ?? true,
+  );
   const saveSettings = useSettingsStore(s => s.saveSettings);
 
   const [workspace, setWorkspace] = useState(persistedWorkspace ?? '');
@@ -133,7 +136,7 @@ const LoginScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -152,7 +155,7 @@ const LoginScreen: React.FC = () => {
                 style={styles.expiredBanner}
                 accessibilityLiveRegion="polite"
                 accessibilityRole="alert">
-                <Ionicons
+                <Icon
                   name="time-outline"
                   size={20}
                   color={COLORS.warningTextDark}
@@ -250,6 +253,33 @@ const LoginScreen: React.FC = () => {
               </View>
             ) : null}
 
+            {/* "Keep me signed in" — when checked (default) the bearer token
+                persists across cold starts via SecureStorage; unchecked keeps
+                it in memory only so app-kill forces re-auth. The preference
+                is saved to settingsStore the moment it changes, so the next
+                login (this one) honours the new value. */}
+            <TouchableOpacity
+              onPress={() => {
+                haptics.selection();
+                saveSettings({keepSignedIn: !persistedKeepSignedIn});
+              }}
+              style={styles.keepSignedInRow}
+              accessibilityRole="checkbox"
+              accessibilityState={{checked: persistedKeepSignedIn}}
+              accessibilityLabel="Keep me signed in"
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+              <View
+                style={[
+                  styles.keepSignedInBox,
+                  persistedKeepSignedIn && styles.keepSignedInBoxChecked,
+                ]}>
+                {persistedKeepSignedIn ? (
+                  <Icon name="check" size={14} color={COLORS.cream} strokeWidth={2.5} />
+                ) : null}
+              </View>
+              <Text style={styles.keepSignedInLabel}>Keep me signed in</Text>
+            </TouchableOpacity>
+
             {isLoading ? (
               // Keep the inline spinner for the brief disabled+busy window —
               // PillButton has no loading state and the user needs visible
@@ -260,7 +290,7 @@ const LoginScreen: React.FC = () => {
             ) : (
               <PillButton
                 variant="solid"
-                label="Sign In"
+                label="Sign in"
                 onPress={handleSignIn}
                 disabled={!canSubmit}
                 style={styles.signInButton}
@@ -278,7 +308,10 @@ const LoginScreen: React.FC = () => {
 
             <TouchableOpacity
               style={styles.connectionLink}
-              onPress={() => setSettingsOpen(true)}>
+              onPress={() => setSettingsOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Configure connection, currently ${connectionMode === 'relay' ? 'Relay' : 'Direct'}`}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
               <Text style={styles.connectionLinkText}>
                 Connection: {connectionMode === 'relay' ? 'Relay' : 'Direct'} ·
                 Configure
@@ -396,6 +429,32 @@ const styles = StyleSheet.create({
     color: COLORS.warningText,
     fontSize: FONT_SIZE.sm,
     lineHeight: 18,
+  },
+  keepSignedInRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  keepSignedInBox: {
+    width: 18,
+    height: 18,
+    borderRadius: BORDER_RADIUS.sm,
+    borderWidth: 1.5,
+    borderColor: COLORS.surfaceBorder,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.sm,
+  },
+  keepSignedInBoxChecked: {
+    backgroundColor: COLORS.crimson,
+    borderColor: COLORS.crimson,
+  },
+  keepSignedInLabel: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
   },
   signInButton: {
     width: '100%',

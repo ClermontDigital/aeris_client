@@ -9,14 +9,16 @@ import {
   Linking,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import type {CompositeNavigationProp, RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
+import PillButton from '../components/PillButton';
 import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {Address, Customer, Sale} from '../types/api.types';
 import type {
   AppTabParamList,
@@ -83,6 +85,10 @@ export default function CustomerDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<CustomerDetailRouteProp>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  const tabletColumnCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
   const {customerId} = route.params;
 
   const [customer, setCustomer] = useState<Customer | null>(null);
@@ -112,6 +118,15 @@ export default function CustomerDetailScreen() {
     load();
   }, [load]);
 
+  // Re-fetch on focus so the detail view reflects edits made on
+  // CustomerEditScreen. The initial useEffect above handles the cold-
+  // mount; useFocusEffect kicks in every subsequent return-to-detail.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
   const openMail = useCallback(
     (email: string) => {
       haptics.light();
@@ -136,9 +151,13 @@ export default function CustomerDetailScreen() {
   const goToSale = useCallback(
     (saleId: number) => {
       haptics.light();
+      // `initial: false` preserves TransactionList under SaleDetail so
+      // back goes to the list, not to the previous tab. See CheckoutScreen
+      // for the full rationale.
       navigation.navigate('Transactions', {
         screen: 'SaleDetail',
         params: {saleId},
+        initial: false,
       });
     },
     [haptics, navigation],
@@ -158,7 +177,7 @@ export default function CustomerDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
-          <Ionicons
+          <Icon
             name="cloud-offline-outline"
             size={36}
             color={COLORS.textDim}
@@ -174,14 +193,19 @@ export default function CustomerDetailScreen() {
             onPress={() => {
               haptics.light();
               load();
-            }}>
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading customer">
             <Text style={styles.primaryBtnText}>Retry</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => {
               haptics.light();
               navigation.goBack();
-            }}>
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
             <Text style={styles.linkText}>Back</Text>
           </TouchableOpacity>
         </View>
@@ -193,7 +217,7 @@ export default function CustomerDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
-          <Ionicons
+          <Icon
             name="person-outline"
             size={36}
             color={COLORS.textDim}
@@ -204,7 +228,10 @@ export default function CustomerDetailScreen() {
             onPress={() => {
               haptics.light();
               navigation.goBack();
-            }}>
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
             <Text style={styles.linkText}>Back</Text>
           </TouchableOpacity>
         </View>
@@ -219,13 +246,25 @@ export default function CustomerDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, tabletColumnCap]}>
         <View style={styles.heroCard}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initialsOf(customer.name)}</Text>
           </View>
           <Text style={styles.name}>{displayName}</Text>
           <Text style={styles.subtitle}>Customer</Text>
+          <View style={styles.heroActions}>
+            <PillButton
+              label="Edit"
+              icon="user"
+              variant="secondary"
+              onPress={() => {
+                haptics.light();
+                navigation.navigate('CustomerEdit', {customerId: customer.id});
+              }}
+              accessibilityLabel={`Edit ${displayName}`}
+            />
+          </View>
         </View>
 
         <Text style={styles.sectionLabel}>Contact</Text>
@@ -319,6 +358,8 @@ export default function CustomerDetailScreen() {
                 key={s.id}
                 activeOpacity={0.7}
                 onPress={() => goToSale(s.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Sale ${s.sale_number}, ${formatCurrency(s.total_cents)}, ${s.status}. Tap to view.`}
                 style={[
                   styles.activityRow,
                   idx > 0 && styles.activityRowDivider,
@@ -341,7 +382,7 @@ export default function CustomerDetailScreen() {
                     <Text style={styles.activityStatusText}>{s.status}</Text>
                   </View>
                 </View>
-                <Ionicons
+                <Icon
                   name="chevron-forward"
                   size={16}
                   color={COLORS.textDim}
@@ -352,7 +393,7 @@ export default function CustomerDetailScreen() {
           </View>
         ) : (
           <View style={styles.placeholderCard}>
-            <Ionicons
+            <Icon
               name="time-outline"
               size={20}
               color={COLORS.textMuted}
@@ -386,7 +427,21 @@ export default function CustomerDetailScreen() {
               </View>
             ) : null}
             {customer.addresses
-              .filter(a => a !== customer.default_address)
+              .filter(a => {
+                // Reference-equality alone misses the common case where the
+                // API returns `default_address` as a separate object whose
+                // id matches an entry in `addresses` — the two are different
+                // JS objects, so `!==` always passes and the default address
+                // is rendered a second time below. Compare by id when
+                // available; fall back to reference equality for unsaved
+                // addresses (id may be null per the Address shape).
+                if (!customer.default_address) return true;
+                const d = customer.default_address;
+                if (typeof a.id === 'number' && typeof d.id === 'number') {
+                  return a.id !== d.id;
+                }
+                return a !== d;
+              })
               .map((a, idx) => (
                 <View key={a.id ?? idx} style={styles.addressOther}>
                   {a.label ? (
@@ -405,8 +460,10 @@ export default function CustomerDetailScreen() {
           onPress={() => {
             haptics.light();
             navigation.goBack();
-          }}>
-          <Ionicons
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
+          <Icon
             name="chevron-back"
             size={20}
             color={COLORS.white}
@@ -431,7 +488,7 @@ const TermsRow: React.FC<{
 );
 
 const ContactRow: React.FC<{
-  icon: React.ComponentProps<typeof Ionicons>['name'];
+  icon: React.ComponentProps<typeof Icon>['name'];
   label: string;
   value: string | null;
   onPress?: () => void;
@@ -440,7 +497,7 @@ const ContactRow: React.FC<{
   const inner = (
     <View style={[styles.contactRow, !isFirst && styles.contactRowDivider]}>
       <View style={styles.contactIconWrap}>
-        <Ionicons name={icon} size={18} color={COLORS.crimson} />
+        <Icon name={icon} size={18} color={COLORS.crimson} />
       </View>
       <View style={styles.contactTextWrap}>
         <Text style={styles.contactLabel}>{label}</Text>
@@ -454,7 +511,7 @@ const ContactRow: React.FC<{
         </Text>
       </View>
       {onPress ? (
-        <Ionicons
+        <Icon
           name="chevron-forward"
           size={16}
           color={COLORS.textDim}
@@ -464,7 +521,11 @@ const ContactRow: React.FC<{
   );
   if (onPress) {
     return (
-      <TouchableOpacity activeOpacity={0.7} onPress={onPress}>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}${value ? `, ${value}` : ''}`}>
         {inner}
       </TouchableOpacity>
     );
@@ -499,6 +560,11 @@ const styles = StyleSheet.create({
     ...cardBase,
     padding: SPACING.lg,
     alignItems: 'center',
+  },
+  heroActions: {
+    marginTop: SPACING.md,
+    flexDirection: 'row',
+    gap: SPACING.sm,
   },
   avatar: {
     width: 72,
@@ -599,7 +665,9 @@ const styles = StyleSheet.create({
   },
   placeholderCard: {
     ...cardBase,
-    backgroundColor: COLORS.cream,
+    // cardBase already sets backgroundColor: surface (white). Don't override
+    // to cream — the body bg is now Clermont Cream per Brand Guidelines §04
+    // and a cream card on a cream body loses all distinction.
     flexDirection: 'row',
     padding: SPACING.md,
     borderColor: COLORS.surfaceBorder,
@@ -721,7 +789,9 @@ const styles = StyleSheet.create({
   addressOther: {
     ...cardBase,
     padding: SPACING.md,
-    backgroundColor: COLORS.background,
+    // Don't override cardBase's white surface — body bg is Clermont Cream
+    // (post-v1.3.19 brand pass) so a cream-on-cream card would disappear.
+    // The "Default" badge above the first address is the differentiator.
   },
   addressBadgeRow: {
     flexDirection: 'row',

@@ -1,6 +1,6 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from './Icon';
 import {
   COLORS,
   SPACING,
@@ -13,7 +13,7 @@ import {
 export interface EmptyStateProps {
   title: string;
   description?: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: React.ComponentProps<typeof Icon>['name'];
   action?: {label: string; onPress: () => void};
 }
 
@@ -29,7 +29,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
   return (
     <View style={styles.container} accessibilityRole="text">
       {icon ? (
-        <Ionicons
+        <Icon
           name={icon}
           size={ICON_SIZE.hero * 2}
           color={COLORS.textMuted}

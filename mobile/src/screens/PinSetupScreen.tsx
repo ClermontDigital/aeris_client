@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import PinPad from '../components/PinPad';
+import EyebrowLabel from '../components/EyebrowLabel';
 import {useAppLockStore} from '../stores/appLockStore';
 import {useAuthStore} from '../stores/authStore';
 import AppLockService from '../services/AppLockService';
@@ -21,7 +22,6 @@ import {
   FONT_SIZE,
   FONT_FAMILY,
   LETTER_SPACING,
-  BORDER_RADIUS,
 } from '../constants/theme';
 
 type Stage = 'enter' | 'confirm';
@@ -171,12 +171,15 @@ const PinSetupScreen: React.FC = () => {
       </View>
 
       <View style={styles.pinWrap}>
-        <View
-          style={styles.stepPill}
-          accessibilityLiveRegion="polite"
-          accessibilityLabel={`${stepLabel}: ${padTitle}`}>
-          <Text style={styles.stepText}>{stepLabel}</Text>
-        </View>
+        {/* Step indicator as eyebrow per Brand Guidelines §06 — short tag
+            that signals where the user is in the setup flow. Rendered in
+            Clermont Cream on the navy backdrop (`tone="dark"`). */}
+        <EyebrowLabel
+          tone="dark"
+          style={styles.stepEyebrow}
+          textStyle={styles.stepEyebrowText}>
+          {stepLabel}
+        </EyebrowLabel>
         <PinPad title={padTitle} onSubmit={handleSubmit} error={error} />
       </View>
 
@@ -254,18 +257,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 6,
-    borderRadius: BORDER_RADIUS.full,
+  stepEyebrow: {
     marginBottom: SPACING.md,
+    alignItems: 'center',
   },
-  stepText: {
-    color: COLORS.cream,
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.medium,
-    letterSpacing: LETTER_SPACING.wideSm,
+  stepEyebrowText: {
+    textAlign: 'center',
   },
   startOverBtn: {
     paddingHorizontal: SPACING.lg,

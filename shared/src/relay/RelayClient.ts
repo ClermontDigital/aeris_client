@@ -300,7 +300,28 @@ export class RelayClient {
   async getPaymentMethods(): Promise<PaymentMethod[]> {
     return withReadRetry(async () => {
       const result = await this.relayRpc<unknown>(RELAY_ACTIONS.POS_PAYMENT_METHODS, {});
-      return unwrapList<PaymentMethod>(result);
+      // First try the canonical {data: [...]} / bare-array shape.
+      const list = unwrapList<PaymentMethod>(result);
+      if (list.length > 0) return list;
+      // Deployments have surfaced two alternative shapes in the wild:
+      //   - {data: {data: [...]}} — Aeris2 Resource collection wrapped
+      //     in the relay envelope's own `data:` (double-wrapped).
+      //   - {payment_methods: [...]} — older controllers that returned
+      //     a named key instead of the canonical collection shape.
+      // We try both before settling for an empty array (which would
+      // trigger the offline-defaults fallback on the checkout screen).
+      if (result && typeof result === 'object') {
+        const r = result as Record<string, unknown>;
+        const inner = r.data;
+        if (inner && typeof inner === 'object' && 'data' in inner) {
+          const nested = (inner as Record<string, unknown>).data;
+          if (Array.isArray(nested)) return nested as PaymentMethod[];
+        }
+        if (Array.isArray(r.payment_methods)) {
+          return r.payment_methods as PaymentMethod[];
+        }
+      }
+      return [];
     });
   }
 

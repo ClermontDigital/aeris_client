@@ -16,6 +16,15 @@ export function normalizeSale(input: unknown): Sale {
       : customer && typeof customer.name === 'string'
       ? (customer.name as string)
       : null;
+  // customer_id comes from `raw.customer_id` (flat column) or the nested
+  // `customer.id` when the server emits the relation object. Null on
+  // walk-in sales so the type stays honest.
+  const customerId =
+    typeof raw.customer_id === 'number'
+      ? (raw.customer_id as number)
+      : customer && typeof customer.id === 'number'
+      ? (customer.id as number)
+      : null;
   const status = (raw.status ?? raw.sale_status) as Sale['status'] | undefined;
   const itemsCount =
     typeof raw.items_count === 'number'
@@ -32,6 +41,7 @@ export function normalizeSale(input: unknown): Sale {
     discount_cents: pickCents(raw, 'discount_cents', 'discount_amount'),
     status: (status as Sale['status']) ?? 'completed',
     items_count: itemsCount,
+    customer_id: customerId,
     customer_name: customerName,
     created_at: asString(raw.created_at),
   };

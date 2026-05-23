@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {
@@ -23,12 +23,15 @@ import {
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
+import {useProductCacheStore} from '../stores/productCacheStore';
 import type {Product} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 import StatCard, {pickStatRowFontSize} from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
+import PillButton from '../components/PillButton';
 
 type Nav = NativeStackNavigationProp<ItemsStackParamList>;
 
@@ -36,10 +39,30 @@ const PER_PAGE = 50;
 const SEARCH_DEBOUNCE_MS = 300;
 const LOW_STOCK_THRESHOLD = 10;
 
+type StockFilter = 'all' | 'low' | 'out';
+
 const ItemsScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  // On iPad, cap content (stat strip, search row, list, banner) at 720pt
+  // and centre. Phone layout untouched.
+  const tabletColumnCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
+  // Cached catalog (filled by productCacheStore.syncProducts on cold start
+  // via App.tsx restoreCache, refreshed by QuickSale's pull-to-refresh).
+  // Drives the Low / Out tile counts so they reflect the WHOLE catalog,
+  // not just the pages the operator has scrolled into view on this screen.
+  // `lastSynced` lets the empty-state copy distinguish "no cache yet" from
+  // "really zero low-stock items".
+  const cachedProducts = useProductCacheStore(s => s.products);
+  const cacheLastSynced = useProductCacheStore(s => s.lastSynced);
+  const syncProducts = useProductCacheStore(s => s.syncProducts);
+  const isSyncingCache = useProductCacheStore(s => s.isSyncing);
+
   const [search, setSearch] = useState('');
+  const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [items, setItems] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
@@ -107,20 +130,75 @@ const ItemsScreen: React.FC = () => {
     }
   }, [isLoadingMore, page, lastPage, search, fetchPage]);
 
-  // Total comes from the server (meta.total) so it stays stable
-  // regardless of how many pages have been scrolled. Low-stock /
-  // out-of-stock counts derive from loaded pages because the relay's
-  // meta doesn't expose those aggregates — they grow as more pages
-  // load but never overshoot the truth.
+  // Total comes from the server's pagination meta (stable across scrolling).
+  // Low / Out are computed across the FULL cached catalog so the tiles
+  // surface accurate counts at first paint — previously they only counted
+  // the currently-loaded pages and ticked upward as the user scrolled,
+  // which read as broken (a fresh screen would show "0 low stock" even
+  // when the catalog has dozens of low-stock SKUs). When the cache hasn't
+  // synced yet we fall back to the loaded-pages count so the tiles aren't
+  // permanently blank; the cacheReady flag adapts copy so the operator
+  // knows whether the number is preliminary.
+  const cacheReady = cachedProducts.length > 0 && cacheLastSynced !== null;
   const stats = useMemo(() => {
+    const source = cacheReady ? cachedProducts : items;
     let lowStock = 0;
     let outOfStock = 0;
-    for (const it of items) {
+    for (const it of source) {
       if (it.stock_on_hand === 0) outOfStock += 1;
       else if (it.stock_on_hand < LOW_STOCK_THRESHOLD) lowStock += 1;
     }
-    return {total: totalCount, lowStock, outOfStock};
-  }, [items, totalCount]);
+    // Prefer the server-side meta.total over the cache length for "Total"
+    // unless we have a fresher cache (e.g. user added items elsewhere and
+    // the cache caught it but the relay paginator is still serving stale).
+    const total =
+      totalCount > 0 ? totalCount : cacheReady ? cachedProducts.length : 0;
+    return {total, lowStock, outOfStock};
+  }, [cacheReady, cachedProducts, items, totalCount]);
+
+  // Kick off a catalog sync on first mount if the cache is empty. This
+  // populates the tile counts within a few seconds of the screen
+  // appearing without waiting for the user to pull-to-refresh on a
+  // sibling screen. Re-sync if the cache is older than 5 minutes so the
+  // counters stay current as inventory moves throughout a busy day.
+  useEffect(() => {
+    if (isSyncingCache) return;
+    const CACHE_TTL_MS = 5 * 60 * 1000;
+    const last = cacheLastSynced ? Date.parse(cacheLastSynced) : 0;
+    const stale = !cacheLastSynced || Date.now() - last > CACHE_TTL_MS;
+    if (stale) {
+      // Fire and forget — the store sets isSyncing internally and the
+      // counts re-derive when the products array lands.
+      void syncProducts();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Tile filter — client-side over loaded pages (the relay search doesn't
+  // expose a stock-status filter parameter). When a filter is active and
+  // the FlatList scrolls to the end, onEndReached still fires against the
+  // filtered subset, so more pages keep loading as needed. Empty-state
+  // copy adapts to the active filter so the user understands why a small
+  // list might be all of it.
+  const visibleItems = useMemo(() => {
+    if (stockFilter === 'all') return items;
+    if (stockFilter === 'low') {
+      return items.filter(
+        it => it.stock_on_hand > 0 && it.stock_on_hand < LOW_STOCK_THRESHOLD,
+      );
+    }
+    return items.filter(it => it.stock_on_hand <= 0);
+  }, [items, stockFilter]);
+
+  const toggleFilter = useCallback(
+    (next: StockFilter) => {
+      haptics.selection();
+      // Tapping the currently-active tile clears the filter — saves a
+      // round-trip to "All" when the user just wants to step back.
+      setStockFilter(prev => (prev === next ? 'all' : next));
+    },
+    [haptics],
+  );
 
   const renderItem = ({item}: {item: Product}) => (
     <TouchableOpacity
@@ -153,7 +231,7 @@ const ItemsScreen: React.FC = () => {
             : `${item.stock_on_hand} on hand`}
         </Text>
       </View>
-      <Ionicons
+      <Icon
         name="chevron-forward"
         size={ICON_SIZE.action}
         color={COLORS.textMuted}
@@ -193,14 +271,37 @@ const ItemsScreen: React.FC = () => {
 
   const renderEmpty = () => {
     if (isLoading) return null;
+    if (search) {
+      return (
+        <EmptyState
+          title="No items match your search"
+          description="Try a different name or SKU."
+          icon="cube-outline"
+        />
+      );
+    }
+    if (stockFilter === 'low') {
+      return (
+        <EmptyState
+          title="No low-stock items on the loaded pages"
+          description="Scroll the list to load more, or tap Total to clear the filter."
+          icon="alert-circle-outline"
+        />
+      );
+    }
+    if (stockFilter === 'out') {
+      return (
+        <EmptyState
+          title="No out-of-stock items on the loaded pages"
+          description="Scroll the list to load more, or tap Total to clear the filter."
+          icon="close-circle-outline"
+        />
+      );
+    }
     return (
       <EmptyState
-        title={search ? 'No items match your search' : 'No items found'}
-        description={
-          search
-            ? 'Try a different name or SKU.'
-            : 'Add your first product on the Aeris web console.'
-        }
+        title="No items found"
+        description="Add your first product on the Aeris web console."
         icon="cube-outline"
       />
     );
@@ -210,8 +311,18 @@ const ItemsScreen: React.FC = () => {
     <SafeAreaView
       style={styles.container}
       edges={['left', 'right']}>
-      <View style={styles.header}>
+      <View style={[styles.header, tabletColumnCap]}>
         <Text style={styles.headerTitle}>Items</Text>
+        <PillButton
+          label="New item"
+          icon="plus"
+          variant="solid"
+          onPress={() => {
+            haptics.light();
+            navigation.navigate('ProductEdit');
+          }}
+          accessibilityLabel="Create a new item"
+        />
       </View>
 
       {(() => {
@@ -220,39 +331,54 @@ const ItemsScreen: React.FC = () => {
         const outStr = String(stats.outOfStock);
         const fs = pickStatRowFontSize([totalStr, lowStr, outStr]);
         return (
-          <View style={styles.statsStrip}>
-            <View style={styles.statCell}>
+          <View style={[styles.statsStrip, tabletColumnCap]}>
+            <View
+              style={[
+                styles.statCell,
+                stockFilter === 'all' && styles.statCellActive,
+              ]}>
               <StatCard
                 label="Total"
                 value={totalStr}
                 icon="cube-outline"
                 valueFontSize={fs}
+                onPress={() => toggleFilter('all')}
               />
             </View>
-            <View style={styles.statCell}>
+            <View
+              style={[
+                styles.statCell,
+                stockFilter === 'low' && styles.statCellActive,
+              ]}>
               <StatCard
-                label="Low Stock"
+                label="Low stock"
                 value={lowStr}
                 icon="alert-circle-outline"
                 tone={stats.lowStock > 0 ? 'warning' : 'default'}
                 valueFontSize={fs}
+                onPress={() => toggleFilter('low')}
               />
             </View>
-            <View style={styles.statCell}>
+            <View
+              style={[
+                styles.statCell,
+                stockFilter === 'out' && styles.statCellActive,
+              ]}>
               <StatCard
                 label="Out"
                 value={outStr}
                 icon="close-circle-outline"
                 tone={stats.outOfStock > 0 ? 'danger' : 'default'}
                 valueFontSize={fs}
+                onPress={() => toggleFilter('out')}
               />
             </View>
           </View>
         );
       })()}
 
-      <View style={styles.searchRow}>
-        <Ionicons
+      <View style={[styles.searchRow, tabletColumnCap]}>
+        <Icon
           name="search"
           size={ICON_SIZE.action}
           color={COLORS.textMuted}
@@ -270,7 +396,7 @@ const ItemsScreen: React.FC = () => {
         />
         {search ? (
           <TouchableOpacity onPress={() => setSearch('')} style={styles.clearBtn}>
-            <Ionicons
+            <Icon
               name="close-circle"
               size={ICON_SIZE.action}
               color={COLORS.textMuted}
@@ -286,7 +412,7 @@ const ItemsScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Scan barcode"
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <Ionicons
+          <Icon
             name="barcode-outline"
             size={ICON_SIZE.hero}
             color={COLORS.crimson}
@@ -295,7 +421,7 @@ const ItemsScreen: React.FC = () => {
       </View>
 
       {error ? (
-        <View style={styles.bannerWrap}>
+        <View style={[styles.bannerWrap, tabletColumnCap]}>
           <ErrorBanner
             message={error}
             onRetry={() => fetchPage(1, false, search)}
@@ -312,9 +438,15 @@ const ItemsScreen: React.FC = () => {
         />
       ) : (
         <FlatList
-          data={items}
+          data={visibleItems}
           renderItem={renderItem}
           keyExtractor={item => String(item.id)}
+          // tabletColumnCap goes on `style` (outer scroll container), not
+          // `contentContainerStyle` — the latter sits inside the scroll
+          // container and has its own width=100% behaviour that overrides
+          // maxWidth, leaving the list full-bleed while the chrome above
+          // is centred at 720pt (visually broken on iPad landscape).
+          style={tabletColumnCap}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={renderFooter}
@@ -339,6 +471,9 @@ const ItemsScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: COLORS.background},
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.md,
     paddingBottom: SPACING.sm,
@@ -347,6 +482,9 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
     fontFamily: FONT_FAMILY.bold,
+    // Let the title shrink before the New Item pill on narrow phones.
+    flexShrink: 1,
+    marginRight: SPACING.sm,
   },
   statsStrip: {
     flexDirection: 'row',
@@ -355,6 +493,15 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   statCell: {flex: 1},
+  // Highlight the active filter tile with a crimson border ring. The
+  // wrapper View takes the border so we don't fight StatCard's internal
+  // border/shadow tokens. 2px so the active state reads at arm's length
+  // without making the inactive cells look "missing" a border.
+  statCellActive: {
+    borderRadius: BORDER_RADIUS.xxl + 2,
+    borderWidth: 2,
+    borderColor: COLORS.crimson,
+  },
   bannerWrap: {
     paddingHorizontal: SPACING.md,
     marginBottom: SPACING.sm,

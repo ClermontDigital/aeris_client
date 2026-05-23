@@ -1,8 +1,25 @@
 import {create} from 'zustand';
+import CookieManager from '@react-native-cookies/cookies';
 import ApiClient, {RelayError} from '../services/ApiClient';
 import {SecureStorage} from '../services/StorageService';
 import {useSettingsStore} from './settingsStore';
 import type {User} from '../types/api.types';
+
+// Drop every cookie the WebView accumulated this session. ERPScreen +
+// MainScreen embed the Aeris2 webapp in a react-native-webview, and that
+// view stores Laravel session cookies in the system cookie jar — those
+// outlive the bearer token unless we explicitly wipe them. Called from both
+// the explicit logout and the 401-driven clearLocalSession so a stale
+// session cookie can't carry an unauthenticated user back into the
+// webview after the API token is gone. Best-effort: catches/swallows
+// failures so a cookie-store error never blocks the auth wipe.
+async function clearWebViewCookies(): Promise<void> {
+  try {
+    await CookieManager.clearAll(true);  // true = include httpOnly
+  } catch {
+    // Ignored — cookie wipe is opportunistic; auth wipe must proceed.
+  }
+}
 
 const AUTH_TOKEN_KEY = 'aeris_auth_token';
 const AUTH_USER_KEY = 'aeris_auth_user';
@@ -92,17 +109,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         throw err;
       }
       ApiClient.setAuthToken(access_token);
-      await SecureStorage.setItem(AUTH_TOKEN_KEY, access_token);
-      await SecureStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-      // expires_at is persisted for read-back / display purposes only —
-      // it is NOT acted on locally. The session stays live until the user
-      // explicitly logs out or the API returns 401 (handled below via
-      // ApiClient.setOnUnauthorized → clearLocalSession). Honoring
-      // expires_at here would preempt the API and produce surprise
-      // logouts; the API is the source of truth for token validity.
-      if (expires_at) {
-        await SecureStorage.setItem(AUTH_EXPIRES_KEY, expires_at);
+      // "Keep me signed in" toggle (settingsStore.keepSignedIn). True (default)
+      // persists the token into SecureStorage so the cold-start
+      // restoreSession flow finds it and the user lands directly on the
+      // Dashboard. False keeps the token in zustand-only — kill-and-relaunch
+      // forces a fresh login. Either way the in-memory state below makes
+      // the user immediately authenticated for THIS app launch.
+      const keepSignedIn = s?.keepSignedIn !== false;
+      if (keepSignedIn) {
+        await SecureStorage.setItem(AUTH_TOKEN_KEY, access_token);
+        await SecureStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+        // expires_at is persisted for read-back / display purposes only —
+        // it is NOT acted on locally. The session stays live until the user
+        // explicitly logs out or the API returns 401 (handled below via
+        // ApiClient.setOnUnauthorized → clearLocalSession). Honoring
+        // expires_at here would preempt the API and produce surprise
+        // logouts; the API is the source of truth for token validity.
+        if (expires_at) {
+          await SecureStorage.setItem(AUTH_EXPIRES_KEY, expires_at);
+        } else {
+          await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+        }
       } else {
+        // Defensive: clear any stale persisted creds from a prior session
+        // where the user HAD keepSignedIn on. Otherwise toggling off then
+        // logging in could leave an old token in the Keychain.
+        await SecureStorage.removeItem(AUTH_TOKEN_KEY);
+        await SecureStorage.removeItem(AUTH_USER_KEY);
         await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
       }
       set({
@@ -163,6 +196,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
     await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
+    await clearWebViewCookies();
     // PIN persists across logout — only Settings → Reset PIN clears it.
     // Cross-platform parity with desktop; on next login the cold-start
     // lock effect in App.tsx prompts for the existing PIN.
@@ -194,6 +228,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
     await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
+    await clearWebViewCookies();
     set({
       user: null,
       token: null,
@@ -299,30 +334,52 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
         const {access_token, expires_at, user} = response;
         ApiClient.setAuthToken(access_token);
-        await SecureStorage.setItem(AUTH_TOKEN_KEY, access_token);
+        // Honour the "Keep me signed in" opt-out (settingsStore.keepSignedIn).
+        // The login() flow gates SecureStorage writes on this flag; the
+        // proactive refresh path must do the same, otherwise a user who
+        // opted out gets their token silently re-persisted to the Keychain
+        // ~2min later and restoreSession() resurrects them on the next cold
+        // start — defeating the opt-out. If the flag flipped true→false at
+        // some point during the live session, also proactively wipe any
+        // stale persisted creds from the earlier opted-in window.
+        const keepSignedIn =
+          useSettingsStore.getState().settings?.keepSignedIn !== false;
         // Only persist + commit `user` if it shape-checks. A malformed
         // user blob from a refresh response would otherwise replace the
         // valid in-memory user and crash the next render. The previous
         // valid `user` in state stays as-is when the refresh skips this.
         const userOk = user !== undefined && isPersistedUser(user);
-        if (userOk) {
-          await SecureStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-        }
-        if (expires_at) {
-          await SecureStorage.setItem(AUTH_EXPIRES_KEY, expires_at);
+        if (keepSignedIn) {
+          await SecureStorage.setItem(AUTH_TOKEN_KEY, access_token);
+          if (userOk) {
+            await SecureStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+          }
+          if (expires_at) {
+            await SecureStorage.setItem(AUTH_EXPIRES_KEY, expires_at);
+          } else {
+            await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+          }
         } else {
-          await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
+          // Opted out — scrub any creds the Keychain might still be holding
+          // from an earlier opted-in window (or a prior build). The new
+          // token lives in zustand only; kill-and-relaunch forces a fresh
+          // login.
+          await SecureStorage.removeItem(AUTH_TOKEN_KEY).catch(() => {});
+          await SecureStorage.removeItem(AUTH_USER_KEY).catch(() => {});
+          await SecureStorage.removeItem(AUTH_EXPIRES_KEY).catch(() => {});
         }
         // Re-check post-write — the user could log out during the awaits
         // above (Keychain writes can take ~tens of ms). If so, wipe what
         // we just persisted.
         if (!get().isAuthenticated) {
           ApiClient.setAuthToken(null);
-          await SecureStorage.removeItem(AUTH_TOKEN_KEY).catch(() => {});
-          if (userOk) {
-            await SecureStorage.removeItem(AUTH_USER_KEY).catch(() => {});
+          if (keepSignedIn) {
+            await SecureStorage.removeItem(AUTH_TOKEN_KEY).catch(() => {});
+            if (userOk) {
+              await SecureStorage.removeItem(AUTH_USER_KEY).catch(() => {});
+            }
+            await SecureStorage.removeItem(AUTH_EXPIRES_KEY).catch(() => {});
           }
-          await SecureStorage.removeItem(AUTH_EXPIRES_KEY).catch(() => {});
           return;
         }
         set({

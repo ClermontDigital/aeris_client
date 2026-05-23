@@ -12,7 +12,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import ApiClient from '../services/ApiClient';
 import type {DailySummary, Sale} from '../types/api.types';
 import type {AppTabParamList} from '../types/navigation.types';
@@ -27,13 +27,16 @@ import {
   SHADOW,
 } from '../constants/theme';
 import {useAuthStore} from '../stores/authStore';
+import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {formatCurrency} from '../utils/format';
 import StatCard, {pickStatRowFontSize} from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 import MotionCard from '../components/MotionCard';
 import PillButton from '../components/PillButton';
+import EyebrowLabel from '../components/EyebrowLabel';
 
 type Nav = BottomTabNavigationProp<AppTabParamList, 'Dashboard'>;
 
@@ -53,19 +56,38 @@ const firstName = (full: string | undefined): string => {
 // Walk recent sales newest-first, keep the first occurrence of each
 // distinct customer_name (trimmed, case-insensitive). Walk-in sales
 // (customer_name: null/empty) are skipped. Returns up to `limit` entries.
+// customer_id is required so the recent-customers card on the dashboard
+// can deep-link to CustomerDetail — sales without one (legacy walk-ins
+// that somehow have a name but no id) are also skipped.
 function pickRecentUniqueCustomers(
   sales: Sale[],
   limit: number,
-): Array<{name: string; lastSaleAt: string; saleId: number}> {
+): Array<{
+  name: string;
+  lastSaleAt: string;
+  saleId: number;
+  customerId: number;
+}> {
   const seen = new Set<string>();
-  const out: Array<{name: string; lastSaleAt: string; saleId: number}> = [];
+  const out: Array<{
+    name: string;
+    lastSaleAt: string;
+    saleId: number;
+    customerId: number;
+  }> = [];
   for (const s of sales) {
     const raw = (s.customer_name ?? '').trim();
     if (!raw) continue;
+    if (s.customer_id == null) continue;
     const key = raw.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({name: raw, lastSaleAt: s.created_at, saleId: s.id});
+    out.push({
+      name: raw,
+      lastSaleAt: s.created_at,
+      saleId: s.id,
+      customerId: s.customer_id,
+    });
     if (out.length >= limit) break;
   }
   return out;
@@ -74,10 +96,23 @@ function pickRecentUniqueCustomers(
 const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  // Constrain the dashboard column to 720pt on iPad so the hero card,
+  // stats grid and recent-customers card don't read as a giant banner.
+  // The displayXl revenue number stays the same point size — the narrower
+  // column does the work.
+  const tabletColumnCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
   const userName = useAuthStore(s => s.user?.name);
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [recentCustomers, setRecentCustomers] = useState<
-    Array<{name: string; lastSaleAt: string; saleId: number}>
+    Array<{
+      name: string;
+      lastSaleAt: string;
+      saleId: number;
+      customerId: number;
+    }>
   >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -101,6 +136,45 @@ const DashboardScreen: React.FC = () => {
         ApiClient.getDailySummary(),
         ApiClient.getTransactions({page: 1, per_page: 50}).catch(() => null),
       ]);
+      // Fallback when `dashboard.summary` undercounts vs the
+      // `transactions.list` we just pulled. v1.3.27's first attempt used
+      // `toISOString().slice(0,10)` which is UTC — a sale at 9am AEST
+      // serialises to '…T23:00:00Z' the PREVIOUS UTC day and got missed
+      // by the filter, so the override never fired and "Quiet so far"
+      // stayed up. The fix is to compare via `toDateString()` which is
+      // evaluated in the device's local timezone — same behaviour as
+      // the Transactions tab's "Today" filter, which is why the sale was
+      // visible there but not in the dashboard count.
+      //
+      // Also: trust the larger count rather than only overriding when
+      // the server returns 0. If the server returns N and the client
+      // sees N+M today, the client value wins (covers stale aggregate
+      // caches that lag behind freshly-committed rows).
+      const isSameLocalDay = (iso: string): boolean => {
+        if (!iso) return false;
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return false;
+        return d.toDateString() === new Date().toDateString();
+      };
+      if (data && transactionsPage) {
+        const todaySales = transactionsPage.data.filter(s =>
+          isSameLocalDay(s.created_at),
+        );
+        if (todaySales.length > (data.sales_count ?? 0)) {
+          const revenue = todaySales.reduce(
+            (sum, s) => sum + (s.total_cents ?? 0),
+            0,
+          );
+          const items = todaySales.reduce(
+            (sum, s) => sum + (s.items_count ?? 0),
+            0,
+          );
+          data.sales_count = todaySales.length;
+          data.revenue_cents = revenue;
+          data.items_sold = items;
+          data.average_sale_cents = Math.round(revenue / todaySales.length);
+        }
+      }
       setSummary(data);
       if (transactionsPage) {
         setRecentCustomers(pickRecentUniqueCustomers(transactionsPage.data, 5));
@@ -135,6 +209,22 @@ const DashboardScreen: React.FC = () => {
       fetchSummary();
     }, [fetchSummary]),
   );
+
+  // ALSO refetch the instant a sale is marked completed. The useFocusEffect
+  // above already covers the common "tab back to Dashboard" flow, but on
+  // some devices/timings a freshly-completed sale wasn't visible in the
+  // next summary fetch — server-side eventual consistency, or the focus
+  // event firing before the API commit propagated. Watching
+  // cartStore.lastSaleAt gives us a deterministic "just rang a sale"
+  // signal: when it changes we kick a refetch with a short delay so the
+  // server has settled. Triggered whether the Dashboard tab is currently
+  // focused or not — covers operators who stay on QuickSale between sales.
+  const lastSaleAt = useCartStore(s => s.lastSaleAt);
+  useEffect(() => {
+    if (!lastSaleAt) return;
+    const t = setTimeout(() => fetchSummary(), 750);
+    return () => clearTimeout(t);
+  }, [lastSaleAt, fetchSummary]);
 
   // Refetch when the app foregrounds from background — a swipe-back-in after
   // closing the app (or the OS suspending it) won't re-mount the screen but
@@ -186,7 +276,7 @@ const DashboardScreen: React.FC = () => {
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, tabletColumnCap]}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -217,7 +307,7 @@ const DashboardScreen: React.FC = () => {
           </View>
         ) : null}
 
-        <Text style={styles.sectionLabel}>Today</Text>
+        <EyebrowLabel>Today</EyebrowLabel>
 
         {/* When today has no sales yet, the hero/stat strip would all read
             $0.00 / 0, which reads as "the app is broken" rather than "you
@@ -227,7 +317,7 @@ const DashboardScreen: React.FC = () => {
         {salesCount === 0 ? (
           <MotionCard style={styles.quietDayCard} delay={0}>
             <View style={styles.quietDayIcon}>
-              <Ionicons
+              <Icon
                 name="cafe-outline"
                 size={32}
                 color={COLORS.crimson}
@@ -240,7 +330,7 @@ const DashboardScreen: React.FC = () => {
             </Text>
             <PillButton
               variant="solid"
-              label="Start a Sale"
+              label="Start a sale"
               icon="cart-outline"
               accessibilityLabel="Start a new sale"
               onPress={() => navigation.navigate('QuickSale')}
@@ -249,7 +339,7 @@ const DashboardScreen: React.FC = () => {
         ) : (
           <>
             <MotionCard style={styles.heroCard} delay={0}>
-              <Text style={styles.heroLabel}>Revenue</Text>
+              <EyebrowLabel>Revenue</EyebrowLabel>
               {/* Revenue at displayXl Poppins-Bold is the largest numeric on
                   the screen — auto-shrink so $1,234,567+ doesn't overflow
                   the card on iPhone SE. */}
@@ -262,7 +352,7 @@ const DashboardScreen: React.FC = () => {
                 {formatCurrency(revenue)}
               </Text>
               <View style={styles.heroFootnote}>
-                <Ionicons
+                <Icon
                   name="trending-up"
                   size={ICON_SIZE.action - 4}
                   color={COLORS.textMuted}
@@ -285,10 +375,10 @@ const DashboardScreen: React.FC = () => {
                     <StatCard label="Sales" value={salesStr} valueFontSize={fs} />
                   </View>
                   <View style={styles.statCell}>
-                    <StatCard label="Items Sold" value={itemsStr} valueFontSize={fs} />
+                    <StatCard label="Items sold" value={itemsStr} valueFontSize={fs} />
                   </View>
                   <View style={styles.statCell}>
-                    <StatCard label="Avg Sale" value={avgStr} valueFontSize={fs} />
+                    <StatCard label="Avg sale" value={avgStr} valueFontSize={fs} />
                   </View>
                 </MotionCard>
               );
@@ -296,7 +386,7 @@ const DashboardScreen: React.FC = () => {
           </>
         )}
 
-        <Text style={styles.sectionLabel}>Recent Customers</Text>
+        <EyebrowLabel>Recent customers</EyebrowLabel>
         {recentCustomers.length > 0 ? (
           <MotionCard style={styles.topProductsCard} delay={160}>
             {recentCustomers.map((customer, index) => (
@@ -307,16 +397,24 @@ const DashboardScreen: React.FC = () => {
                   index === recentCustomers.length - 1 && styles.productRowLast,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={`${customer.name}, view sale`}
+                accessibilityLabel={`${customer.name}, view customer`}
                 onPress={() => {
                   haptics.light();
-                  navigation.navigate('Transactions', {
-                    screen: 'SaleDetail',
-                    params: {saleId: customer.saleId},
+                  // Cross-tab to the Customers stack so the operator lands
+                  // on the full customer page (sales history, contact,
+                  // addresses) — they can drill INTO a specific sale from
+                  // there. Previously this took them straight to the most
+                  // recent SaleDetail which felt like a navigation
+                  // shortcut bug. `initial: false` keeps CustomersScreen
+                  // underneath so back returns to the customer list.
+                  navigation.navigate('Customers', {
+                    screen: 'CustomerDetail',
+                    params: {customerId: customer.customerId},
+                    initial: false,
                   } as never);
                 }}>
                 <View style={styles.productRank}>
-                  <Ionicons
+                  <Icon
                     name="person-outline"
                     size={ICON_SIZE.action - 4}
                     color={COLORS.textMuted}
@@ -333,7 +431,7 @@ const DashboardScreen: React.FC = () => {
                     })}
                   </Text>
                 </View>
-                <Ionicons
+                <Icon
                   name="chevron-forward"
                   size={ICON_SIZE.action - 4}
                   color={COLORS.textMuted}
@@ -411,15 +509,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: SPACING.xs,
   },
-  sectionLabel: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.medium,
-    color: COLORS.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: SPACING.sm,
-    marginTop: SPACING.xs,
-  },
   heroCard: {
     backgroundColor: COLORS.surface,
     borderRadius: BORDER_RADIUS.xxl,
@@ -461,14 +550,6 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
     paddingHorizontal: SPACING.sm,
     lineHeight: 20,
-  },
-  heroLabel: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.textMuted,
-    fontFamily: FONT_FAMILY.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: SPACING.xs,
   },
   heroValue: {
     fontSize: FONT_SIZE.displayXl,

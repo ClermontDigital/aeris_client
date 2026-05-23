@@ -143,9 +143,29 @@ jest.mock('expo-status-bar', () => ({
   setStatusBarHidden: jest.fn(),
 }));
 
-// Mock @expo/vector-icons
-jest.mock('@expo/vector-icons', () => ({
-  Ionicons: 'Ionicons',
+// @expo/vector-icons removed in v1.3.20 — Lucide is the new baseline (§08).
+// Keep this comment as the migration breadcrumb; no mock is needed because
+// nothing imports the package any more.
+
+// Mock lucide-react-native — every icon resolves to a string component so
+// it renders inertly in RTL tests. The Icon component (src/components/Icon.tsx)
+// looks each icon up in this module, so the Proxy returning string-render
+// stubs keeps any lookup happy regardless of which Lucide glyph is requested.
+jest.mock('lucide-react-native', () => {
+  const handler = {
+    get: (_target: object, prop: string) => prop,
+  };
+  return new Proxy({}, handler);
+});
+
+// Mock @react-native-cookies/cookies — native module not available under Jest.
+jest.mock('@react-native-cookies/cookies', () => ({
+  __esModule: true,
+  default: {
+    clearAll: jest.fn(() => Promise.resolve()),
+    get: jest.fn(() => Promise.resolve({})),
+    set: jest.fn(() => Promise.resolve()),
+  },
 }));
 
 // Mock react-native-reanimated. The package's bundled mock
@@ -159,6 +179,15 @@ jest.mock('react-native-reanimated', () => {
   const passthroughDelay = (_d: any, val: any) => val;
   const easingFn = (t: number) => t;
   const easingFactory = () => easingFn;
+  // Layout-animation builders (FadeIn, SlideInDown, etc.) are chainable in
+  // real reanimated — `FadeIn.duration(220).delay(80)` returns a builder.
+  // Tests just need them to not blow up; nothing actually animates.
+  const layoutBuilder: any = {};
+  ['duration', 'delay', 'springify', 'damping', 'stiffness', 'easing'].forEach(
+    name => {
+      layoutBuilder[name] = jest.fn(() => layoutBuilder);
+    },
+  );
   return {
     __esModule: true,
     default: {
@@ -178,6 +207,17 @@ jest.mock('react-native-reanimated', () => {
     withTiming: jest.fn(passthroughTiming),
     withSpring: jest.fn(passthroughTiming),
     withDelay: jest.fn(passthroughDelay),
+    withSequence: jest.fn((...args: any[]) => args[args.length - 1]),
+    withRepeat: jest.fn((val: any) => val),
+    FadeIn: layoutBuilder,
+    FadeOut: layoutBuilder,
+    FadeInDown: layoutBuilder,
+    FadeInUp: layoutBuilder,
+    SlideInDown: layoutBuilder,
+    SlideOutDown: layoutBuilder,
+    SlideInUp: layoutBuilder,
+    SlideOutUp: layoutBuilder,
+    Layout: layoutBuilder,
     Easing: {
       linear: easingFn,
       ease: easingFn,

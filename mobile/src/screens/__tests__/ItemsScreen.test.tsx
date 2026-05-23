@@ -43,6 +43,25 @@ jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({navigate: jest.fn()}),
 }));
 
+// Mock productCacheStore — ItemsScreen subscribes to it for the Low/Out
+// tile counts (v1.3.23+). The real zustand hook hits the dual-React shim
+// mismatch under jest-expo; expose the selector + getState shape directly.
+jest.mock('../../stores/productCacheStore', () => {
+  const state = {
+    products: [] as unknown[],
+    categories: [] as unknown[],
+    lastSynced: null,
+    isSyncing: false,
+    lastSyncError: null,
+    syncProducts: jest.fn(() => Promise.resolve()),
+  };
+  const useProductCacheStore = (selector: (s: typeof state) => unknown) =>
+    selector(state);
+  (useProductCacheStore as unknown as {getState: () => typeof state}).getState =
+    () => state;
+  return {useProductCacheStore};
+});
+
 import ItemsScreen from '../ItemsScreen';
 
 function makeProduct(over: Partial<Product> & Pick<Product, 'id'>): Product {
@@ -90,9 +109,9 @@ describe('ItemsScreen', () => {
       expect(getByLabelText('Total: 4')).toBeTruthy();
     });
 
-    expect(getByText('Low Stock')).toBeTruthy();
+    expect(getByText('Low stock')).toBeTruthy();
     expect(getByText('Out')).toBeTruthy();
-    expect(getByLabelText('Low Stock: 1')).toBeTruthy();
+    expect(getByLabelText('Low stock: 1')).toBeTruthy();
     expect(getByLabelText('Out: 2')).toBeTruthy();
     // The value cells render numeric strings; sanity-check the digits also
     // appear in the rendered tree.

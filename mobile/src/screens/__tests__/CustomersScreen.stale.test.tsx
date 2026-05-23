@@ -41,6 +41,9 @@ jest.mock('../../hooks/useHaptics', () => {
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({navigate: jest.fn()}),
+  // CustomersScreen calls useFocusEffect (v1.3.29) to refresh the list
+  // after CustomerEdit. No-op the stub — focus events don't fire in jest.
+  useFocusEffect: () => undefined,
 }));
 
 import CustomersScreen from '../CustomersScreen';
