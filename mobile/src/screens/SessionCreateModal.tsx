@@ -41,8 +41,13 @@ const SessionCreateModal: React.FC<Props> = ({visible, onClose}) => {
   };
 
   return (
-    <Modal isVisible={visible} onBackdropPress={handleClose} style={styles.modal}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <Modal
+      isVisible={visible}
+      onBackdropPress={handleClose}
+      onBackButtonPress={handleClose}
+      style={styles.modal}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.content}>
           {step === 'name' ? (
             <>

@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
@@ -77,6 +77,15 @@ export default function CustomerPickerScreen() {
     navigation.goBack();
   }, [haptics, setCustomer, navigation]);
 
+  // Create-on-the-fly. CustomerEditScreen reads route.params.returnTo
+  // and pops twice (edit + picker) on success while writing the new
+  // customer onto the cart store — so the cashier lands back on the
+  // Cart with the freshly-created customer attached.
+  const handleCreateNew = useCallback(() => {
+    haptics.light();
+    navigation.navigate('CustomerEdit', {returnTo: 'CustomerPicker'});
+  }, [haptics, navigation]);
+
   const handleSelect = useCallback(
     (c: Customer) => {
       haptics.light();
@@ -101,7 +110,7 @@ export default function CustomerPickerScreen() {
           {[item.email, item.phone].filter(Boolean).join(' · ') || '—'}
         </Text>
       </View>
-      <Ionicons
+      <Icon
         name="chevron-forward"
         size={18}
         color={COLORS.textMuted}
@@ -132,7 +141,7 @@ export default function CustomerPickerScreen() {
         onPress={handleWalkIn}
         accessibilityRole="button"
         accessibilityLabel="Use walk-in customer">
-        <Ionicons
+        <Icon
           name="walk-outline"
           size={20}
           color={COLORS.white}
@@ -141,8 +150,23 @@ export default function CustomerPickerScreen() {
         <Text style={styles.walkInText}>Use Walk-in Customer</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.createNewBtn}
+        activeOpacity={0.7}
+        onPress={handleCreateNew}
+        accessibilityRole="button"
+        accessibilityLabel="Create a new customer">
+        <Icon
+          name="plus"
+          size={18}
+          color={COLORS.crimson}
+          style={styles.createNewIcon}
+        />
+        <Text style={styles.createNewText}>New customer</Text>
+      </TouchableOpacity>
+
       <View style={styles.searchRow}>
-        <Ionicons
+        <Icon
           name="search"
           size={18}
           color={COLORS.textMuted}
@@ -160,7 +184,7 @@ export default function CustomerPickerScreen() {
         />
         {search ? (
           <TouchableOpacity onPress={() => setSearch('')} style={styles.clearBtn}>
-            <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+            <Icon name="close-circle" size={18} color={COLORS.textMuted} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -221,6 +245,25 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.bold,
+  },
+  createNewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.crimson,
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.sm + 4,
+    minHeight: 44,
+  },
+  createNewIcon: {marginRight: SPACING.sm},
+  createNewText: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.semibold,
   },
   searchRow: {
     flexDirection: 'row',

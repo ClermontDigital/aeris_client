@@ -11,6 +11,15 @@ const config: Config = {
     // jest-expo's react-native preset (interopRequireDefault chain).
     '^@aeris/shared$': '<rootDir>/../shared/src/index.ts',
     '^@aeris/shared/(.*)$': '<rootDir>/../shared/src/$1',
+    // Dedupe React under Jest. The monorepo root resolves react 18.3.1
+    // (pulled by client/), but the mobile workspace ships react 19.2.0.
+    // Jest's resolver walks up to the root copy for transitive deps
+    // (e.g. zustand's useSyncExternalStoreWithSelector), which then calls
+    // hooks from a different React than the renderer. Force every `react`
+    // resolution to the mobile workspace copy so subscriptions (and any
+    // other hook path zustand takes) see one React.
+    '^react$': '<rootDir>/node_modules/react',
+    '^react/(.*)$': '<rootDir>/node_modules/react/$1',
   },
   transformIgnorePatterns: [
     'node_modules/(?!(expo|expo-.*|@expo|react-native|@react-native|react-native-webview|react-native-modal|@react-native-community/netinfo|react-native-safe-area-context|react-native-reanimated|react-native-screens|react-native-gesture-handler|@react-navigation|zustand)/)',

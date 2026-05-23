@@ -1,18 +1,19 @@
 {
-  "$schema": "Source of truth for AERIS brand tokens across repos. Consumed by mobile/src/constants/theme.ts (hand-mirrored) and aeris_websitev3/styles/theme.css (--aeris-* block). Run tokens/verify.mjs after editing.",
+  "$schema": "Source of truth for AERIS brand tokens. Locked palette per docs/AERIS_Visual_Brand_Guidelines_v0.3_DRAFT.md §04. `color` is the canonical five-colour brand palette (plus text-body) — both consumers (mobile/src/constants/theme.ts and aeris_websitev3/styles/theme.css) MUST mirror these exactly. `support-color` is mobile-only convenience variants (lighter/darker navies, cream variants, the off-white paper bg) that verify.mjs checks against mobile only. Run tokens/verify.mjs after editing.",
   "color": {
-    "navy":               "#002a40",
+    "royal":     "#780000",
+    "crimson":   "#c1121f",
+    "navy":      "#003049",
+    "blue":      "#669bbc",
+    "cream":     "#fdf0d5",
+    "text-body": "#003049"
+  },
+  "support-color": {
     "navy-light":         "#1d3a52",
     "navy-deep":          "#002239",
     "navy-ink":           "#14212b",
-    "cream":              "#fdf0d5",
     "cream-light":        "#fff9ec",
-    "paper":              "#f7f2ef",
-    "crimson":            "#c1121f",
     "crimson-dark":       "#900",
-    "crimson-ink":        "#6e0000",
-    "blue-accent":        "#346e95",
-    "text-body":          "#171717",
     "text-on-dark-muted": "#cce5f7"
   },
   "radius": {
@@ -21,6 +22,7 @@
     "lg": 12,
     "xl": 16,
     "xxl": 24,
+    "xxxl": 32,
     "full": 9999
   },
   "letter-spacing": {
@@ -28,6 +30,7 @@
     "tight-lg": -0.84,
     "tight-md": -0.6,
     "tight-sm": -0.42,
-    "wide-sm": 0.1
+    "wide-sm": 0.1,
+    "eyebrow": 0.56
   }
 }

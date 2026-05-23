@@ -17,6 +17,7 @@ import {useSettings} from '../hooks/useSettings';
 import {useAuthStore} from '../stores/authStore';
 import {useAppLockStore} from '../stores/appLockStore';
 import {useHaptics} from '../hooks/useHaptics';
+import EyebrowLabel from '../components/EyebrowLabel';
 import {COLORS, FONT_FAMILY} from '../constants/theme';
 import type {ConnectionMode} from '../types/api.types';
 
@@ -176,8 +177,13 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
   };
 
   return (
-    <Modal isVisible={visible} onBackdropPress={onClose} style={styles.modal}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <Modal
+      isVisible={visible}
+      onBackdropPress={onClose}
+      onBackButtonPress={onClose}
+      style={styles.modal}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>Settings</Text>
 
@@ -266,7 +272,7 @@ const SettingsModal: React.FC<Props> = ({visible, onClose}) => {
 
           {isAuthenticated && hasPin ? (
             <View style={styles.lockSection}>
-              <Text style={styles.sectionTitle}>App lock</Text>
+              <EyebrowLabel>App lock</EyebrowLabel>
               {lockBiometricAvailable ? (
                 <View style={styles.switchRow}>
                   <Text style={styles.label}>Unlock with biometrics</Text>
@@ -446,21 +452,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.danger,
+    // Royal Red border so text + outline read as a single destructive token
+    // (text uses COLORS.destructive too — see deleteAccountText below).
+    borderColor: COLORS.destructive,
     backgroundColor: 'transparent',
   },
-  deleteAccountText: {color: COLORS.danger, fontSize: 14, fontFamily: FONT_FAMILY.medium},
+  // Royal Red per Brand Guidelines v0.3 §10 — destructive/irreversible actions.
+  deleteAccountText: {color: COLORS.destructive, fontSize: 14, fontFamily: FONT_FAMILY.semibold},
   lockSection: {
     marginTop: 20,
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: COLORS.inputBorder,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontFamily: FONT_FAMILY.bold,
-    color: COLORS.navy,
-    marginBottom: 4,
   },
   resetPinBtn: {
     marginTop: 12,

@@ -1,34 +1,39 @@
-// Aeris brand tokens — match the marketing website's Figma export (canonical
-// source of truth) and the Electron desktop app. The website uses navy
-// `#002a40` consistently (26 Figma occurrences), so this is now the brand
-// primary even though earlier versions of the mobile app and the Tailwind
-// config used the slightly cooler `#003049`. Token NAMES are preserved from
-// the prior theme so every existing screen using COLORS.background /
-// COLORS.surface / etc. auto-cascades onto the new palette without per-
-// screen edits.
-const NAVY = '#002a40';            // canonical brand navy (Figma export)
-const NAVY_DEEP = '#002239';       // card scrim variant from web
+// Aeris brand tokens — locked palette per
+// docs/AERIS_Visual_Brand_Guidelines_v0.3_DRAFT.md §04. Five colours total:
+// Royal Red (primary, hero/destructive), Red Dirt Red (accent, CTAs/eyebrow),
+// Loyal Navy (primary, default text + chrome), Dusty Blue (secondary accent,
+// muted/charts), Clermont Cream (neutral background). Token names are kept
+// stable so every screen that already references COLORS.background /
+// COLORS.surface / etc. inherits the palette without per-screen edits.
+const ROYAL_RED = '#780000';       // PRIMARY — hero panels, destructive states
+const CRIMSON = '#c1121f';         // ACCENT — Red Dirt Red, CTAs/eyebrow
+const NAVY = '#003049';            // PRIMARY — Loyal Navy, default text/chrome
+const DUSTY_BLUE = '#669bbc';      // SECONDARY ACCENT — supporting/muted/charts
+const CREAM = '#fdf0d5';           // NEUTRAL — Clermont Cream, default bg
+const NAVY_DEEP = '#002239';       // card scrim variant (darker navy)
 const NAVY_INK = '#14212b';        // near-black panel + nav bar bg variant
 const NAVY_LIGHT = '#1d3a52';
-const BLUE_ACCENT = '#346e95';     // mid-blue accent card
-const CREAM = '#fdf0d5';           // wheat cream — chip/badge surfaces ONLY
 const CREAM_LIGHT = '#fff9ec';     // slightly lighter for elevated cards on cream
-const PAPER = '#f7f2ef';           // cooler off-white — page background (web)
-const CRIMSON = '#c1121f';
 const CRIMSON_DARK = '#900';
-const CRIMSON_INK = '#6e0000';     // dark-red card variant
-const TEXT_BODY = '#171717';       // near-black body copy (web standard)
+const CRIMSON_INK = '#6e0000';     // dark-red card variant (legacy alias)
+// Body copy is Loyal Navy per Brand Guidelines v0.3 §04 default pairing
+// ("Loyal Navy text on Clermont Cream — the high-readability default for
+// long-form reading"). Previously this was near-black #171717; flipped to
+// navy so headings + body share the same colour and the page reads as one.
+// Kept as a literal (not `NAVY`) so tokens/verify.mjs's regex extractor
+// resolves it without const-to-const indirection.
+const TEXT_BODY = '#003049';
 
 export const COLORS = {
-  // --- Brand ---
+  // --- Brand (v0.3 palette) ---
+  royal: ROYAL_RED,
   navy: NAVY,
   navyDeep: NAVY_DEEP,
   navyInk: NAVY_INK,
   navyLight: NAVY_LIGHT,
-  blueAccent: BLUE_ACCENT,
+  blue: DUSTY_BLUE,
   cream: CREAM,
   creamLight: CREAM_LIGHT,
-  paper: PAPER,
   crimson: CRIMSON,
   crimsonDark: CRIMSON_DARK,
   crimsonInk: CRIMSON_INK,
@@ -36,24 +41,22 @@ export const COLORS = {
   // --- Primary / accent (semantic aliases) ---
   primary: NAVY,            // navy chrome (toolbar, tab bar, modal scrim)
   primaryLight: NAVY_LIGHT,
-  accent: CRIMSON,          // primary action color (was purple #667eea — retired)
+  accent: CRIMSON,          // primary action colour (Red Dirt Red)
   accentHover: CRIMSON_DARK,
+  destructive: ROYAL_RED,   // irreversible actions — Royal Red per §10
 
-  // --- Backgrounds: page is PAPER (cooler off-white), CREAM is reserved ---
-  // WHY: the marketing website renders body surfaces against #f7f2ef, a
-  // cooler off-white than the wheat cream chips/badges sit on. Mobile now
-  // matches: `background` = paper for every screen container, and CREAM is
-  // only used directly where the design wants the warm pendant/chip tone
-  // (AppTabs pendant shoulders, login card backdrop, chip pills, etc).
-  // Phase 3 audited every COLORS.background consumer; any callsite that
-  // semantically wanted CREAM was switched to COLORS.cream directly.
-  background: PAPER,                              // main app body
+  // --- Backgrounds: page is CREAM per Brand Guidelines v0.3 §04 default
+  // pairing ("Loyal Navy text on Clermont Cream — the high-readability
+  // default for long-form reading"). Elevated cards sit on white surface,
+  // not cream-on-cream. Accent cards previously using `cream` against the
+  // old PAPER body must shift to `surface` (white) to retain contrast.
+  background: CREAM,                              // main app body
   surface: '#ffffff',                             // elevated card on cream
   surfaceHover: CREAM_LIGHT,                      // card hover
-  surfaceBorder: 'rgba(0, 42, 64, 0.1)',          // navy 10%
-  surfaceBorderHover: 'rgba(0, 42, 64, 0.2)',     // navy 20%
-  modalBg: 'rgba(0, 42, 64, 0.92)',               // navy scrim under modals
-  overlayBg: 'rgba(0, 42, 64, 0.85)',             // navy overlay (loading)
+  surfaceBorder: 'rgba(0, 48, 73, 0.1)',          // Loyal Navy @ 10%
+  surfaceBorderHover: 'rgba(0, 48, 73, 0.2)',     // Loyal Navy @ 20%
+  modalBg: 'rgba(0, 48, 73, 0.92)',               // navy scrim under modals
+  overlayBg: 'rgba(0, 48, 73, 0.85)',             // navy overlay (loading)
 
   // --- Text ---
   // `text` keeps NAVY for headings/labels/emphasis. `textBody` is the new
@@ -83,7 +86,7 @@ export const COLORS = {
   // --- Neutrals ---
   white: '#ffffff',
   black: '#000000',
-  border: 'rgba(0, 42, 64, 0.15)',
+  border: 'rgba(0, 48, 73, 0.15)',  // Loyal Navy @ 15%
   transparent: 'transparent',
 
   // --- Toolbar (NAVY chrome — kept dark to match desktop's top bar) ---
@@ -94,10 +97,10 @@ export const COLORS = {
 
   // --- Inputs (white field on cream) ---
   inputBg: '#ffffff',
-  inputBorder: 'rgba(0, 42, 64, 0.2)',
+  inputBorder: 'rgba(0, 48, 73, 0.2)',  // Loyal Navy @ 20%
   inputFocusBorder: CRIMSON,
   inputFocusBg: '#ffffff',
-  inputPlaceholder: 'rgba(0, 42, 64, 0.4)',
+  inputPlaceholder: 'rgba(0, 48, 73, 0.4)',  // Loyal Navy @ 40%
 } as const;
 
 export const SPACING = {
@@ -123,30 +126,33 @@ export const FONT_SIZE = {
   display: 28,
   displayLg: 36,
   displayXl: 43,
+  // Eyebrow labels — Poppins SemiBold all-caps, 12-14px digital per §06.
+  eyebrow: 12,
 } as const;
 
-// Poppins-based font-family tokens. The marketing site (and now the desktop
-// client) ships Poppins; mobile loads the four weights actually used on the
-// web via expo-font (see App.tsx + app.json plugin entry). Use these instead
-// of `fontWeight` props so weight + family land together — on Android the
-// `fontWeight` numeric fallback silently snaps to the closest installed
-// family weight, which produces inconsistent rendering across devices.
+// Poppins-based font-family tokens — the four weights specified by Brand
+// Guidelines v0.3 §05. Mobile loads these via expo-font (see App.tsx +
+// app.json plugin entry). Use these instead of `fontWeight` props so weight
+// and family land together — on Android the `fontWeight` numeric fallback
+// silently snaps to the closest installed family weight, which produces
+// inconsistent rendering across devices.
 export const FONT_FAMILY = {
-  light: 'Poppins-Light',     // 300 — body / paragraph copy
-  regular: 'Poppins-Regular', // 400 — nav labels, default text
-  medium: 'Poppins-Medium',   // 500 — workhorse for headlines + CTAs
-  bold: 'Poppins-Bold',       // 700 — emphasis on stats
+  regular: 'Poppins-Regular',     // 400 — body, nav labels, default text
+  medium: 'Poppins-Medium',       // 500 — H3, body emphasis, sub-section titles
+  semibold: 'Poppins-SemiBold',   // 600 — H2, buttons, eyebrow labels
+  bold: 'Poppins-Bold',           // 700 — display / H1, dominant headings
 } as const;
 
 // Display tracking from the web. Negative values tighten headings the way
 // the marketing site's display type does; `wideSm` is for caps / eyebrow
-// labels.
+// labels. `eyebrow` = 4% of 14px (the spec's lower bound, §06).
 export const LETTER_SPACING = {
   tightXl: -1.29,
   tightLg: -0.84,
   tightMd: -0.6,
   tightSm: -0.42,
   wideSm: 0.1,
+  eyebrow: 0.56,
 } as const;
 
 export const BORDER_RADIUS = {
@@ -154,8 +160,10 @@ export const BORDER_RADIUS = {
   md: 8,
   lg: 12,
   xl: 16,
-  // Signature web card radius (`rounded-[24px]`, 56× in the export).
+  // Signature web card radius (`rounded-[24px]`, 56× in the export). Per
+  // §07 cards use 24-32px; xxxl is the upper bound for hero panels.
   xxl: 24,
+  xxxl: 32,
   full: 9999,
 } as const;
 

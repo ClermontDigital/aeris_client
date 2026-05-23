@@ -55,6 +55,7 @@ function coerceSettings(stored: unknown): Settings {
         ? s.workspaceCode
         : DEFAULT_CONFIG.workspaceCode,
     hapticsEnabled: pickBoolean(s.hapticsEnabled, DEFAULT_CONFIG.hapticsEnabled),
+    keepSignedIn: pickBoolean(s.keepSignedIn, DEFAULT_CONFIG.keepSignedIn),
   };
 }
 

@@ -11,11 +11,11 @@ import {
   Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import type {CompositeNavigationProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {
   COLORS,
   SPACING,
@@ -26,9 +26,11 @@ import {
 } from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
 import ErrorBanner from '../components/ErrorBanner';
+import EyebrowLabel from '../components/EyebrowLabel';
 import type {PaymentMethod} from '../types/api.types';
 import type {
   AppTabParamList,
@@ -56,6 +58,14 @@ interface SaleResult {
 export default function CheckoutScreen() {
   const navigation = useNavigation<NavigationProp>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  // Whole content column caps at 720pt and centres on iPad. Payment-method
+  // tiles get an additional per-tile cap so they don't read as billboards
+  // when the grid has only 2-3 items.
+  const tabletColumnCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
+  const tabletMethodTileCap = isTablet ? ({maxWidth: 220} as const) : null;
   const {
     items,
     customerId,
@@ -65,6 +75,7 @@ export default function CheckoutScreen() {
     getTotalCents,
     getItemCount,
     clear,
+    markSaleCompleted,
   } = useCartStore();
 
   const totalCents = getTotalCents();
@@ -77,7 +88,18 @@ export default function CheckoutScreen() {
     'loading' | 'live' | 'fallback'
   >('loading');
   const paymentMethodsStateRef = useRef(paymentMethodsState);
-  paymentMethodsStateRef.current = paymentMethodsState;
+  // Sync the ref in an effect rather than during render — mutating refs in
+  // the render body trips React 18 StrictMode's double-invoke and can leave
+  // the ref out of sync with the rendered state.
+  useEffect(() => {
+    paymentMethodsStateRef.current = paymentMethodsState;
+  }, [paymentMethodsState]);
+  // Captures why we fell back so the operator can see "Server returned 0
+  // methods" vs "Network error: ..." vs "Couldn't reach the server" rather
+  // than the previous opaque "Using offline defaults". Cleared when a
+  // successful live fetch lands.
+  const [paymentMethodsFallbackReason, setPaymentMethodsFallbackReason] =
+    useState<string | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
   const [amountTendered, setAmountTendered] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -101,15 +123,29 @@ export default function CheckoutScreen() {
       if (methods.length > 0) {
         setPaymentMethods(methods);
         setPaymentMethodsState('live');
+        setPaymentMethodsFallbackReason(null);
         return;
       }
+      // Server responded fine but returned zero methods. The workspace
+      // probably has no methods configured (a setup issue, not a code
+      // bug). Surface this distinctly so the operator/support team can
+      // tell it apart from a network problem.
       setPaymentMethods(DEFAULT_PAYMENT_METHODS);
       setPaymentMethodsState('fallback');
+      setPaymentMethodsFallbackReason(
+        "No payment methods set up for this workspace. Please contact your administrator. Tap to retry once they're added.",
+      );
+      console.warn('[checkout] payment-methods returned empty array');
       if (!wasFallback) haptics.error();
     } catch (e) {
-      console.warn('Failed to load payment methods, using defaults:', e);
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : 'Network or server error';
+      console.warn('[checkout] payment-methods failed:', msg, e);
       setPaymentMethods(DEFAULT_PAYMENT_METHODS);
       setPaymentMethodsState('fallback');
+      setPaymentMethodsFallbackReason(`Couldn't load: ${msg}. Tap to retry.`);
       if (!wasFallback) haptics.error();
     }
   }, [haptics]);
@@ -129,8 +165,16 @@ export default function CheckoutScreen() {
     selectedMethod !== null &&
     (selectedMethod !== 'cash' || tenderedCents >= totalCents);
 
+  // Synchronous double-tap guard. `setIsSubmitting(true)` is async — between
+  // the press and the next render a fast double-tap on iOS can fire this
+  // handler twice. Each invocation generates its own idempotency key inside
+  // createSale, so two sales would post. The ref flips before any awaits.
+  const submitLockRef = useRef(false);
+
   const handleCompleteSale = useCallback(async () => {
     if (!selectedMethod) return;
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
 
     haptics.medium();
     setIsSubmitting(true);
@@ -163,6 +207,10 @@ export default function CheckoutScreen() {
       });
 
       haptics.success();
+      // Broadcast a "sale just landed" timestamp so the Dashboard's
+      // useFocusEffect refetches its summary on the next focus and the
+      // operator doesn't see a stale "Quiet so far" empty state.
+      markSaleCompleted();
       setSaleResult(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sale failed';
@@ -170,8 +218,9 @@ export default function CheckoutScreen() {
       setError(msg);
     } finally {
       setIsSubmitting(false);
+      submitLockRef.current = false;
     }
-  }, [selectedMethod, items, totalCents, customerId, discountCents, notes, haptics]);
+  }, [selectedMethod, items, totalCents, customerId, discountCents, notes, haptics, markSaleCompleted]);
 
   const handlePrintReceipt = useCallback(async () => {
     if (!saleResult) return;
@@ -188,10 +237,23 @@ export default function CheckoutScreen() {
     }
   }, [saleResult, haptics]);
 
+  // Reset the QuickSale stack back to ProductGrid. Used by both success
+  // actions AND by the focus-loss effect below so any path away from a
+  // completed Checkout (button tap OR tabbing away) leaves the operator
+  // with a clean ProductGrid the next time they hit the Sale tab —
+  // previously the stale success view stayed mounted and the operator
+  // saw "Sale complete" for the previous transaction on their next visit.
+  const resetSaleStack = useCallback(() => {
+    navigation.reset({
+      index: 0,
+      routes: [{name: 'ProductGrid'}],
+    });
+  }, [navigation]);
+
   const handleNewSale = useCallback(() => {
     clear();
-    navigation.navigate('ProductGrid');
-  }, [clear, navigation]);
+    resetSaleStack();
+  }, [clear, resetSaleStack]);
 
   const handleViewTransaction = useCallback(() => {
     if (!saleResult) return;
@@ -199,20 +261,55 @@ export default function CheckoutScreen() {
     // Clear before cross-tab nav: the sale is finalised and the user is
     // leaving the success screen, so a stale cart shouldn't survive.
     clear();
+    // Pop the QuickSale stack back to ProductGrid BEFORE cross-tab nav,
+    // so returning to the Sale tab later shows products, not the stale
+    // Checkout success view.
+    resetSaleStack();
+    // `initial: false` pushes SaleDetail on TOP of TransactionList in the
+    // Transactions stack. Without it, React Navigation rewrites the stack
+    // to JUST [SaleDetail], so a back press pops the whole tab away and
+    // lands on the previous tab (Dashboard / QuickSale) instead of
+    // returning to the transactions list. Same fix applied in
+    // CustomerDetailScreen + DashboardScreen for cross-tab SaleDetail nav.
     navigation.navigate('Transactions', {
       screen: 'SaleDetail',
       params: {saleId: saleResult.sale_id},
+      initial: false,
     });
-  }, [saleResult, haptics, clear, navigation]);
+  }, [saleResult, haptics, clear, navigation, resetSaleStack]);
+
+  // Belt-and-braces: if the operator just tabs away from a completed
+  // Checkout without tapping any of the three success actions, reset the
+  // QuickSale stack on blur so the next return to the Sale tab lands on
+  // ProductGrid (not the now-stale success view). Uses useFocusEffect's
+  // cleanup — plain useEffect cleanup ONLY fires on unmount, but the
+  // bottom-tab navigator keeps screens mounted across tab switches, so
+  // useEffect cleanup never fires in this scenario. useFocusEffect's
+  // cleanup runs on blur (the screen losing focus to another tab), which
+  // is what we actually want. Gated on saleResult so a mid-checkout tab
+  // switch (operator may want to come back to a half-filled tendered
+  // amount) doesn't wipe their progress.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (saleResult) resetSaleStack();
+      };
+    }, [saleResult, resetSaleStack]),
+  );
 
   // Success view
   if (saleResult) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
-        <ScrollView contentContainerStyle={styles.successContainer}>
+        <ScrollView contentContainerStyle={[styles.successContainer, tabletColumnCap]}>
           <View style={styles.successCard}>
-            <Text style={styles.successIcon}>&#10003;</Text>
-            <Text style={styles.successTitle}>Sale Complete</Text>
+            <View
+              style={styles.successIconCircle}
+              accessibilityElementsHidden
+              importantForAccessibility="no">
+              <Icon name="check" size={32} color={COLORS.cream} strokeWidth={2.5} />
+            </View>
+            <Text style={styles.successTitle}>Sale complete</Text>
             <Text style={styles.saleNumber}>
               #{saleResult.sale_number}
             </Text>
@@ -225,24 +322,31 @@ export default function CheckoutScreen() {
             <TouchableOpacity
               style={styles.printButton}
               onPress={handlePrintReceipt}
-              disabled={isPrinting}>
+              disabled={isPrinting}
+              accessibilityRole="button"
+              accessibilityLabel="Print receipt"
+              accessibilityState={{disabled: isPrinting}}>
               {isPrinting ? (
                 <ActivityIndicator color={COLORS.white} size="small" />
               ) : (
-                <Text style={styles.printButtonText}>Print Receipt</Text>
+                <Text style={styles.printButtonText}>Print receipt</Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.viewTransactionButton}
-              onPress={handleViewTransaction}>
+              onPress={handleViewTransaction}
+              accessibilityRole="button"
+              accessibilityLabel="View transaction">
               <Text style={styles.viewTransactionButtonText}>
-                View Transaction
+                View transaction
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.newSaleButton}
-              onPress={handleNewSale}>
-              <Text style={styles.newSaleButtonText}>New Sale</Text>
+              onPress={handleNewSale}
+              accessibilityRole="button"
+              accessibilityLabel="Start a new sale">
+              <Text style={styles.newSaleButtonText}>New sale</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -254,14 +358,14 @@ export default function CheckoutScreen() {
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, tabletColumnCap]}
         keyboardShouldPersistTaps="handled">
         {/* Customer */}
         <View style={styles.customerRow}>
           <View style={styles.customerIconWrap}>
-            <Ionicons
+            <Icon
               name="person-outline"
               size={ICON_SIZE.action}
               color={COLORS.crimson}
@@ -282,7 +386,7 @@ export default function CheckoutScreen() {
             accessibilityRole="button"
             accessibilityLabel="Change customer">
             <Text style={styles.customerChangeText}>Change</Text>
-            <Ionicons
+            <Icon
               name="chevron-forward"
               size={ICON_SIZE.action}
               color={COLORS.accent}
@@ -301,21 +405,22 @@ export default function CheckoutScreen() {
         </View>
 
         {/* Payment Methods */}
-        <Text style={styles.sectionTitle}>Payment Method</Text>
+        <EyebrowLabel>Payment method</EyebrowLabel>
         {paymentMethodsState === 'fallback' ? (
           <TouchableOpacity
             style={styles.methodsFallbackChip}
             onPress={loadPaymentMethods}
             accessibilityRole="button"
             accessibilityLabel="Retry loading payment methods">
-            <Ionicons
+            <Icon
               name="cloud-offline-outline"
               size={ICON_SIZE.action}
               color={COLORS.warning}
               style={styles.methodsFallbackIcon}
             />
             <Text style={styles.methodsFallbackText}>
-              Using offline defaults — tap to retry
+              {paymentMethodsFallbackReason ??
+                'Using offline defaults — tap to retry'}
             </Text>
           </TouchableOpacity>
         ) : null}
@@ -328,6 +433,7 @@ export default function CheckoutScreen() {
                 style={[
                   styles.methodButton,
                   selected && styles.methodButtonActive,
+                  tabletMethodTileCap,
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={`Payment method ${method.name}`}
@@ -351,7 +457,7 @@ export default function CheckoutScreen() {
         {/* Cash: Amount Tendered */}
         {selectedMethod === 'cash' && (
           <View style={styles.cashSection}>
-            <Text style={styles.sectionTitle}>Amount Tendered</Text>
+            <EyebrowLabel>Amount tendered</EyebrowLabel>
             <TextInput
               style={styles.amountInput}
               value={amountTendered}
@@ -394,11 +500,14 @@ export default function CheckoutScreen() {
             !canComplete && styles.completeSaleButtonDisabled,
           ]}
           onPress={handleCompleteSale}
-          disabled={!canComplete || isSubmitting}>
+          disabled={!canComplete || isSubmitting}
+          accessibilityRole="button"
+          accessibilityLabel="Complete sale"
+          accessibilityState={{disabled: !canComplete || isSubmitting}}>
           {isSubmitting ? (
             <ActivityIndicator color={COLORS.white} size="small" />
           ) : (
-            <Text style={styles.completeSaleText}>Complete Sale</Text>
+            <Text style={styles.completeSaleText}>Complete sale</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -504,14 +613,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     marginTop: SPACING.xs,
   },
-  sectionTitle: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: SPACING.sm,
-  },
   methodGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -590,7 +691,8 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
   },
   changeValue: {
-    color: COLORS.success,
+    // Brand affirmative pairing per §04 is cream + crimson, not Stripe-green.
+    color: COLORS.crimson,
     fontSize: FONT_SIZE.lg,
     fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
@@ -634,9 +736,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.lg,
   },
-  successIcon: {
-    fontSize: 48,
-    color: COLORS.success,
+  successIconCircle: {
+    // Cream check on a crimson disc — the on-brand affirmative pairing per
+    // §04. Sized to roughly match the previous 48px tick's visual weight.
+    width: 64,
+    height: 64,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.crimson,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: SPACING.md,
   },
   successTitle: {

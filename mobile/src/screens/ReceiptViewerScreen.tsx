@@ -10,7 +10,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {
   COLORS,
   SPACING,
@@ -21,6 +21,7 @@ import {
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import ErrorBanner from '../components/ErrorBanner';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {ReceiptData} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 
@@ -29,6 +30,12 @@ type ReceiptRouteProp = RouteProp<TransactionsStackParamList, 'Receipt'>;
 export default function ReceiptViewerScreen() {
   const navigation = useNavigation();
   const route = useRoute<ReceiptRouteProp>();
+  const {isTablet} = useResponsiveLayout();
+  // Receipts are narrow by convention (printable). On iPad cap at 480pt
+  // so we don't stretch the card across half a screen.
+  const tabletReceiptCap = isTablet
+    ? ({maxWidth: 480, alignSelf: 'center', width: '100%'} as const)
+    : null;
   const {saleId} = route.params;
 
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
@@ -89,7 +96,7 @@ export default function ReceiptViewerScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, tabletReceiptCap]}>
         {/* Receipt Card */}
         <View style={styles.receiptCard}>
           {/* Business Name */}
@@ -201,7 +208,7 @@ export default function ReceiptViewerScreen() {
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}>
-            <Ionicons
+            <Icon
               name="chevron-back"
               size={ICON_SIZE.action}
               color={COLORS.white}
@@ -266,7 +273,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   businessAddress: {
-    color: '#6b7280',
+    color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
     textAlign: 'center',
     marginBottom: SPACING.md,
@@ -277,18 +284,18 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   saleNumber: {
-    color: '#374151',
+    color: COLORS.text,
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.medium,
     fontVariant: ['tabular-nums'],
   },
   saleDate: {
-    color: '#6b7280',
+    color: COLORS.textMuted,
     fontSize: FONT_SIZE.sm,
   },
   separator: {
     height: 1,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: COLORS.surfaceBorder,
     marginVertical: SPACING.md,
   },
   // Items
@@ -298,7 +305,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   itemHeaderText: {
-    color: '#9ca3af',
+    color: COLORS.textDim,
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
@@ -308,16 +315,16 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
     alignItems: 'flex-start',
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: COLORS.surfaceBorder,
     paddingBottom: SPACING.sm,
   },
   itemText: {
-    color: '#374151',
+    color: COLORS.text,
     fontSize: FONT_SIZE.sm,
     fontVariant: ['tabular-nums'],
   },
   itemTotalText: {
-    color: '#111827',
+    color: COLORS.text,
     fontFamily: FONT_FAMILY.medium,
   },
   // Totals
@@ -328,11 +335,11 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   totalLabel: {
-    color: '#6b7280',
+    color: COLORS.textMuted,
     fontSize: FONT_SIZE.md,
   },
   totalValue: {
-    color: '#374151',
+    color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontVariant: ['tabular-nums'],
   },
@@ -340,15 +347,15 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     paddingTop: SPACING.sm,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: COLORS.surfaceBorder,
   },
   grandTotalLabel: {
-    color: '#111827',
+    color: COLORS.text,
     fontSize: FONT_SIZE.lg,
     fontFamily: FONT_FAMILY.bold,
   },
   grandTotalValue: {
-    color: '#111827',
+    color: COLORS.text,
     fontSize: FONT_SIZE.xl,
     fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
@@ -356,7 +363,7 @@ const styles = StyleSheet.create({
   // Payments
   paymentsSection: {},
   paymentTitle: {
-    color: '#9ca3af',
+    color: COLORS.textDim,
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.medium,
     textTransform: 'uppercase',
@@ -368,17 +375,17 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   paymentMethod: {
-    color: '#6b7280',
+    color: COLORS.textMuted,
     fontSize: FONT_SIZE.md,
     textTransform: 'capitalize',
   },
   paymentAmount: {
-    color: '#374151',
+    color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontVariant: ['tabular-nums'],
   },
   servedBy: {
-    color: '#9ca3af',
+    color: COLORS.textDim,
     fontSize: FONT_SIZE.sm,
     textAlign: 'center',
     marginTop: SPACING.md,

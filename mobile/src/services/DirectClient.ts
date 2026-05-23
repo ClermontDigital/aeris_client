@@ -7,6 +7,7 @@ import {
   normalizeReceipt,
   normalizeSale,
   normalizeSaleDetail,
+  normalizeStockAdjustment,
   unwrapList,
   unwrapResource,
   SALE_RETRY,
@@ -21,17 +22,27 @@ import type {
   BiometricCredential,
   Category,
   Customer,
+  CustomerCreateInput,
+  CustomerUpdateInput,
   DailySummary,
   PaginatedResponse,
   PaymentMethod,
   Product,
+  ProductCreateInput,
   ProductDetail,
+  ProductUpdateInput,
   ReceiptData,
   Sale,
   SaleDetail,
+  StockAdjustment,
+  StockAdjustmentInput,
   StockSnapshot,
 } from '../types/api.types';
-import {API_ENDPOINTS} from '../constants/api';
+import {
+  API_ENDPOINTS,
+  CUSTOMER_BY_ID,
+  PRODUCT_BY_ID,
+} from '../constants/api';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
@@ -369,10 +380,15 @@ export class DirectClient {
           throw e;
         }
         const delay = backoffDelay(attempt, SALE_RETRY.baseDelayMs);
-        console.log(
-          `[sale] retry ${attempt}/${SALE_RETRY.maxAttempts - 1} ` +
-            `after ${delay}ms idem=${idempotencyKey}`,
-        );
+        // Dev-only retry trace — production builds drop this. Logs the
+        // idempotency key (not PII) so a developer can correlate retry
+        // attempts to a single logical sale in the Metro/Xcode console.
+        if (__DEV__) {
+          console.log(
+            `[sale] retry ${attempt}/${SALE_RETRY.maxAttempts - 1} ` +
+              `after ${delay}ms idem=${idempotencyKey}`,
+          );
+        }
         await sleep(delay);
       }
     }
@@ -478,6 +494,111 @@ export class DirectClient {
     });
   }
 
+  // --- Customers (writes) ---
+  // Mirrors RelayClient.createCustomer — retries on transient 5xx with the
+  // same Idempotency-Key so a doubled tap during a network hiccup still
+  // creates one row server-side.
+  async createCustomer(input: CustomerCreateInput): Promise<Customer> {
+    const idempotencyKey = generateUuid();
+    const payload = toCustomerWirePayload(input);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.post<unknown>(
+          API_ENDPOINTS.CUSTOMERS,
+          payload,
+          {idempotencyKey},
+        );
+        return normalizeCustomer(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  // PUT is idempotent at the HTTP layer, but we deliberately do NOT retry —
+  // surfacing validation/conflict errors to the caller matches createSale's
+  // policy and avoids silent re-writes if the server returned 4xx mid-retry.
+  async updateCustomer(
+    id: number,
+    patch: CustomerUpdateInput,
+  ): Promise<Customer> {
+    const raw = await this.put<unknown>(
+      CUSTOMER_BY_ID(id),
+      toCustomerWirePayload(patch),
+    );
+    return normalizeCustomer(unwrapResource(raw));
+  }
+
+  // CustomerController::destroy returns 204; our request helper short-circuits
+  // an empty body. Return a stable {ok: true} sentinel so callers don't have
+  // to deal with void vs null differences across transports.
+  async deleteCustomer(id: number): Promise<{ok: true}> {
+    await this.delete(CUSTOMER_BY_ID(id));
+    return {ok: true};
+  }
+
+  // --- Products (writes) ---
+  async createProduct(input: ProductCreateInput): Promise<Product> {
+    const idempotencyKey = generateUuid();
+    const payload = toProductWirePayload(input);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.post<unknown>(
+          API_ENDPOINTS.PRODUCTS,
+          payload,
+          {idempotencyKey},
+        );
+        return normalizeProduct(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  async updateProduct(
+    id: number,
+    patch: ProductUpdateInput,
+  ): Promise<Product> {
+    const raw = await this.put<unknown>(
+      PRODUCT_BY_ID(id),
+      toProductWirePayload(patch),
+    );
+    return normalizeProduct(unwrapResource(raw));
+  }
+
+  // --- Inventory (writes) ---
+  // adjustStock is wrapped in withReadRetry because each retry attempt sends
+  // the same Idempotency-Key — server-side dedupe (once wired) collapses
+  // repeats so a transient 5xx won't double-adjust the on_hand count.
+  async adjustStock(input: StockAdjustmentInput): Promise<StockAdjustment> {
+    const idempotencyKey = generateUuid();
+    const payload: Record<string, unknown> = {
+      product_id: input.product_id,
+      adjustment: input.adjustment,
+      reason: input.reason,
+      ...(input.notes ? {notes: input.notes} : {}),
+      ...(input.location_id !== undefined && input.location_id !== null
+        ? {location_id: input.location_id}
+        : {}),
+    };
+    return withReadRetry(async () => {
+      const raw = await this.post<unknown>(
+        API_ENDPOINTS.INVENTORY_ADJUST_STOCK,
+        payload,
+        {idempotencyKey},
+      );
+      return normalizeStockAdjustment(unwrapResource(raw));
+    });
+  }
+
   // --- Internal HTTP methods ---
   private get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path);
@@ -489,6 +610,18 @@ export class DirectClient {
     options?: RequestOptions,
   ): Promise<T> {
     return this.request<T>('POST', path, body, options);
+  }
+
+  private put<T>(
+    path: string,
+    body: unknown,
+    options?: RequestOptions,
+  ): Promise<T> {
+    return this.request<T>('PUT', path, body, options);
+  }
+
+  private delete<T = unknown>(path: string): Promise<T> {
+    return this.request<T>('DELETE', path);
   }
 
   private async request<T>(
@@ -536,7 +669,17 @@ export class DirectClient {
         throw err;
       }
 
-      return (await response.json()) as T;
+      // 204 No Content (e.g. CustomerController::destroy) carries no body —
+      // surface `undefined` so DELETE callers can resolve cleanly without
+      // tripping over an empty-body JSON parse.
+      if (response.status === 204) {
+        return undefined as unknown as T;
+      }
+      const text = await response.text();
+      if (!text) {
+        return undefined as unknown as T;
+      }
+      return JSON.parse(text) as T;
     } finally {
       clearTimeout(timeout);
     }
@@ -552,4 +695,34 @@ export class DirectClient {
       }
     }
   }
+}
+
+// Wire-shape converters mirror RelayClient.toCustomerWirePayload /
+// toProductWirePayload. The server's Store*/Update*Request validators only
+// accept dollar-shape fields (credit_limit, base_price, cost_price); strip
+// the cents-named inputs and re-emit them under the dollar names so a single
+// typed CustomerCreateInput/ProductCreateInput works on both transports.
+function toCustomerWirePayload(
+  input: CustomerCreateInput | CustomerUpdateInput,
+): Record<string, unknown> {
+  const {credit_limit_cents, ...rest} = input;
+  const out: Record<string, unknown> = {...rest};
+  if (credit_limit_cents !== undefined && credit_limit_cents !== null) {
+    out.credit_limit = Math.round(credit_limit_cents) / 100;
+  }
+  return out;
+}
+
+function toProductWirePayload(
+  input: ProductCreateInput | ProductUpdateInput,
+): Record<string, unknown> {
+  const {base_price_cents, cost_price_cents, ...rest} = input;
+  const out: Record<string, unknown> = {...rest};
+  if (base_price_cents !== undefined && base_price_cents !== null) {
+    out.base_price = Math.round(base_price_cents) / 100;
+  }
+  if (cost_price_cents !== undefined && cost_price_cents !== null) {
+    out.cost_price = Math.round(cost_price_cents) / 100;
+  }
+  return out;
 }

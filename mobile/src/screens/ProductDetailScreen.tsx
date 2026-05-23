@@ -8,28 +8,39 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
-import {Ionicons} from '@expo/vector-icons';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import Icon from '../components/Icon';
+import PillButton from '../components/PillButton';
+import StockAdjustModal from '../components/StockAdjustModal';
+import Barcode, {canEncodeCode128B} from '../components/Barcode';
 import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {ProductDetail} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 
 type ProductDetailRouteProp = RouteProp<ItemsStackParamList, 'ProductDetail'>;
+type Nav = NativeStackNavigationProp<ItemsStackParamList, 'ProductDetail'>;
 
 export default function ProductDetailScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<Nav>();
   const route = useRoute<ProductDetailRouteProp>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  const tabletColumnCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
   const {productId} = route.params;
 
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUnavailable, setIsUnavailable] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [stockModalVisible, setStockModalVisible] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -55,6 +66,21 @@ export default function ProductDetailScreen() {
     load();
   }, [load]);
 
+  // Re-fetch on focus so edits from ProductEdit are reflected when the
+  // user swipes back. Skip the very first focus (the useEffect above
+  // already handled it) — a guard ref isn't needed because the second
+  // fetch is cheap and idempotent, but we avoid the double-loader flash
+  // by only re-loading once we've already got a product.
+  useFocusEffect(
+    useCallback(() => {
+      if (product !== null) {
+        load();
+      }
+      return undefined;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [load]),
+  );
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -69,7 +95,7 @@ export default function ProductDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
-          <Ionicons
+          <Icon
             name="cloud-offline-outline"
             size={36}
             color={COLORS.textDim}
@@ -104,7 +130,7 @@ export default function ProductDetailScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.center}>
-          <Ionicons
+          <Icon
             name="search-outline"
             size={36}
             color={COLORS.textDim}
@@ -148,14 +174,14 @@ export default function ProductDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, tabletColumnCap]}>
         <View style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroTitleWrap}>
               <Text style={styles.name}>{product.name}</Text>
               <View style={styles.metaRow}>
                 <View style={styles.metaItem}>
-                  <Ionicons
+                  <Icon
                     name="pricetag-outline"
                     size={12}
                     color={COLORS.textMuted}
@@ -165,7 +191,7 @@ export default function ProductDetailScreen() {
                 </View>
                 {product.barcode ? (
                   <View style={styles.metaItem}>
-                    <Ionicons
+                    <Icon
                       name="barcode-outline"
                       size={12}
                       color={COLORS.textMuted}
@@ -189,7 +215,7 @@ export default function ProductDetailScreen() {
           <View style={styles.pillRow}>
             {product.category_name ? (
               <View style={styles.categoryPill}>
-                <Ionicons
+                <Icon
                   name="folder-outline"
                   size={12}
                   color={COLORS.text}
@@ -205,7 +231,49 @@ export default function ProductDetailScreen() {
               <Text style={styles.stockPillText}>{stockLabel}</Text>
             </View>
           </View>
+          <View style={styles.actionRow}>
+            <PillButton
+              label="Edit"
+              icon="settings"
+              variant="secondary"
+              onPress={() => {
+                haptics.light();
+                navigation.navigate('ProductEdit', {productId: product.id});
+              }}
+              accessibilityLabel="Edit this item"
+            />
+            <PillButton
+              label="Adjust stock"
+              variant="secondary"
+              onPress={() => {
+                haptics.light();
+                setStockModalVisible(true);
+              }}
+              accessibilityLabel="Adjust stock for this item"
+            />
+          </View>
         </View>
+
+        {product.barcode && canEncodeCode128B(product.barcode) ? (
+          <View style={styles.shareCard}>
+            <View style={styles.shareHeader}>
+              <View style={styles.shareIconBubble}>
+                <Icon name="barcode" size={16} color={COLORS.crimson} />
+              </View>
+              <View style={styles.shareTitleWrap}>
+                <Text style={styles.shareEyebrow}>SHARE BY SCAN</Text>
+                <Text style={styles.shareTitle}>Send this item to another device</Text>
+              </View>
+            </View>
+            <View style={styles.barcodeWrap}>
+              <Barcode value={product.barcode} width={300} height={84} />
+            </View>
+            <Text style={styles.shareHint}>
+              Point another AERIS device&apos;s scanner at this barcode to open
+              the same item there.
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Pricing</Text>
@@ -252,7 +320,7 @@ export default function ProductDetailScreen() {
                   idx === stockLevels.length - 1 && styles.tableRowLast,
                 ]}>
                 <View style={styles.tableLabelWrap}>
-                  <Ionicons
+                  <Icon
                     name="location-outline"
                     size={14}
                     color={COLORS.textMuted}
@@ -318,7 +386,7 @@ export default function ProductDetailScreen() {
             haptics.light();
             navigation.goBack();
           }}>
-          <Ionicons
+          <Icon
             name="chevron-back"
             size={20}
             color={COLORS.white}
@@ -327,6 +395,19 @@ export default function ProductDetailScreen() {
           <Text style={styles.backBtnText}>Back</Text>
         </TouchableOpacity>
       </ScrollView>
+      <StockAdjustModal
+        productId={product.id}
+        productName={product.name}
+        currentStock={product.stock_on_hand ?? 0}
+        visible={stockModalVisible}
+        onClose={() => setStockModalVisible(false)}
+        onAdjusted={newQty => {
+          // Optimistic local update — the next useFocusEffect cycle will
+          // reconcile the full detail (stock_levels, etc.) but reflecting
+          // the new total immediately keeps the UI feeling responsive.
+          setProduct(prev => (prev ? {...prev, stock_on_hand: newQty} : prev));
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -396,6 +477,12 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: SPACING.xs,
     marginTop: SPACING.sm,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
   },
   categoryPill: {
     flexDirection: 'row',
@@ -498,6 +585,53 @@ const styles = StyleSheet.create({
   tableLabel: {color: COLORS.textLight, fontSize: FONT_SIZE.md, flex: 1},
   tableValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bold},
   emptyHint: {color: COLORS.textDim, fontSize: FONT_SIZE.sm, fontStyle: 'italic'},
+  barcodeWrap: {alignItems: 'center', marginVertical: SPACING.sm},
+  shareCard: {
+    ...cardBase,
+    // Slight cream tint + heavier shadow to pop the share affordance from
+    // the rest of the info cards — this is the most novel control on the
+    // screen and users need to find it without hunting.
+    backgroundColor: COLORS.cream,
+    borderColor: COLORS.crimson + '33',
+    shadowColor: COLORS.crimson,
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  shareHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  shareIconBubble: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.crimson + '14',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.sm,
+  },
+  shareTitleWrap: {flex: 1},
+  shareEyebrow: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.bold,
+    letterSpacing: 1.2,
+  },
+  shareTitle: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.semibold,
+    marginTop: 2,
+  },
+  shareHint: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    textAlign: 'center',
+    marginTop: SPACING.xs,
+  },
   variantRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

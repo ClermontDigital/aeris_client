@@ -11,7 +11,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {
   COLORS,
   SPACING,
@@ -22,6 +22,7 @@ import {
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 import type {SaleDetail, Sale} from '../types/api.types';
@@ -60,6 +61,10 @@ export default function SaleDetailScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<SaleDetailRouteProp>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  const tabletColumnCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
   const {saleId} = route.params;
 
   const [sale, setSale] = useState<SaleDetail | null>(null);
@@ -147,7 +152,7 @@ export default function SaleDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, tabletColumnCap]}>
         <View style={styles.card}>
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
@@ -251,7 +256,7 @@ export default function SaleDetailScreen() {
               haptics.light();
               navigation.goBack();
             }}>
-            <Ionicons
+            <Icon
               name="chevron-back"
               size={ICON_SIZE.action}
               color={COLORS.white}

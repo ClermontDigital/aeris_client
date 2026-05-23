@@ -35,7 +35,12 @@ const FIX_WEBSITE = process.argv.includes('--fix-website');
 // ---- canonical -----------------------------------------------------------
 
 const canonical = JSON.parse(readFileSync(CANONICAL_PATH, 'utf8'));
+// `color` = brand-locked palette (§04); both consumers must mirror.
+// `support-color` = mobile-only convenience variants; checked against
+// mobile only, not the website.
 const canonicalColors = canonical.color;
+const canonicalSupportColors = canonical['support-color'] || {};
+const canonicalMobileColors = {...canonicalColors, ...canonicalSupportColors};
 
 // Normalise hex for comparison. Lowercases, expands 3-digit to 6-digit so
 // `#900` and `#990000` compare equal. Pass-through for non-hex.
@@ -57,17 +62,18 @@ function normHex(value) {
 // `const NAVY = ...` declarations plus camelCase keys inside `COLORS = { }`.
 // We accept either; first match wins.
 const MOBILE_COLOR_MAP = {
+  // v0.3 brand palette (§04)
+  'royal':              ['ROYAL_RED', 'royal'],
+  'crimson':            ['CRIMSON', 'crimson'],
   'navy':               ['NAVY', 'navy'],
+  'blue':               ['DUSTY_BLUE', 'blue'],
+  'cream':              ['CREAM', 'cream'],
+  // supporting tokens (variants of the five base colours)
   'navy-light':         ['NAVY_LIGHT', 'navyLight'],
   'navy-deep':          ['NAVY_DEEP', 'navyDeep'],
   'navy-ink':           ['NAVY_INK', 'navyInk'],
-  'cream':              ['CREAM', 'cream'],
   'cream-light':        ['CREAM_LIGHT', 'creamLight'],
-  'paper':              ['PAPER', 'paper'],
-  'crimson':            ['CRIMSON', 'crimson'],
   'crimson-dark':       ['CRIMSON_DARK', 'crimsonDark'],
-  'crimson-ink':        ['CRIMSON_INK', 'crimsonInk'],
-  'blue-accent':        ['BLUE_ACCENT', 'blueAccent'],
   'text-body':          ['TEXT_BODY', 'textBody'],
   'text-on-dark-muted': ['TEXT_ON_DARK_MUTED', 'textOnDarkMuted'],
 };
@@ -93,10 +99,18 @@ function extractMobileColors(src) {
 
 function extractWebsiteColors(src) {
   const found = {};
-  const re = /--aeris-([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;/g;
+  // First pass: direct hex assignments.
+  const hexRe = /--aeris-([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;/g;
   let m;
-  while ((m = re.exec(src))) {
+  while ((m = hexRe.exec(src))) {
     found[m[1]] = normHex(m[2]);
+  }
+  // Second pass: var() indirection (e.g. `--aeris-text-body: var(--aeris-navy)`).
+  // Resolve transitively against direct-hex tokens we just collected.
+  const varRe = /--aeris-([a-z0-9-]+)\s*:\s*var\(--aeris-([a-z0-9-]+)\)\s*;/g;
+  while ((m = varRe.exec(src))) {
+    const target = m[2];
+    if (target in found) found[m[1]] = found[target];
   }
   return found;
 }
@@ -118,7 +132,7 @@ function fmt(label, color) {
 
 function diffMobile(mobileFound) {
   const rows = [];
-  for (const [key, expected] of Object.entries(canonicalColors)) {
+  for (const [key, expected] of Object.entries(canonicalMobileColors)) {
     const candidates = MOBILE_COLOR_MAP[key] || [];
     let actual;
     let resolvedAs;

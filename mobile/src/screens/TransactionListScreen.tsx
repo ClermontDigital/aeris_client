@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useMemo} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {
   COLORS,
   SPACING,
@@ -19,15 +19,16 @@ import {
   FONT_FAMILY,
   BORDER_RADIUS,
   ICON_SIZE,
+  SHADOW,
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
-import StatCard, {pickStatRowFontSize} from '../components/StatCard';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 import type {Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
-import {formatCurrency, formatCurrencyWhole} from '../utils/format';
+import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<TransactionsStackParamList>;
 
@@ -77,14 +78,13 @@ function getStatusColor(status: Sale['status']): string {
   }
 }
 
-function isToday(iso: string): boolean {
-  const today = new Date().toISOString().split('T')[0];
-  return iso.startsWith(today);
-}
-
 export default function TransactionListScreen() {
   const navigation = useNavigation<NavigationProp>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  const tabletColumnCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
 
   const [transactions, setTransactions] = useState<Sale[]>([]);
   // Default to 'all' so the screen renders populated on first open. Filters
@@ -169,17 +169,6 @@ export default function TransactionListScreen() {
     [navigation, haptics],
   );
 
-  // Stat strip aggregates derived client-side from the visible page.
-  const stats = useMemo(() => {
-    const todayTx = transactions.filter(t => isToday(t.created_at));
-    const todayCount = todayTx.length;
-    const todayRevenueCents = todayTx.reduce(
-      (sum, t) => sum + (t.total_cents || 0),
-      0,
-    );
-    return {todayCount, todayRevenueCents};
-  }, [transactions]);
-
   const renderTransaction = ({item}: {item: Sale}) => (
     <TouchableOpacity
       style={styles.transactionRow}
@@ -204,7 +193,7 @@ export default function TransactionListScreen() {
           <Text style={styles.statusText}>{item.status}</Text>
         </View>
       </View>
-      <Ionicons
+      <Icon
         name="chevron-forward"
         size={ICON_SIZE.action}
         color={COLORS.textMuted}
@@ -259,9 +248,9 @@ export default function TransactionListScreen() {
     );
   };
 
-  const FILTERS: {key: DateFilter; label: string; icon: keyof typeof Ionicons.glyphMap}[] = [
+  const FILTERS: {key: DateFilter; label: string; icon: React.ComponentProps<typeof Icon>['name']}[] = [
     {key: 'today', label: 'Today', icon: 'today-outline'},
-    {key: 'week', label: 'This Week', icon: 'calendar-outline'},
+    {key: 'week', label: 'This week', icon: 'calendar-outline'},
     {key: 'all', label: 'All', icon: 'list-outline'},
   ];
 
@@ -272,37 +261,12 @@ export default function TransactionListScreen() {
         <Text style={styles.headerTitle}>Transactions</Text>
       </View>
 
-      {/* Stat strip — derived from the currently-loaded page so the values
-          stay coherent with the visible list rows. Two cards: count of
-          sales today, and today's total revenue (whole-dollar to avoid
-          crowding the narrow column with decimals). Shared font size so
-          "5" and "$1,235" render at the same visual scale. */}
-      {(() => {
-        const todayCountStr = String(stats.todayCount);
-        const todayRevStr = formatCurrencyWhole(stats.todayRevenueCents);
-        const fs = pickStatRowFontSize([todayCountStr, todayRevStr]);
-        return (
-          <View style={styles.statStrip}>
-            <View style={styles.statCell}>
-              <StatCard
-                label="Sales Today"
-                value={todayCountStr}
-                valueFontSize={fs}
-              />
-            </View>
-            <View style={styles.statCell}>
-              <StatCard
-                label="Revenue Today"
-                value={todayRevStr}
-                valueFontSize={fs}
-              />
-            </View>
-          </View>
-        );
-      })()}
+      {/* Stat strip removed in v1.3.26 — the Sales today / Revenue today
+          tiles duplicated information already on the Dashboard. The list
+          + date filters carry the page on their own. */}
 
       {/* Date Filter — pill style mirroring desktop's .aeris-nav-active */}
-      <View style={styles.filterRow}>
+      <View style={[styles.filterRow, tabletColumnCap]}>
         {FILTERS.map(f => {
           const active = dateFilter === f.key;
           return (
@@ -316,7 +280,7 @@ export default function TransactionListScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Filter ${f.label}`}
               accessibilityState={{selected: active}}>
-              <Ionicons
+              <Icon
                 name={f.icon}
                 size={ICON_SIZE.action}
                 color={active ? COLORS.cream : COLORS.textMuted}
@@ -336,7 +300,7 @@ export default function TransactionListScreen() {
 
       {/* Error */}
       {error ? (
-        <View style={styles.errorWrap}>
+        <View style={[styles.errorWrap, tabletColumnCap]}>
           <ErrorBanner message={error} onRetry={() => fetchTransactions(1)} />
         </View>
       ) : null}
@@ -356,6 +320,9 @@ export default function TransactionListScreen() {
           data={transactions}
           renderItem={renderTransaction}
           keyExtractor={item => String(item.id)}
+          // tabletColumnCap on `style` (outer scroll container), not
+          // `contentContainerStyle` — see ItemsScreen for the rationale.
+          style={tabletColumnCap}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={renderFooter}
@@ -390,36 +357,32 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xxl,
     fontFamily: FONT_FAMILY.bold,
   },
-  statStrip: {
-    flexDirection: 'row',
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.md,
-    gap: SPACING.sm,
-  },
-  statCell: {flex: 1},
   filterRow: {
     flexDirection: 'row',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
   },
-  // Pill: inactive transparent + muted text + surface border;
-  // active solid crimson + cream text + crimson border (mirrors
-  // desktop's .aeris-nav-active state).
+  // Pill: inactive = white surface with a navy outline + navy text so it
+  // reads clearly against the cream body bg; active = solid Red Dirt Red
+  // pill with white text. Pre-v1.3.22 the inactive state was a
+  // transparent fill which blended into the cream body and looked beige.
   filterButton: {
     flex: 1,
     flexDirection: 'row',
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.sm,
-    borderRadius: BORDER_RADIUS.lg,
-    backgroundColor: COLORS.transparent,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: COLORS.navy,
     alignItems: 'center',
     justifyContent: 'center',
-    // Apple HIG / Material both require 44pt minimum tap target. The visual
-    // padding stays at SPACING.sm — minHeight just enforces the floor.
+    // Apple HIG / Material both require 44pt minimum tap target.
     minHeight: 44,
+    // Soft elevation so the chips lift off the cream surface — matches
+    // the StatCard treatment a couple of rows above.
+    ...SHADOW.card,
   },
   filterButtonActive: {
     backgroundColor: COLORS.crimson,
@@ -427,12 +390,13 @@ const styles = StyleSheet.create({
   },
   filterIcon: {marginRight: SPACING.xs},
   filterButtonText: {
-    color: COLORS.textMuted,
+    color: COLORS.navy,
     fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.medium,
+    fontFamily: FONT_FAMILY.semibold,
+    letterSpacing: 0.2,
   },
   filterButtonTextActive: {
-    color: COLORS.cream,
+    color: COLORS.white,
   },
   errorWrap: {
     paddingHorizontal: SPACING.md,

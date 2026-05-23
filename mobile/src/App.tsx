@@ -88,9 +88,9 @@ const App: React.FC = () => {
   // screen forever — proceed without Poppins and let the system font
   // fall through.
   const [fontsLoaded, fontError] = useFonts({
-    'Poppins-Light': require('../assets/fonts/Poppins-Light.ttf'),
     'Poppins-Regular': require('../assets/fonts/Poppins-Regular.ttf'),
     'Poppins-Medium': require('../assets/fonts/Poppins-Medium.ttf'),
+    'Poppins-SemiBold': require('../assets/fonts/Poppins-SemiBold.ttf'),
     'Poppins-Bold': require('../assets/fonts/Poppins-Bold.ttf'),
   });
   if (fontError) {
@@ -100,10 +100,12 @@ const App: React.FC = () => {
 
   const initSettings = useSettingsStore(s => s.init);
   const settings = useSettingsStore(s => s.settings);
+  const settingsLoading = useSettingsStore(s => s.isLoading);
   const restoreSession = useAuthStore(s => s.restoreSession);
   const clearLocalSession = useAuthStore(s => s.clearLocalSession);
   const restoreCache = useProductCacheStore(s => s.restoreCache);
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const authLoading = useAuthStore(s => s.isLoading);
   const expiresAt = useAuthStore(s => s.expiresAt);
   const refreshSession = useAuthStore(s => s.refreshSession);
   const initAppLock = useAppLockStore(s => s.init);
@@ -112,14 +114,41 @@ const App: React.FC = () => {
   const hasPin = useAppLockStore(s => s.hasPin);
   const lockInitialized = useAppLockStore(s => s.initialized);
 
-  // Hide the native splash once fonts have loaded OR errored. The errored
-  // branch lets the user into the app rendered with the system font rather
-  // than stuck staring at the brand splash.
-  const onLayoutRootView = useCallback(async () => {
-    if (fontsReady) {
-      await SplashScreen.hideAsync().catch(() => {});
+  // Hide the native splash only when BOTH the font load has settled AND the
+  // first useful UI is about to paint. v1.3.20 hid the splash the moment
+  // `fontsReady` flipped — on a slow Android cold boot where fonts resolve
+  // before `restoreSession` (and friends) does, the native splash dropped
+  // ahead of the navigator's first paint and the user saw a brief navy
+  // <View> flash bridge between the two layers. Couple the gate to the
+  // boot pipeline (settings + auth done loading) so the brand splash holds
+  // continuously into the navigator's first frame.
+  //
+  // The 1.5s fallback guarantees we never re-introduce the original
+  // "splash stuck forever" bug: if either store wedges (network hang in
+  // initSettings, secure-store read deadlocks restoreSession, font asset
+  // takes its time to decode after the timer races ahead), we still drop
+  // the native splash and let the JS-side `showSplash` <View> bridge the
+  // remainder.
+  const splashHiddenRef = useRef(false);
+  const hideSplashOnce = useCallback(() => {
+    if (splashHiddenRef.current) return;
+    splashHiddenRef.current = true;
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (splashHiddenRef.current) return;
+    const bootReady = fontsReady && !settingsLoading && !authLoading;
+    if (bootReady) {
+      hideSplashOnce();
+      return;
     }
-  }, [fontsReady]);
+    if (!fontsReady) return;
+    // Fonts have settled but the async boot chain is still running.
+    // Arm the 1.5s safety net so a wedged init can't keep the splash up.
+    const timer = setTimeout(hideSplashOnce, 1500);
+    return () => clearTimeout(timer);
+  }, [fontsReady, settingsLoading, authLoading, hideSplashOnce]);
 
   useEffect(() => {
     let cancelled = false;
@@ -287,7 +316,6 @@ const App: React.FC = () => {
       <SafeAreaProvider>
         <StatusBar hidden />
         <NavigationContainer
-          onReady={onLayoutRootView}
           theme={{
             dark: true,
             colors: {
