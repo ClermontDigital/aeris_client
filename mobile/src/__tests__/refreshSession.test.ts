@@ -1,5 +1,6 @@
 import ApiClient, {RelayError} from '../services/ApiClient';
 import {useAuthStore} from '../stores/authStore';
+import {useSettingsStore} from '../stores/settingsStore';
 import {SecureStorage} from '../services/StorageService';
 import type {AuthResponse} from '../types/api.types';
 
@@ -36,11 +37,19 @@ function resetAuthStore() {
   });
 }
 
+function setKeepSignedIn(value: boolean) {
+  const current = useSettingsStore.getState().settings;
+  useSettingsStore.setState({settings: {...current, keepSignedIn: value}});
+}
+
 describe('refreshSession', () => {
   let refreshSpy: jest.SpyInstance;
 
   beforeEach(() => {
     resetAuthStore();
+    // Default opt-in matches the "Keep me signed in" default. Per-test
+    // overrides flip this where needed.
+    setKeepSignedIn(true);
     // Pre-seed the in-memory token so we can observe ApiClient.setAuthToken
     // overwrite it.
     ApiClient.setAuthToken('OLD_TOKEN');
@@ -131,6 +140,69 @@ describe('refreshSession', () => {
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     expect(useAuthStore.getState().token).toBe('CONCURRENT_TOKEN');
     expect(useAuthStore.getState().refreshInFlight).toBeNull();
+  });
+
+  it('persists the new token to SecureStorage when keepSignedIn is true', async () => {
+    setKeepSignedIn(true);
+    const response = makeAuthResponse({access_token: 'KEEP_ON_TOKEN'});
+    refreshSpy = jest
+      .spyOn(ApiClient, 'refreshToken')
+      .mockResolvedValueOnce(response);
+    const setItemSpy = jest.spyOn(SecureStorage, 'setItem');
+
+    await useAuthStore.getState().refreshSession();
+
+    // SecureStorage.setItem was called with the new token under AUTH_TOKEN_KEY.
+    const tokenCalls = setItemSpy.mock.calls.filter(
+      ([key]) => key === AUTH_TOKEN_KEY,
+    );
+    expect(tokenCalls.length).toBeGreaterThan(0);
+    expect(tokenCalls[tokenCalls.length - 1][1]).toBe('KEEP_ON_TOKEN');
+    // In-memory state advanced too.
+    expect(useAuthStore.getState().token).toBe('KEEP_ON_TOKEN');
+    // And the Keychain readback confirms the persisted value.
+    expect(await SecureStorage.getItem(AUTH_TOKEN_KEY)).toBe('KEEP_ON_TOKEN');
+  });
+
+  it('does NOT persist to SecureStorage when keepSignedIn is false but still updates in-memory state', async () => {
+    setKeepSignedIn(false);
+    // Seed the Keychain with a stale token from an earlier opted-in window;
+    // the refresh path is also responsible for scrubbing that.
+    await SecureStorage.setItem(AUTH_TOKEN_KEY, 'STALE_PERSISTED_TOKEN');
+    await SecureStorage.setItem(AUTH_USER_KEY, '{"id":1,"email":"t@e.com"}');
+    await SecureStorage.setItem(AUTH_EXPIRES_KEY, '2098-01-01T00:00:00Z');
+
+    const response = makeAuthResponse({access_token: 'OPTED_OUT_TOKEN'});
+    refreshSpy = jest
+      .spyOn(ApiClient, 'refreshToken')
+      .mockResolvedValueOnce(response);
+    const setItemSpy = jest.spyOn(SecureStorage, 'setItem');
+
+    await useAuthStore.getState().refreshSession();
+
+    // The token must NEVER be written under AUTH_TOKEN_KEY when opted out.
+    const tokenWrites = setItemSpy.mock.calls.filter(
+      ([key]) => key === AUTH_TOKEN_KEY,
+    );
+    expect(tokenWrites).toHaveLength(0);
+    // Same for user + expires — opt-out means nothing persisted.
+    const userWrites = setItemSpy.mock.calls.filter(
+      ([key]) => key === AUTH_USER_KEY,
+    );
+    expect(userWrites).toHaveLength(0);
+    const expiresWrites = setItemSpy.mock.calls.filter(
+      ([key]) => key === AUTH_EXPIRES_KEY,
+    );
+    expect(expiresWrites).toHaveLength(0);
+    // In-memory state DID advance — the user stays authenticated for this
+    // app launch; opt-out only affects cold-start restoration.
+    expect(useAuthStore.getState().token).toBe('OPTED_OUT_TOKEN');
+    expect(useAuthStore.getState().expiresAt).toBe('2099-01-01T00:00:00Z');
+    // Stale persisted creds from the prior opted-in window get scrubbed so
+    // a future cold start can't resurrect a dead session.
+    expect(await SecureStorage.getItem(AUTH_TOKEN_KEY)).toBeNull();
+    expect(await SecureStorage.getItem(AUTH_USER_KEY)).toBeNull();
+    expect(await SecureStorage.getItem(AUTH_EXPIRES_KEY)).toBeNull();
   });
 
   it('does not clear session on transport / network errors and resets refreshInFlight', async () => {

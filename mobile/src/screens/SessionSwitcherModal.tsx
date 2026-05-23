@@ -52,7 +52,11 @@ const SessionSwitcherModal: React.FC<Props> = ({visible, onClose, onCreateNew}) 
 
   if (pinForSession) {
     return (
-      <Modal isVisible={visible} onBackdropPress={() => setPinForSession(null)} style={styles.modal}>
+      <Modal
+        isVisible={visible}
+        onBackdropPress={() => setPinForSession(null)}
+        onBackButtonPress={() => setPinForSession(null)}
+        style={styles.modal}>
         <View style={styles.pinContent}>
           <PinPad
             title="Enter PIN"
@@ -66,7 +70,11 @@ const SessionSwitcherModal: React.FC<Props> = ({visible, onClose, onCreateNew}) 
   }
 
   return (
-    <Modal isVisible={visible} onBackdropPress={onClose} style={styles.modal}>
+    <Modal
+      isVisible={visible}
+      onBackdropPress={onClose}
+      onBackButtonPress={onClose}
+      style={styles.modal}>
       <View style={styles.content}>
         <Text style={styles.title}>Sessions</Text>
         <ScrollView horizontal style={styles.scrollView}>

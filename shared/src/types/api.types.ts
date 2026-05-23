@@ -89,6 +89,10 @@ export interface Sale {
   discount_cents: number;
   status: 'completed' | 'refunded' | 'voided';
   items_count: number;
+  // customer_id lets list screens (e.g. Dashboard's recent customers)
+  // navigate to CustomerDetail directly without needing a second lookup
+  // by name. Null on walk-in sales.
+  customer_id: number | null;
   customer_name: string | null;
   created_at: string;
 }

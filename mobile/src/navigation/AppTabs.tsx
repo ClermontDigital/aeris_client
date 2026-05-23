@@ -12,7 +12,7 @@ import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import Svg, {Path} from 'react-native-svg';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import DashboardScreen from '../screens/DashboardScreen';
 import QuickSaleStack from './QuickSaleStack';
 import ItemsStack from './ItemsStack';
@@ -147,7 +147,7 @@ const AppTabs: React.FC = () => {
         accessibilityRole="button"
         accessibilityLabel="Open settings"
         hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-        <Ionicons name="settings-outline" size={22} color={COLORS.navy} />
+        <Icon name="settings-outline" size={22} color={COLORS.navy} />
       </TouchableOpacity>
       <Tab.Navigator
         initialRouteName="Dashboard"
@@ -165,7 +165,7 @@ const AppTabs: React.FC = () => {
           component={DashboardScreen}
           options={{
             tabBarIcon: ({color, size}) => (
-              <Ionicons name="stats-chart" size={size} color={color} />
+              <Icon name="stats-chart" size={size} color={color} />
             ),
           }}
         />
@@ -175,7 +175,7 @@ const AppTabs: React.FC = () => {
           options={{
             tabBarLabel: 'Sale',
             tabBarIcon: ({color, size}) => (
-              <Ionicons name="cart" size={size} color={color} />
+              <Icon name="cart" size={size} color={color} />
             ),
             tabBarBadge:
               cartCount === 0
@@ -194,7 +194,7 @@ const AppTabs: React.FC = () => {
           component={ItemsStack}
           options={{
             tabBarIcon: ({color, size}) => (
-              <Ionicons name="cube" size={size} color={color} />
+              <Icon name="cube" size={size} color={color} />
             ),
           }}
         />
@@ -203,7 +203,7 @@ const AppTabs: React.FC = () => {
           component={CustomersStack}
           options={{
             tabBarIcon: ({color, size}) => (
-              <Ionicons name="people" size={size} color={color} />
+              <Icon name="people" size={size} color={color} />
             ),
           }}
         />
@@ -212,7 +212,7 @@ const AppTabs: React.FC = () => {
           component={TransactionsStack}
           options={{
             tabBarIcon: ({color, size}) => (
-              <Ionicons name="receipt" size={size} color={color} />
+              <Icon name="receipt" size={size} color={color} />
             ),
           }}
         />
@@ -223,7 +223,7 @@ const AppTabs: React.FC = () => {
             options={{
               tabBarLabel: 'Aeris',
               tabBarIcon: ({color, size}) => (
-                <Ionicons name="globe" size={size} color={color} />
+                <Icon name="globe" size={size} color={color} />
               ),
             }}
           />

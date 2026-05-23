@@ -110,6 +110,8 @@ export class ApiClient {
   // --- Inventory ---
   getStock = (...args: Parameters<RelayClient['getStock']>) =>
     this.active.getStock(...args);
+  adjustStock = (...args: Parameters<RelayClient['adjustStock']>) =>
+    this.active.adjustStock(...args);
 
   // --- Sales ---
   createSale = (...args: Parameters<RelayClient['createSale']>) =>
@@ -128,6 +130,20 @@ export class ApiClient {
     this.active.listCustomers(...args);
   getCustomerDetail = (...args: Parameters<RelayClient['getCustomerDetail']>) =>
     this.active.getCustomerDetail(...args);
+
+  // --- Customers (writes) ---
+  createCustomer = (...args: Parameters<RelayClient['createCustomer']>) =>
+    this.active.createCustomer(...args);
+  updateCustomer = (...args: Parameters<RelayClient['updateCustomer']>) =>
+    this.active.updateCustomer(...args);
+  deleteCustomer = (...args: Parameters<RelayClient['deleteCustomer']>) =>
+    this.active.deleteCustomer(...args);
+
+  // --- Products (writes) ---
+  createProduct = (...args: Parameters<RelayClient['createProduct']>) =>
+    this.active.createProduct(...args);
+  updateProduct = (...args: Parameters<RelayClient['updateProduct']>) =>
+    this.active.updateProduct(...args);
 }
 
 // RelayError remains importable from this module for back-compat with

@@ -39,10 +39,27 @@ jest.mock('../../services/ApiClient', () => ({
 // Auth store — the dashboard greets a first name. Stub the selector hook so
 // we don't pull zustand into RTL's renderer (the real shim hits a use-sync-
 // external-store mismatch under jest-expo).
-jest.mock('../../stores/authStore', () => ({
-  useAuthStore: (selector: (s: {user: {name: string}}) => unknown) =>
-    selector({user: {name: 'Alex Tester'}}),
-}));
+jest.mock('../../stores/authStore', () => {
+  // Minimal shape: most callers use the selector form, ErrorBanner reads
+  // via `getState()` AND now also calls `subscribe()` (since the v1.3.25
+  // re-render-on-auth-change fix). The mock has to expose all three call
+  // styles. `isAuthenticated: true` keeps the suppression off in this test —
+  // the relay-error path under test is a network failure, not an auth
+  // expiry. `subscribe` returns a no-op unsubscribe; the store state never
+  // changes during the test so the listener never fires.
+  const state = {
+    user: {name: 'Alex Tester'},
+    isAuthenticated: true,
+    errorKind: null,
+  };
+  const useAuthStore = (selector: (s: typeof state) => unknown) =>
+    selector(state);
+  (useAuthStore as unknown as {getState: () => typeof state}).getState = () =>
+    state;
+  (useAuthStore as unknown as {subscribe: (l: () => void) => () => void}).subscribe =
+    () => () => undefined;
+  return {useAuthStore};
+});
 
 // Settings store — dashboard reads dashboardSecondaryWidget. Default to
 // 'top_products' to preserve the prior test behaviour.
@@ -105,8 +122,8 @@ describe('DashboardScreen', () => {
 
     expect(getByText('3')).toBeTruthy(); // sales_count
     expect(getByText('5')).toBeTruthy(); // items_sold
-    expect(getByText('Items Sold')).toBeTruthy();
-    expect(getByText('Avg Sale')).toBeTruthy();
+    expect(getByText('Items sold')).toBeTruthy();
+    expect(getByText('Avg sale')).toBeTruthy();
   });
 
   it('surfaces a relay error via ErrorBanner with a retry affordance', async () => {

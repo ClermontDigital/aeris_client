@@ -10,8 +10,8 @@ import {
   RefreshControl,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Ionicons} from '@expo/vector-icons';
-import {useNavigation} from '@react-navigation/native';
+import Icon from '../components/Icon';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {
   COLORS,
@@ -23,11 +23,13 @@ import {
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {Customer} from '../types/api.types';
 import type {CustomersStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
+import PillButton from '../components/PillButton';
 
 type Nav = NativeStackNavigationProp<CustomersStackParamList>;
 
@@ -55,6 +57,10 @@ function localFilter(items: Customer[], q: string): Customer[] {
 const CustomersScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const haptics = useHaptics();
+  const {isTablet} = useResponsiveLayout();
+  const tabletColumnCap = isTablet
+    ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
+    : null;
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<Customer[]>([]);
   const [page, setPage] = useState(1);
@@ -94,6 +100,17 @@ const CustomersScreen: React.FC = () => {
   useEffect(() => {
     fetchPage(1, false);
   }, [fetchPage]);
+
+  // Refresh on focus so the list re-pulls after CustomerEdit (create or
+  // delete). The empty-deps Effect above covers the initial mount; this
+  // useFocusEffect kicks in on every subsequent return-to-list. We don't
+  // setIsLoading(true) here — the existing list stays visible, the new
+  // page swaps in once the request resolves.
+  useFocusEffect(
+    useCallback(() => {
+      fetchPage(1, false);
+    }, [fetchPage]),
+  );
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
@@ -143,7 +160,7 @@ const CustomersScreen: React.FC = () => {
             <Text style={styles.rowBalanceLabel}>balance</Text>
           </View>
         ) : null}
-        <Ionicons
+        <Icon
           name="chevron-forward"
           size={ICON_SIZE.action}
           color={COLORS.textMuted}
@@ -183,10 +200,20 @@ const CustomersScreen: React.FC = () => {
       edges={['left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Customers</Text>
+        <PillButton
+          label="New customer"
+          icon="plus"
+          variant="solid"
+          onPress={() => {
+            haptics.light();
+            navigation.navigate('CustomerEdit');
+          }}
+          accessibilityLabel="Create a new customer"
+        />
       </View>
 
-      <View style={styles.searchRow}>
-        <Ionicons
+      <View style={[styles.searchRow, tabletColumnCap]}>
+        <Icon
           name="search"
           size={ICON_SIZE.action}
           color={COLORS.textMuted}
@@ -204,7 +231,7 @@ const CustomersScreen: React.FC = () => {
         />
         {search ? (
           <TouchableOpacity onPress={() => setSearch('')} style={styles.clearBtn}>
-            <Ionicons
+            <Icon
               name="close-circle"
               size={ICON_SIZE.action}
               color={COLORS.textMuted}
@@ -214,7 +241,7 @@ const CustomersScreen: React.FC = () => {
       </View>
 
       {error ? (
-        <View style={styles.bannerWrap}>
+        <View style={[styles.bannerWrap, tabletColumnCap]}>
           <ErrorBanner
             message={error}
             onRetry={() => fetchPage(1, false)}
@@ -234,6 +261,9 @@ const CustomersScreen: React.FC = () => {
           data={visible}
           renderItem={renderItem}
           keyExtractor={item => String(item.id)}
+          // tabletColumnCap on `style` (outer scroll container), not
+          // `contentContainerStyle` — see ItemsScreen for the rationale.
+          style={tabletColumnCap}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={renderFooter}
@@ -256,9 +286,13 @@ const CustomersScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: COLORS.background},
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.md,
     paddingBottom: SPACING.sm,
+    gap: SPACING.sm,
   },
   headerTitle: {
     color: COLORS.text,

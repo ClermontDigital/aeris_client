@@ -1,6 +1,7 @@
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from './Icon';
+import {useAuthStore} from '../stores/authStore';
 import {
   COLORS,
   SPACING,
@@ -28,6 +29,34 @@ const ErrorBanner: React.FC<ErrorBannerProps> = ({
   onRetry,
   onDismiss,
 }) => {
+  // Suppress the banner the instant the auth store wipes the session — a 401
+  // routes through clearLocalSession which flips isAuthenticated to false and
+  // the RootNavigator transitions to the Auth stack with a fade animation.
+  // During that fade the originating screen (Dashboard, Items, etc.) stays
+  // mounted for ~250ms and its catch block has already called setError, so
+  // without this guard the user briefly sees "Authentication expired. Retry"
+  // before landing on LoginScreen — confusing UX. The LoginScreen has its own
+  // "Your session expired" affordance keyed on errorKind === 'expired'.
+  //
+  // We subscribe to the auth store via zustand's non-hook `subscribe()` API
+  // and force a local re-render when the relevant slice changes, instead of
+  // using `useAuthStore(selector)`. The selector path goes through
+  // `useSyncExternalStoreWithSelector` which calls React hooks — and the
+  // monorepo has a dual-React situation (root pulls react 18.3.1 for the
+  // desktop client; this workspace ships 19.2.0). The store's React copy
+  // and the renderer's can disagree, which under Jest in particular crashes
+  // the hook call. `subscribe()` is just an event emitter and never touches
+  // React, so it works regardless of which React zustand resolved against;
+  // we then read state with `getState()` at render time and the forceTick
+  // state below guarantees we re-render when auth flips.
+  const [, forceTick] = React.useState(0);
+  React.useEffect(
+    () => useAuthStore.subscribe(() => forceTick(t => t + 1)),
+    [],
+  );
+  const auth = useAuthStore.getState();
+  if (!auth.isAuthenticated && auth.errorKind === 'expired') return null;
+
   const palette =
     tone === 'warning'
       ? {
@@ -48,7 +77,7 @@ const ErrorBanner: React.FC<ErrorBannerProps> = ({
       style={[styles.container, {backgroundColor: palette.bg}]}
       accessibilityRole="alert"
       accessibilityLiveRegion="polite">
-      <Ionicons
+      <Icon
         name={palette.icon}
         size={ICON_SIZE.hero}
         color={palette.fg}
@@ -74,7 +103,7 @@ const ErrorBanner: React.FC<ErrorBannerProps> = ({
           accessibilityRole="button"
           accessibilityLabel="Dismiss"
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <Ionicons name="close" size={ICON_SIZE.hero - 4} color={palette.fg} />
+          <Icon name="close" size={ICON_SIZE.hero - 4} color={palette.fg} />
         </TouchableOpacity>
       ) : null}
     </View>

@@ -4,10 +4,17 @@ import {
   Text,
   StyleSheet,
   View,
+  Platform,
   type ViewStyle,
   type StyleProp,
 } from 'react-native';
-import {Ionicons} from '@expo/vector-icons';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import Icon from './Icon';
 import {
   COLORS,
   SPACING,
@@ -19,30 +26,41 @@ import {
 } from '../constants/theme';
 import {useHaptics} from '../hooks/useHaptics';
 
-// Mobile counterpart to the marketing website's nav CTA pattern
-// (aeris_websitev3/app/components/Navigation.tsx, the "Try it free"
-// button). Two variants:
-//   - 'outline' (default): 1px crimson border, transparent background, crimson
-//     text. On press the pill fills crimson and the label flips to cream —
-//     mirrors the web's hover state, just bound to Pressable's pressed
-//     callback instead.
-//   - 'solid': pre-filled crimson with cream text, for primary CTAs
-//     (LoginScreen submit, "Start a Sale" on the dashboard, etc).
-// Padding/typography is tuned to match the web pill almost exactly:
-// vertical padding sits between sm and md so the pill stays compact,
-// horizontal padding is lg so labels breathe.
+// Button per AERIS Visual Brand Guidelines v0.3 §10.
+// Variants mirror the spec's hierarchy:
+//   - 'solid'       PRIMARY     — filled Red Dirt Red, white text, SemiBold.
+//                                 Pill radius. One per view.
+//   - 'secondary'   SECONDARY   — outlined Loyal Navy, navy text, no fill.
+//                                 Same dimensions as primary.
+//   - 'tertiary'    TERTIARY    — Loyal Navy text only, no fill, no border.
+//   - 'destructive' DESTRUCTIVE — filled Royal Red. Irreversible actions only
+//                                 (e.g. delete account).
+//   - 'outline'     LEGACY      — crimson border that fills on press. Kept for
+//                                 the marketing-site "Try it free" CTA echo on
+//                                 LoginScreen / dashboard; avoid in new code,
+//                                 prefer 'secondary'.
+// Padding/typography is tuned to match the web pill: vertical padding sits
+// between sm and md so the pill stays compact, horizontal padding is lg so
+// labels breathe (1.5-2x the vertical, per §10).
 
-export type PillButtonVariant = 'outline' | 'solid';
+export type PillButtonVariant =
+  | 'solid'
+  | 'secondary'
+  | 'tertiary'
+  | 'destructive'
+  | 'outline';
 
 export interface PillButtonProps {
   label: string;
   onPress: () => void;
   variant?: PillButtonVariant;
   disabled?: boolean;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: React.ComponentProps<typeof Icon>['name'];
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const PillButton: React.FC<PillButtonProps> = ({
   label,
@@ -54,38 +72,77 @@ const PillButton: React.FC<PillButtonProps> = ({
   style,
 }) => {
   const haptics = useHaptics();
+  // Press-scale via Reanimated — runs on the UI thread, so the dip lands
+  // even when JS is busy (catalog filter, store mutation, etc.). Tertiary
+  // is "text-only" by spec, so we skip the scale there to keep that variant
+  // calm. Tap haptic still fires.
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{scale: scale.value}],
+  }));
 
   const handlePress = () => {
     if (disabled) return;
     haptics.light();
     onPress();
   };
+  const handlePressIn = () => {
+    if (disabled || variant === 'tertiary') return;
+    scale.value = withTiming(0.97, {duration: 80});
+  };
+  const handlePressOut = () => {
+    if (disabled || variant === 'tertiary') return;
+    scale.value = withSpring(1, {damping: 14, stiffness: 220});
+  };
 
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{disabled}}
+      // Android-native ripple on top of the iOS-style scale — both platforms
+      // get tactile feedback that matches the platform's idiom. Borderless
+      // false so the ripple respects the pill shape.
+      android_ripple={
+        disabled || Platform.OS !== 'android'
+          ? undefined
+          : {
+              color:
+                variant === 'solid' || variant === 'destructive'
+                  ? 'rgba(255,255,255,0.18)'
+                  : 'rgba(193, 18, 31, 0.12)',
+              borderless: false,
+              foreground: true,
+            }
+      }
       // Pressable's children-as-function form lets us flip styles in the
       // pressed state without a state hook — matches the web's :hover.
       style={({pressed}) => [
         styles.base,
-        variant === 'solid' ? styles.solid : styles.outline,
+        variant === 'solid' && styles.solid,
+        variant === 'secondary' && styles.secondary,
+        variant === 'tertiary' && styles.tertiary,
+        variant === 'destructive' && styles.destructive,
+        variant === 'outline' && styles.outline,
         variant === 'outline' && pressed && !disabled && styles.outlinePressed,
         variant === 'solid' && pressed && !disabled && styles.solidPressed,
+        variant === 'secondary' && pressed && !disabled && styles.secondaryPressed,
+        variant === 'tertiary' && pressed && !disabled && styles.tertiaryPressed,
+        variant === 'destructive' && pressed && !disabled && styles.destructivePressed,
         disabled && styles.disabled,
+        animatedStyle,
         style,
       ]}>
       {({pressed}) => {
-        const isFilled =
-          variant === 'solid' || (variant === 'outline' && pressed && !disabled);
-        const fgColor = isFilled ? COLORS.textOnDark : COLORS.crimson;
+        const fgColor = resolveForeground(variant, pressed, disabled);
         return (
           <View style={styles.inner}>
             {icon ? (
-              <Ionicons
+              <Icon
                 name={icon}
                 size={ICON_SIZE.action - 2}
                 color={fgColor}
@@ -96,15 +153,28 @@ const PillButton: React.FC<PillButtonProps> = ({
               style={[
                 styles.label,
                 {color: fgColor},
+                variant === 'tertiary' && styles.tertiaryLabel,
               ]}>
               {label}
             </Text>
           </View>
         );
       }}
-    </Pressable>
+    </AnimatedPressable>
   );
 };
+
+function resolveForeground(
+  variant: PillButtonVariant,
+  pressed: boolean,
+  disabled: boolean,
+): string {
+  if (variant === 'solid' || variant === 'destructive') return COLORS.white;
+  if (variant === 'secondary' || variant === 'tertiary') return COLORS.navy;
+  // 'outline' — crimson by default, cream when the pill fills on press.
+  if (pressed && !disabled) return COLORS.textOnDark;
+  return COLORS.crimson;
+}
 
 const styles = StyleSheet.create({
   base: {
@@ -114,14 +184,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  outline: {
-    backgroundColor: COLORS.transparent,
-    borderWidth: 1,
-    borderColor: COLORS.crimson,
-  },
-  outlinePressed: {
-    backgroundColor: COLORS.crimson,
-  },
+  // PRIMARY — Red Dirt Red, white text (§10).
   solid: {
     backgroundColor: COLORS.crimson,
     borderWidth: 1,
@@ -130,6 +193,46 @@ const styles = StyleSheet.create({
   solidPressed: {
     backgroundColor: COLORS.crimsonDark,
     borderColor: COLORS.crimsonDark,
+  },
+  // SECONDARY — outlined Loyal Navy, navy text, no fill (§10).
+  secondary: {
+    backgroundColor: COLORS.transparent,
+    borderWidth: 1,
+    borderColor: COLORS.navy,
+  },
+  secondaryPressed: {
+    backgroundColor: 'rgba(0, 48, 73, 0.08)',
+  },
+  // TERTIARY — Loyal Navy text only, no border/fill (§10).
+  tertiary: {
+    backgroundColor: COLORS.transparent,
+    borderWidth: 0,
+    paddingHorizontal: SPACING.md,
+  },
+  tertiaryPressed: {
+    backgroundColor: 'rgba(0, 48, 73, 0.06)',
+  },
+  // DESTRUCTIVE — Royal Red fill, white text. Irreversible actions only.
+  destructive: {
+    backgroundColor: COLORS.royal,
+    borderWidth: 1,
+    borderColor: COLORS.royal,
+  },
+  destructivePressed: {
+    // Royal Red has no canonical darker shade in the palette; reuse Royal at
+    // a slightly compressed value via crimsonInk (#6e0000) — the darker red
+    // already used for pressed/active destructive states on the web.
+    backgroundColor: COLORS.crimsonInk,
+    borderColor: COLORS.crimsonInk,
+  },
+  // OUTLINE — legacy ghost-CTA (crimson border, crimson text, fills on press).
+  outline: {
+    backgroundColor: COLORS.transparent,
+    borderWidth: 1,
+    borderColor: COLORS.crimson,
+  },
+  outlinePressed: {
+    backgroundColor: COLORS.crimson,
   },
   disabled: {
     opacity: 0.5,
@@ -143,9 +246,13 @@ const styles = StyleSheet.create({
     marginRight: SPACING.xs + 2,
   },
   label: {
-    fontFamily: FONT_FAMILY.medium,
+    // SemiBold per §10 ("Poppins SemiBold") — was Medium previously.
+    fontFamily: FONT_FAMILY.semibold,
     fontSize: FONT_SIZE.md,
     letterSpacing: LETTER_SPACING.wideSm,
+  },
+  tertiaryLabel: {
+    textDecorationLine: 'underline',
   },
 });
 

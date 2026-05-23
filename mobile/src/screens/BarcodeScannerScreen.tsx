@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useEffect} from 'react';
+import React, {useState, useCallback, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {CameraView, useCameraPermissions} from 'expo-camera';
 import {useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useCartStore} from '../stores/cartStore';
 import {useHaptics} from '../hooks/useHaptics';
@@ -26,7 +26,11 @@ const formatCents = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
 // In 'detail' mode, found products are pushed to ProductDetail (Items tab).
 // In 'cart' mode (default), they show a card with Add-to-Cart (QuickSale tab).
-type ScanMode = 'cart' | 'detail';
+// In 'capture' mode, the first valid scan is merged back onto the previous
+// screen's params as `scannedBarcode` and the scanner pops — used by
+// ProductEdit's "Scan" affordance, where the goal is to capture the digits,
+// not look up an existing product.
+type ScanMode = 'cart' | 'detail' | 'capture';
 
 // Scanner is registered in both QuickSaleStack and ItemsStack. The 'detail'
 // mode replace() target ProductDetail only exists in ItemsStackParamList,
@@ -38,7 +42,12 @@ const BarcodeScannerScreen: React.FC = () => {
   // Both stacks declare Scanner with different param shapes; we read the
   // mode via a permissive route type and default to 'cart'.
   const route = useRoute<RouteProp<ItemsStackParamList, 'Scanner'>>();
-  const mode: ScanMode = route.params?.mode === 'detail' ? 'detail' : 'cart';
+  const mode: ScanMode =
+    route.params?.mode === 'detail'
+      ? 'detail'
+      : route.params?.mode === 'capture'
+      ? 'capture'
+      : 'cart';
   const navigation = useNavigation<Nav>();
   const [permission, requestPermission] = useCameraPermissions();
   const [torchOn, setTorchOn] = useState(false);
@@ -51,6 +60,11 @@ const BarcodeScannerScreen: React.FC = () => {
   const [manualBarcode, setManualBarcode] = useState('');
   const [scanLock, setScanLock] = useState(false);
   const [manualFocused, setManualFocused] = useState(false);
+  // Synchronous lock for capture mode. expo-camera can call onBarcodeScanned
+  // twice within the same tick before React commits a setScanLock(true), so
+  // the state-driven gate isn't enough to prevent double pops/double lookups.
+  // A ref flips immediately and blocks the second call dead.
+  const scanLockRef = useRef(false);
 
   const getByBarcode = useProductCacheStore(s => s.getByBarcode);
   const addItem = useCartStore(s => s.addItem);
@@ -58,8 +72,38 @@ const BarcodeScannerScreen: React.FC = () => {
 
   const lookupBarcode = useCallback(
     async (barcode: string) => {
-      if (isLookingUp || scanLock) return;
+      if (scanLockRef.current || isLookingUp || scanLock) return;
+      scanLockRef.current = true;
       setScanLock(true);
+      // Capture mode: don't bother looking up the product. We're just
+      // sourcing a string for a form field, so hand it straight back to
+      // the previous screen with the value merged onto its params. The
+      // ref-based lock above is what actually prevents the double-pop —
+      // the state lock alone races the camera's same-tick double-fire.
+      if (mode === 'capture') {
+        // Cross-stack guard: capture mode hardcodes ProductEdit as the
+        // return target. The Scanner is also registered in QuickSaleStack
+        // where ProductEdit doesn't exist; bail loudly rather than leave
+        // the user stranded in the camera view.
+        const navState = (navigation as unknown as {
+          getState?: () => {routes: Array<{name: string}>};
+        }).getState?.();
+        const hasProductEdit =
+          navState?.routes.some(r => r.name === 'ProductEdit') ?? false;
+        if (!hasProductEdit) {
+          if (__DEV__) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              "Scanner: capture mode used in a stack without 'ProductEdit'. Going back instead.",
+            );
+          }
+          navigation.goBack();
+          return;
+        }
+        haptics.success();
+        navigation.popTo('ProductEdit', {scannedBarcode: barcode});
+        return;
+      }
       setIsLookingUp(true);
       setNotFound(false);
       setScannedProduct(null);
@@ -141,6 +185,7 @@ const BarcodeScannerScreen: React.FC = () => {
     const t = setTimeout(() => {
       setNotFound(false);
       setScanLock(false);
+      scanLockRef.current = false;
     }, 1500);
     return () => clearTimeout(t);
   }, [notFound]);
@@ -158,12 +203,14 @@ const BarcodeScannerScreen: React.FC = () => {
     Alert.alert('Added', `${scannedProduct.name} added to cart.`);
     setScannedProduct(null);
     setScanLock(false);
+    scanLockRef.current = false;
   }, [scannedProduct, addItem]);
 
   const handleDismiss = useCallback(() => {
     setScannedProduct(null);
     setNotFound(false);
     setScanLock(false);
+    scanLockRef.current = false;
   }, []);
 
   // Permission not yet determined
@@ -186,7 +233,7 @@ const BarcodeScannerScreen: React.FC = () => {
     const hardDenied = !permission.canAskAgain;
     return (
       <View style={styles.centered}>
-        <Ionicons name="camera-outline" size={64} color={COLORS.textDim} />
+        <Icon name="camera-outline" size={64} color={COLORS.textDim} />
         <Text style={styles.permissionTitle}>Camera Access Required</Text>
         <Text style={styles.permissionText}>
           {hardDenied
@@ -214,7 +261,12 @@ const BarcodeScannerScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {isFocused ? (
+      {/* Unmount the camera while the result card / not-found card is up.
+          The card visually covers the preview anyway and keeping the capture
+          pipeline running burns battery + warms the phone for nothing.
+          Auto-rearm path: clearing scannedProduct/notFound also re-mounts
+          the camera, which is fine — expo-camera's mount time is < 200ms. */}
+      {isFocused && !scannedProduct && !notFound ? (
         <CameraView
           style={styles.camera}
           facing="back"
@@ -248,11 +300,13 @@ const BarcodeScannerScreen: React.FC = () => {
 
       {/* Top overlay */}
       <View style={styles.topOverlay}>
-        <Text style={styles.topTitle}>Scan Barcode</Text>
+        <Text style={styles.topTitle}>
+          {mode === 'capture' ? 'Capture Barcode' : 'Scan Barcode'}
+        </Text>
         <TouchableOpacity
           style={styles.torchButton}
           onPress={() => setTorchOn(prev => !prev)}>
-          <Ionicons
+          <Icon
             name={torchOn ? 'flash' : 'flash-off'}
             size={22}
             color={COLORS.cream}
@@ -286,7 +340,7 @@ const BarcodeScannerScreen: React.FC = () => {
               <TouchableOpacity
                 style={styles.addToCartButton}
                 onPress={handleAddToCart}>
-                <Ionicons name="cart" size={18} color={COLORS.white} />
+                <Icon name="cart" size={18} color={COLORS.white} />
                 <Text style={styles.addToCartText}>Add to Cart</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -315,7 +369,7 @@ const BarcodeScannerScreen: React.FC = () => {
         <TouchableOpacity
           style={styles.manualToggle}
           onPress={() => setManualEntry(prev => !prev)}>
-          <Ionicons name="keypad-outline" size={16} color={COLORS.cream} />
+          <Icon name="keypad-outline" size={16} color={COLORS.cream} />
           <Text style={styles.manualToggleText}>
             {manualEntry ? 'Hide manual entry' : 'Enter barcode manually'}
           </Text>
@@ -342,7 +396,7 @@ const BarcodeScannerScreen: React.FC = () => {
             <TouchableOpacity
               style={styles.manualSubmit}
               onPress={handleManualSubmit}>
-              <Ionicons name="search" size={20} color={COLORS.white} />
+              <Icon name="search" size={20} color={COLORS.white} />
             </TouchableOpacity>
           </View>
         ) : null}

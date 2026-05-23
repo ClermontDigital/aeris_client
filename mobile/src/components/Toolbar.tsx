@@ -1,6 +1,6 @@
 import React from 'react';
 import {View, TouchableOpacity, Text, StyleSheet} from 'react-native';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from './Icon';
 import {COLORS, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS, SPACING, BUTTON_SIZE} from '../constants/theme';
 
 interface ToolbarProps {
@@ -65,8 +65,8 @@ const ToolButton: React.FC<{icon: string; onPress: () => void; disabled?: boolea
     style={[styles.button, disabled && styles.buttonDisabled]}
     onPress={onPress}
     disabled={disabled}>
-    <Ionicons
-      name={icon as keyof typeof Ionicons.glyphMap}
+    <Icon
+      name={icon as React.ComponentProps<typeof Icon>['name']}
       size={20}
       color={disabled ? 'rgba(255, 255, 255, 0.3)' : COLORS.cream}
     />

@@ -70,6 +70,11 @@ interface ProductCacheState {
   lastSynced: string | null;
   isSyncing: boolean;
   lastSyncError: string | null;
+  // In-flight syncProducts() promise. Mirrors the refreshInFlight pattern in
+  // authStore — concurrent callers (ItemsScreen mount effect + QuickSale
+  // pull-to-refresh) share one underlying pagination walk instead of each
+  // kicking off their own N-page fetch in parallel.
+  syncInFlight: Promise<void> | null;
 
   syncProducts: () => Promise<void>;
   restoreCache: () => Promise<void>;
@@ -84,43 +89,71 @@ export const useProductCacheStore = create<ProductCacheState>((set, get) => ({
   lastSynced: null,
   isSyncing: false,
   lastSyncError: null,
+  syncInFlight: null,
 
+  // Dedupes concurrent syncs. ItemsScreen's mount-time refresh (v1.3.23+)
+  // and QuickSaleScreen's pull-to-refresh can both fire while the catalog
+  // is paginating. Without this, each caller would walk every page in
+  // parallel — 2×N redundant requests. Now they share one promise; once it
+  // settles, syncInFlight is nulled so the next call starts a fresh sync.
   syncProducts: async () => {
-    set({isSyncing: true, lastSyncError: null});
-    try {
-      // Fetch all POS products (paginated — fetch all pages)
-      let allProducts: Product[] = [];
-      let page = 1;
-      let hasMore = true;
+    const existing = get().syncInFlight;
+    if (existing) {
+      // Caller awaits the in-flight promise rather than firing a second
+      // pagination walk. Swallow errors here — the original initiator
+      // already recorded lastSyncError on failure.
+      await existing.catch(() => {});
+      return;
+    }
 
-      while (hasMore) {
-        const result = await ApiClient.listProducts(page, 50);
-        allProducts = [...allProducts, ...result.data];
-        hasMore = page < result.meta.last_page;
-        page++;
+    const run = async (): Promise<void> => {
+      set({isSyncing: true, lastSyncError: null});
+      try {
+        // Fetch all POS products (paginated — fetch all pages)
+        let allProducts: Product[] = [];
+        let page = 1;
+        let hasMore = true;
+
+        while (hasMore) {
+          const result = await ApiClient.listProducts(page, 50);
+          allProducts = [...allProducts, ...result.data];
+          hasMore = page < result.meta.last_page;
+          page++;
+        }
+
+        const categories = await ApiClient.getCategories();
+        const timestamp = new Date().toISOString();
+
+        // Persist to encrypted AsyncStorage. Always stamp the version so a
+        // future restoreCache can decide whether the rows are compatible.
+        await BulkStorage.setItem(PRODUCT_CACHE_KEY, allProducts);
+        await BulkStorage.setItem(CATEGORY_CACHE_KEY, categories);
+        await BulkStorage.setItem(CACHE_TIMESTAMP_KEY, timestamp);
+        await BulkStorage.setItem(CACHE_VERSION_KEY, CACHE_SCHEMA_VERSION);
+
+        set({
+          products: allProducts,
+          categories,
+          lastSynced: timestamp,
+          isSyncing: false,
+          lastSyncError: null,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Catalog sync failed';
+        console.warn('productCacheStore.syncProducts failed:', msg);
+        set({isSyncing: false, lastSyncError: msg});
       }
+    };
 
-      const categories = await ApiClient.getCategories();
-      const timestamp = new Date().toISOString();
-
-      // Persist to encrypted AsyncStorage. Always stamp the version so a
-      // future restoreCache can decide whether the rows are compatible.
-      await BulkStorage.setItem(PRODUCT_CACHE_KEY, allProducts);
-      await BulkStorage.setItem(CATEGORY_CACHE_KEY, categories);
-      await BulkStorage.setItem(CACHE_TIMESTAMP_KEY, timestamp);
-      await BulkStorage.setItem(CACHE_VERSION_KEY, CACHE_SCHEMA_VERSION);
-
-      set({
-        products: allProducts,
-        categories,
-        lastSynced: timestamp,
-        isSyncing: false,
-        lastSyncError: null,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Catalog sync failed';
-      console.warn('productCacheStore.syncProducts failed:', msg);
-      set({isSyncing: false, lastSyncError: msg});
+    const promise = run();
+    set({syncInFlight: promise});
+    try {
+      await promise;
+    } finally {
+      // Null out so a later call (e.g. user pulls-to-refresh again 10min
+      // later) kicks off a fresh sync rather than no-oping on the resolved
+      // promise.
+      set({syncInFlight: null});
     }
   },
 

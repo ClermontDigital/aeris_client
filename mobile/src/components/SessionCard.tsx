@@ -46,7 +46,8 @@ const styles = StyleSheet.create({
   lockIcon: {fontSize: FONT_SIZE.xs + 2, color: COLORS.crimson, fontFamily: FONT_FAMILY.medium},
   lastAccessed: {fontSize: FONT_SIZE.xs + 2, color: COLORS.textMuted, marginTop: 4},
   deleteBtn: {marginTop: SPACING.sm, alignSelf: 'flex-end'},
-  deleteText: {color: COLORS.danger, fontSize: FONT_SIZE.sm + 1},
+  // Delete session is irreversible — Royal Red per Brand Guidelines v0.3 §10.
+  deleteText: {color: COLORS.destructive, fontSize: FONT_SIZE.sm + 1},
 });
 
 export default SessionCard;

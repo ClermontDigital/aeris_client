@@ -11,7 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from '../components/Icon';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {
@@ -25,6 +25,7 @@ import {
 import {useCartStore} from '../stores/cartStore';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import ApiClient from '../services/ApiClient';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
@@ -37,6 +38,8 @@ type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
 export default function QuickSaleScreen() {
   const navigation = useNavigation<NavigationProp>();
   const haptics = useHaptics();
+  const {widthClass} = useResponsiveLayout();
+  const numColumns = widthClass === 'wide' ? 4 : widthClass === 'regular' ? 3 : 2;
   const {addItem, getItemCount, getTotalCents} = useCartStore();
   const {
     products: cachedProducts,
@@ -264,7 +267,7 @@ export default function QuickSaleScreen() {
 
       {/* Search Bar + inline Scan shortcut */}
       <View style={styles.searchContainer}>
-        <Ionicons
+        <Icon
           name="search"
           size={ICON_SIZE.action}
           color={COLORS.textMuted}
@@ -283,7 +286,7 @@ export default function QuickSaleScreen() {
           <TouchableOpacity
             onPress={() => setSearchQuery('')}
             style={styles.clearBtn}>
-            <Ionicons
+            <Icon
               name="close-circle"
               size={ICON_SIZE.action}
               color={COLORS.textMuted}
@@ -299,7 +302,7 @@ export default function QuickSaleScreen() {
           accessibilityRole="button"
           accessibilityLabel="Scan barcode"
           hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <Ionicons
+          <Icon
             name="barcode-outline"
             size={ICON_SIZE.hero}
             color={COLORS.crimson}
@@ -324,8 +327,13 @@ export default function QuickSaleScreen() {
         </View>
       ) : null}
 
-      {/* Loading */}
-      {(isSearching || isSyncing) && (
+      {/* Loading — first-time only. When products are already on screen
+          and the user pulls to refresh, the RefreshControl below handles
+          the spinner; rendering this big ActivityIndicator on top of it
+          stacked two loaders in the same gesture (the user's complaint:
+          one for products, one for categories, but it was actually this
+          and the pull-to-refresh spinner together). */}
+      {(isSearching || isSyncing) && displayProducts.length === 0 && (
         <ActivityIndicator
           color={COLORS.accent}
           size="large"
@@ -335,10 +343,15 @@ export default function QuickSaleScreen() {
 
       {/* Product Grid */}
       <FlatList
+        // FlatList memoises the column count internally — when the device
+        // rotates (or iPad multitasking resizes the window) numColumns
+        // changes; remounting via key avoids the "Changing numColumns on
+        // the fly is not supported" warning.
+        key={`grid-${numColumns}`}
         data={displayProducts}
         renderItem={renderProductTile}
         keyExtractor={item => String(item.id)}
-        numColumns={2}
+        numColumns={numColumns}
         columnWrapperStyle={styles.gridRow}
         // Tighter bottom padding when the cart bar isn't visible — its
         // 100pt clearance was leaving a dead band of cream space above
@@ -368,7 +381,7 @@ export default function QuickSaleScreen() {
           </Text>
           <View style={styles.cartBarActionRow}>
             <Text style={styles.cartBarAction}>View Cart</Text>
-            <Ionicons
+            <Icon
             name="chevron-forward"
             size={ICON_SIZE.action}
             color={COLORS.white}

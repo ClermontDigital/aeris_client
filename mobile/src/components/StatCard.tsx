@@ -1,6 +1,6 @@
 import React from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
-import {Ionicons} from '@expo/vector-icons';
+import Icon from './Icon';
 import {
   COLORS,
   SPACING,
@@ -18,7 +18,7 @@ export interface StatCardProps {
   value: string | number;
   sublabel?: string;
   tone?: StatCardTone;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: React.ComponentProps<typeof Icon>['name'];
   onPress?: () => void;
   // Override the value font size. Used by 3-up stat strips that compute a
   // single size from the widest value in the row, so cards stay visually
@@ -71,7 +71,7 @@ const StatCard: React.FC<StatCardProps> = ({
   const body = (
     <>
       {icon ? (
-        <Ionicons
+        <Icon
           name={icon}
           size={ICON_SIZE.stat}
           color={valueColor}
