@@ -255,23 +255,13 @@ export default function ProductDetailScreen() {
         </View>
 
         {product.barcode && canEncodeCode128B(product.barcode) ? (
+          // Per design pass: just the barcode, no chrome copy. The card
+          // container stays so the barcode reads as a deliberate UI element
+          // rather than floating glyphs on the page.
           <View style={styles.shareCard}>
-            <View style={styles.shareHeader}>
-              <View style={styles.shareIconBubble}>
-                <Icon name="barcode" size={16} color={COLORS.crimson} />
-              </View>
-              <View style={styles.shareTitleWrap}>
-                <Text style={styles.shareEyebrow}>SHARE BY SCAN</Text>
-                <Text style={styles.shareTitle}>Send this item to another device</Text>
-              </View>
-            </View>
             <View style={styles.barcodeWrap}>
               <Barcode value={product.barcode} width={300} height={84} />
             </View>
-            <Text style={styles.shareHint}>
-              Point another AERIS device&apos;s scanner at this barcode to open
-              the same item there.
-            </Text>
           </View>
         ) : null}
 
@@ -339,6 +329,14 @@ export default function ProductDetailScreen() {
             </Text>
           )}
         </View>
+
+        {/* Recent transactions for this item is deferred until the
+            marketplace gateway honours `transactions.list?product_id=...`.
+            Without server-side filtering, listing globally-recent sales
+            under a product-detail card reads as "sales of this item",
+            which would be a lie. Defensive `product_id` is already wired
+            in shared/RelayClient.getTransactions; this card lights up
+            once the server filter ships. */}
 
         {product.variants && product.variants.length > 0 ? (
           <View style={styles.card}>
@@ -588,9 +586,9 @@ const styles = StyleSheet.create({
   barcodeWrap: {alignItems: 'center', marginVertical: SPACING.sm},
   shareCard: {
     ...cardBase,
-    // Slight cream tint + heavier shadow to pop the share affordance from
-    // the rest of the info cards — this is the most novel control on the
-    // screen and users need to find it without hunting.
+    // Cream tint + soft crimson shadow lifts the barcode card off the rest
+    // of the info cards without needing eyebrow/title chrome. The barcode
+    // itself reads as the affordance.
     backgroundColor: COLORS.cream,
     borderColor: COLORS.crimson + '33',
     shadowColor: COLORS.crimson,
@@ -598,39 +596,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 2,
-  },
-  shareHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  shareIconBubble: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: COLORS.crimson + '14',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: SPACING.sm,
-  },
-  shareTitleWrap: {flex: 1},
-  shareEyebrow: {
-    color: COLORS.crimson,
-    fontSize: FONT_SIZE.xs,
-    fontFamily: FONT_FAMILY.bold,
-    letterSpacing: 1.2,
-  },
-  shareTitle: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.semibold,
-    marginTop: 2,
-  },
-  shareHint: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.sm,
-    textAlign: 'center',
-    marginTop: SPACING.xs,
   },
   variantRow: {
     flexDirection: 'row',

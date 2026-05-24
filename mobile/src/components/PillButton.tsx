@@ -60,8 +60,6 @@ export interface PillButtonProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 const PillButton: React.FC<PillButtonProps> = ({
   label,
   onPress,
@@ -76,6 +74,14 @@ const PillButton: React.FC<PillButtonProps> = ({
   // even when JS is busy (catalog filter, store mutation, etc.). Tertiary
   // is "text-only" by spec, so we skip the scale there to keep that variant
   // calm. Tap haptic still fires.
+  //
+  // IMPORTANT: the scale lives on a wrapper Animated.View, NOT on the
+  // Pressable itself. Reanimated's `createAnimatedComponent` cannot extract
+  // animated style proxies from Pressable's function-form `style` prop —
+  // when we tried (v1.3.31), the proxy short-circuited the variant
+  // background/border styles and buttons rendered as bare text. Keeping
+  // Pressable raw + wrapping it preserves both the press-state styling
+  // (function form) and the UI-thread scale animation.
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{scale: scale.value}],
@@ -96,71 +102,71 @@ const PillButton: React.FC<PillButtonProps> = ({
   };
 
   return (
-    <AnimatedPressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={{disabled}}
-      // Android-native ripple on top of the iOS-style scale — both platforms
-      // get tactile feedback that matches the platform's idiom. Borderless
-      // false so the ripple respects the pill shape.
-      android_ripple={
-        disabled || Platform.OS !== 'android'
-          ? undefined
-          : {
-              color:
-                variant === 'solid' || variant === 'destructive'
-                  ? 'rgba(255,255,255,0.18)'
-                  : 'rgba(193, 18, 31, 0.12)',
-              borderless: false,
-              foreground: true,
-            }
-      }
-      // Pressable's children-as-function form lets us flip styles in the
-      // pressed state without a state hook — matches the web's :hover.
-      style={({pressed}) => [
-        styles.base,
-        variant === 'solid' && styles.solid,
-        variant === 'secondary' && styles.secondary,
-        variant === 'tertiary' && styles.tertiary,
-        variant === 'destructive' && styles.destructive,
-        variant === 'outline' && styles.outline,
-        variant === 'outline' && pressed && !disabled && styles.outlinePressed,
-        variant === 'solid' && pressed && !disabled && styles.solidPressed,
-        variant === 'secondary' && pressed && !disabled && styles.secondaryPressed,
-        variant === 'tertiary' && pressed && !disabled && styles.tertiaryPressed,
-        variant === 'destructive' && pressed && !disabled && styles.destructivePressed,
-        disabled && styles.disabled,
-        animatedStyle,
-        style,
-      ]}>
-      {({pressed}) => {
-        const fgColor = resolveForeground(variant, pressed, disabled);
-        return (
-          <View style={styles.inner}>
-            {icon ? (
-              <Icon
-                name={icon}
-                size={ICON_SIZE.action - 2}
-                color={fgColor}
-                style={styles.icon}
-              />
-            ) : null}
-            <Text
-              style={[
-                styles.label,
-                {color: fgColor},
-                variant === 'tertiary' && styles.tertiaryLabel,
-              ]}>
-              {label}
-            </Text>
-          </View>
-        );
-      }}
-    </AnimatedPressable>
+    <Animated.View style={[animatedStyle, style]}>
+      <Pressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityState={{disabled}}
+        // Android-native ripple on top of the iOS-style scale — both
+        // platforms get tactile feedback that matches the platform's idiom.
+        // Borderless false so the ripple respects the pill shape.
+        android_ripple={
+          disabled || Platform.OS !== 'android'
+            ? undefined
+            : {
+                color:
+                  variant === 'solid' || variant === 'destructive'
+                    ? 'rgba(255,255,255,0.18)'
+                    : 'rgba(193, 18, 31, 0.12)',
+                borderless: false,
+                foreground: true,
+              }
+        }
+        // Pressable's children-as-function form lets us flip styles in the
+        // pressed state without a state hook — matches the web's :hover.
+        style={({pressed}) => [
+          styles.base,
+          variant === 'solid' && styles.solid,
+          variant === 'secondary' && styles.secondary,
+          variant === 'tertiary' && styles.tertiary,
+          variant === 'destructive' && styles.destructive,
+          variant === 'outline' && styles.outline,
+          variant === 'outline' && pressed && !disabled && styles.outlinePressed,
+          variant === 'solid' && pressed && !disabled && styles.solidPressed,
+          variant === 'secondary' && pressed && !disabled && styles.secondaryPressed,
+          variant === 'tertiary' && pressed && !disabled && styles.tertiaryPressed,
+          variant === 'destructive' && pressed && !disabled && styles.destructivePressed,
+          disabled && styles.disabled,
+        ]}>
+        {({pressed}) => {
+          const fgColor = resolveForeground(variant, pressed, disabled);
+          return (
+            <View style={styles.inner}>
+              {icon ? (
+                <Icon
+                  name={icon}
+                  size={ICON_SIZE.action - 2}
+                  color={fgColor}
+                  style={styles.icon}
+                />
+              ) : null}
+              <Text
+                style={[
+                  styles.label,
+                  {color: fgColor},
+                  variant === 'tertiary' && styles.tertiaryLabel,
+                ]}>
+                {label}
+              </Text>
+            </View>
+          );
+        }}
+      </Pressable>
+    </Animated.View>
   );
 };
 

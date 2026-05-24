@@ -46,8 +46,27 @@ import {
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
+// Mirror of RelayClient.assertWritePersisted — bails when a write returns no
+// body / {data: null}. Surfaces a friendly banner via a thrown Error so the
+// screen doesn't silently "succeed" with a normalized zero-id object.
+function assertWritePersisted(raw: unknown): void {
+  if (raw === null || raw === undefined) {
+    throw new Error("We couldn't save that. Please try again.");
+  }
+  if (
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    'data' in (raw as Record<string, unknown>) &&
+    (raw as {data: unknown}).data == null
+  ) {
+    throw new Error("We couldn't save that. Please try again.");
+  }
+}
+
 interface RequestOptions {
   idempotencyKey?: string;
+  // Internal-only: prevents 401 retry loops on the refresh leg.
+  __retried?: boolean;
 }
 
 // Use expo-crypto rather than the Hermes `crypto` global — Hermes does not
@@ -62,6 +81,10 @@ export class DirectClient {
   private authToken: string | null = null;
   private timeoutMs: number = DEFAULT_TIMEOUT_MS;
   private onUnauthorizedCb: (() => void) | null = null;
+  // Refresh hook — when set, a 401 on a non-refresh call triggers one
+  // attempt at this callback before bouncing the user. See RelayClient
+  // for the same mechanic.
+  private onRefreshCb: (() => Promise<boolean>) | null = null;
 
   configure(options: {baseUrl?: string; timeoutMs?: number}): void {
     if (options.baseUrl !== undefined) this.baseUrl = options.baseUrl;
@@ -80,6 +103,10 @@ export class DirectClient {
 
   setOnUnauthorized(cb: (() => void) | null): void {
     this.onUnauthorizedCb = cb;
+  }
+
+  setOnRefresh(cb: (() => Promise<boolean>) | null): void {
+    this.onRefreshCb = cb;
   }
 
   // --- Auth ---
@@ -400,6 +427,7 @@ export class DirectClient {
     per_page?: number;
     date_from?: string;
     date_to?: string;
+    product_id?: number;
   }): Promise<PaginatedResponse<Sale>> {
     return withReadRetry(async () => {
       const urlParams = new URLSearchParams();
@@ -407,6 +435,9 @@ export class DirectClient {
       if (params?.per_page) urlParams.set('per_page', String(params.per_page));
       if (params?.date_from) urlParams.set('date_from', params.date_from);
       if (params?.date_to) urlParams.set('date_to', params.date_to);
+      if (params?.product_id) {
+        urlParams.set('product_id', String(params.product_id));
+      }
       const qs = urlParams.toString();
       const raw = await this.get<PaginatedResponse<unknown>>(
         `${API_ENDPOINTS.SALES_LIST}${qs ? `?${qs}` : ''}`,
@@ -509,6 +540,7 @@ export class DirectClient {
           payload,
           {idempotencyKey},
         );
+        assertWritePersisted(raw);
         return normalizeCustomer(unwrapResource(raw));
       } catch (e) {
         lastError = e;
@@ -530,6 +562,7 @@ export class DirectClient {
       CUSTOMER_BY_ID(id),
       toCustomerWirePayload(patch),
     );
+    assertWritePersisted(raw);
     return normalizeCustomer(unwrapResource(raw));
   }
 
@@ -553,6 +586,7 @@ export class DirectClient {
           payload,
           {idempotencyKey},
         );
+        assertWritePersisted(raw);
         return normalizeProduct(unwrapResource(raw));
       } catch (e) {
         lastError = e;
@@ -571,6 +605,7 @@ export class DirectClient {
       PRODUCT_BY_ID(id),
       toProductWirePayload(patch),
     );
+    assertWritePersisted(raw);
     return normalizeProduct(unwrapResource(raw));
   }
 
@@ -595,6 +630,7 @@ export class DirectClient {
         payload,
         {idempotencyKey},
       );
+      assertWritePersisted(raw);
       return normalizeStockAdjustment(unwrapResource(raw));
     });
   }
@@ -654,6 +690,30 @@ export class DirectClient {
       });
 
       if (response.status === 401) {
+        // Routine token expiry — try a one-shot refresh + retry before
+        // wiping the session. The refresh endpoint itself is exempt so a
+        // genuine "can't refresh" condition still bounces the user. Same
+        // mechanic as RelayClient — see RelayClient.relayRpc for context.
+        const isRefresh = path === '/api/v1/auth/refresh';
+        if (
+          !isRefresh &&
+          !options?.__retried &&
+          this.onRefreshCb !== null &&
+          this.authToken !== null
+        ) {
+          let refreshed = false;
+          try {
+            refreshed = await this.onRefreshCb();
+          } catch {
+            refreshed = false;
+          }
+          if (refreshed) {
+            return this.request<T>(method, path, body, {
+              ...options,
+              __retried: true,
+            });
+          }
+        }
         this.handleUnauthorized();
         const err = new Error('Authentication expired. Please log in again.');
         (err as Error & {status?: number}).status = 401;

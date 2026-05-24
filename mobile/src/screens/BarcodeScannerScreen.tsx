@@ -101,7 +101,27 @@ const BarcodeScannerScreen: React.FC = () => {
           return;
         }
         haptics.success();
-        navigation.popTo('ProductEdit', {scannedBarcode: barcode});
+        // popTo is part of React Navigation 7's native-stack API. Defensive
+        // fallback in case a runtime mismatch leaves it undefined: read the
+        // existing ProductEdit params off navState and call navigate with
+        // a MERGED params object so we don't clobber productId (which is
+        // already on the route in edit mode). React Navigation 7 native-
+        // stack `navigate` replaces params by default — merging manually
+        // is what gives us the same behaviour popTo would have given.
+        const navWithPopTo = navigation as unknown as {
+          popTo?: (name: string, params?: object) => void;
+        };
+        if (typeof navWithPopTo.popTo === 'function') {
+          navWithPopTo.popTo('ProductEdit', {scannedBarcode: barcode});
+        } else {
+          const existing = navState?.routes.find(r => r.name === 'ProductEdit') as
+            | {params?: Record<string, unknown>}
+            | undefined;
+          navigation.navigate('ProductEdit', {
+            ...(existing?.params ?? {}),
+            scannedBarcode: barcode,
+          });
+        }
         return;
       }
       setIsLookingUp(true);
@@ -271,6 +291,7 @@ const BarcodeScannerScreen: React.FC = () => {
           style={styles.camera}
           facing="back"
           enableTorch={torchOn}
+          autofocus="on"
           barcodeScannerSettings={{
             barcodeTypes: [
               'ean13',
@@ -285,6 +306,26 @@ const BarcodeScannerScreen: React.FC = () => {
             scanLock || isLookingUp ? undefined : handleBarcodeScanned
           }
         />
+      ) : null}
+
+      {/* Centered viewfinder reticle. Pure visual affordance — barcode
+          detection happens across the whole frame, but the box gives the
+          operator a clear target to aim at, which is essential when
+          scanning a code displayed on another device's screen (no
+          natural depth-of-field cue for the camera to lock onto).
+          pointerEvents=none so it never swallows torch / manual taps. */}
+      {isFocused && !scannedProduct && !notFound && !isLookingUp ? (
+        <View style={styles.reticleWrap} pointerEvents="none">
+          <View style={styles.reticleBox}>
+            <View style={[styles.reticleCorner, styles.reticleCornerTL]} />
+            <View style={[styles.reticleCorner, styles.reticleCornerTR]} />
+            <View style={[styles.reticleCorner, styles.reticleCornerBL]} />
+            <View style={[styles.reticleCorner, styles.reticleCornerBR]} />
+          </View>
+          <Text style={styles.reticleLegend}>
+            Centre the barcode in the box
+          </Text>
+        </View>
       ) : null}
 
       {/* Centered busy overlay — pauses scanning visually while a lookup
@@ -425,6 +466,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
+  },
+  // Reticle is centered in the entire viewport. The box itself is a
+  // transparent-fill cream-outlined rect; the corners are crimson L-shapes
+  // pinned at each corner that read as a camera viewfinder.
+  reticleWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  reticleBox: {
+    width: 260,
+    height: 180,
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 249, 236, 0.92)', // cream @ ~92%
+    backgroundColor: 'transparent',
+  },
+  reticleCorner: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderColor: COLORS.crimson,
+  },
+  reticleCornerTL: {
+    top: -2,
+    left: -2,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+    borderTopLeftRadius: BORDER_RADIUS.lg,
+  },
+  reticleCornerTR: {
+    top: -2,
+    right: -2,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+    borderTopRightRadius: BORDER_RADIUS.lg,
+  },
+  reticleCornerBL: {
+    bottom: -2,
+    left: -2,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+    borderBottomLeftRadius: BORDER_RADIUS.lg,
+  },
+  reticleCornerBR: {
+    bottom: -2,
+    right: -2,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+    borderBottomRightRadius: BORDER_RADIUS.lg,
+  },
+  reticleLegend: {
+    marginTop: SPACING.md,
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+    opacity: 0.75,
+    textShadowColor: 'rgba(0, 0, 0, 0.45)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 2,
   },
   busyCard: {
     flexDirection: 'row',
