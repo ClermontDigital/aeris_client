@@ -25,6 +25,7 @@ import type {
   CustomersStackParamList,
 } from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
+import {useNavHistoryStore} from '../stores/navHistoryStore';
 
 const formatShortDate = (iso: string | null | undefined): string => {
   if (!iso) return '';
@@ -151,6 +152,12 @@ export default function CustomerDetailScreen() {
   const goToSale = useCallback(
     (saleId: number) => {
       haptics.light();
+      // Push a breadcrumb so the back button on SaleDetail can return here.
+      useNavHistoryStore.getState().push({
+        tab: 'Customers',
+        screen: 'CustomerDetail',
+        params: {customerId},
+      });
       // `initial: false` preserves TransactionList under SaleDetail so
       // back goes to the list, not to the previous tab. See CheckoutScreen
       // for the full rationale.
@@ -160,7 +167,7 @@ export default function CustomerDetailScreen() {
         initial: false,
       });
     },
-    [haptics, navigation],
+    [haptics, navigation, customerId],
   );
 
   if (isLoading) {
@@ -459,6 +466,23 @@ export default function CustomerDetailScreen() {
           style={styles.backBtn}
           onPress={() => {
             haptics.light();
+            // Cross-tab breadcrumb-aware back. If we were reached from
+            // another tab (e.g. SaleDetail → CustomerDetail), pop that
+            // crumb and navigate back there. Otherwise fall through to
+            // the native within-stack pop.
+            const prev = useNavHistoryStore.getState().popPrev();
+            if (prev) {
+              const parent = navigation.getParent?.();
+              if (parent) {
+                (parent as unknown as {
+                  navigate: (tab: string, params: object) => void;
+                }).navigate(prev.tab, {
+                  screen: prev.screen,
+                  params: prev.params ?? {},
+                });
+                return;
+              }
+            }
             navigation.goBack();
           }}
           accessibilityRole="button"

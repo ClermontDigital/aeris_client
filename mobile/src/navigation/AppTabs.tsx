@@ -24,6 +24,7 @@ import {useSettingsStore} from '../stores/settingsStore';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
 import {useCartStore} from '../stores/cartStore';
+import {useNavHistoryStore} from '../stores/navHistoryStore';
 import {getItemCount} from '@aeris/shared';
 import {COLORS, FONT_SIZE, FONT_FAMILY} from '../constants/theme';
 import type {AppTabParamList} from '../types/navigation.types';
@@ -43,7 +44,15 @@ const TabButton: React.FC<BottomTabBarButtonProps> = ({
   const focused = accessibilityState?.selected ?? false;
   return (
     <Pressable
-      onPress={(e: GestureResponderEvent) => onPress?.(e)}
+      onPress={(e: GestureResponderEvent) => {
+        // Bottom-nav tap is the "I'm done exploring, give me a fresh
+        // start" signal. Wipe the cross-tab breadcrumb history so the
+        // next deep journey starts clean — without this, a user who
+        // walked through several detail screens then tapped Items would
+        // still see stale breadcrumbs influencing later back buttons.
+        useNavHistoryStore.getState().reset();
+        onPress?.(e);
+      }}
       onLongPress={onLongPress ?? undefined}
       accessibilityState={accessibilityState}
       testID={testID}
