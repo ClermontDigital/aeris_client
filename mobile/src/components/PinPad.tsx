@@ -1,6 +1,7 @@
 import React, {useState} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform} from 'react-native';
 import {COLORS, FONT_SIZE, FONT_FAMILY, SPACING, BORDER_RADIUS} from '../constants/theme';
+import {useHaptics} from '../hooks/useHaptics';
 
 interface PinPadProps {
   title: string;
@@ -11,9 +12,15 @@ interface PinPadProps {
 
 const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
   const [pin, setPin] = useState('');
+  const haptics = useHaptics();
 
+  // Light haptic on every digit press — matches the system PIN UX on iOS
+  // Settings and most banking apps. selection() is the lightest tick we
+  // have, perfect for a keypad cadence (10+ digits/sec) without feeling
+  // mushy. useHaptics already gates on the user's Settings haptics toggle.
   const handleDigit = (digit: string) => {
     if (pin.length < 4) {
+      haptics.selection();
       const newPin = pin + digit;
       setPin(newPin);
       if (newPin.length === 4) {
@@ -23,8 +30,18 @@ const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
     }
   };
 
-  const handleDelete = () => setPin(pin.slice(0, -1));
-  const handleClear = () => setPin('');
+  const handleDelete = () => {
+    if (pin.length === 0) return;
+    haptics.light();
+    setPin(pin.slice(0, -1));
+  };
+  // Long-press clear gets a heavier tick so the user knows the full PIN
+  // was wiped (not just one digit).
+  const handleClear = () => {
+    if (pin.length === 0) return;
+    haptics.medium();
+    setPin('');
+  };
 
   const dots = Array.from({length: 4}, (_, i) => (
     <View key={i} style={[styles.dot, i < pin.length && styles.dotFilled]} />

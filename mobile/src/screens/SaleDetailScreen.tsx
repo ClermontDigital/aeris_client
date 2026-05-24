@@ -149,6 +149,44 @@ export default function SaleDetailScreen() {
   }
 
   const customerName = sale.customer?.name || sale.customer_name || 'Walk-in';
+  const customerId = sale.customer?.id ?? sale.customer_id ?? null;
+
+  // Cross-tab navigators: tap a customer name → Customers tab, CustomerDetail.
+  // Tap a line-item → Items tab, ProductDetail. Both jump out of the
+  // Transactions stack via the parent tab navigator. If getParent() is
+  // unavailable (e.g. rendered outside the tab nav in a test), the tap is
+  // a no-op rather than a crash.
+  const openCustomer = useCallback(
+    (id: number) => {
+      haptics.light();
+      const parent = navigation.getParent?.();
+      if (!parent) return;
+      // Typed cross-stack jumps require an `any` here — the parent's
+      // ParamList is AppTabParamList, but we don't import that to keep
+      // SaleDetail decoupled.
+      (parent as unknown as {
+        navigate: (tab: string, params: object) => void;
+      }).navigate('Customers', {
+        screen: 'CustomerDetail',
+        params: {customerId: id},
+      });
+    },
+    [navigation, haptics],
+  );
+  const openProduct = useCallback(
+    (id: number) => {
+      haptics.light();
+      const parent = navigation.getParent?.();
+      if (!parent) return;
+      (parent as unknown as {
+        navigate: (tab: string, params: object) => void;
+      }).navigate('Items', {
+        screen: 'ProductDetail',
+        params: {productId: id},
+      });
+    },
+    [navigation, haptics],
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -169,10 +207,30 @@ export default function SaleDetailScreen() {
               <Text style={styles.statusText}>{sale.status}</Text>
             </View>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Customer</Text>
-            <Text style={styles.rowValue}>{customerName}</Text>
-          </View>
+          {customerId !== null ? (
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => openCustomer(customerId)}
+              accessibilityRole="link"
+              accessibilityLabel={`Customer ${customerName}. Tap to open profile.`}>
+              <Text style={styles.rowLabel}>Customer</Text>
+              <View style={styles.rowValueWithChevron}>
+                <Text style={[styles.rowValue, styles.rowValueLink]}>
+                  {customerName}
+                </Text>
+                <Icon
+                  name="chevron-forward"
+                  size={ICON_SIZE.action}
+                  color={COLORS.crimson}
+                />
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Customer</Text>
+              <Text style={styles.rowValue}>{customerName}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.card}>
@@ -180,21 +238,51 @@ export default function SaleDetailScreen() {
           {sale.items.length === 0 ? (
             <Text style={styles.emptyText}>No items</Text>
           ) : (
-            sale.items.map((item, idx) => (
-              <View key={idx} style={styles.itemRow}>
-                <View style={styles.itemLeft}>
-                  <Text style={styles.itemName} numberOfLines={2}>
-                    {item.product_name}
-                  </Text>
-                  <Text style={styles.itemMeta}>
-                    {item.quantity} × {formatCurrency(item.unit_price_cents)}
+            sale.items.map((item, idx) =>
+              item.product_id ? (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.itemRow}
+                  onPress={() => openProduct(item.product_id)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`${item.product_name}, ${item.quantity} at ${formatCurrency(item.unit_price_cents)}. Tap to open item.`}>
+                  <View style={styles.itemLeft}>
+                    <Text
+                      style={[styles.itemName, styles.itemNameLink]}
+                      numberOfLines={2}>
+                      {item.product_name}
+                    </Text>
+                    <Text style={styles.itemMeta}>
+                      {item.quantity} × {formatCurrency(item.unit_price_cents)}
+                    </Text>
+                  </View>
+                  <View style={styles.itemRight}>
+                    <Text style={styles.itemTotal}>
+                      {formatCurrency(item.line_total_cents)}
+                    </Text>
+                    <Icon
+                      name="chevron-forward"
+                      size={14}
+                      color={COLORS.textMuted}
+                    />
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <View key={idx} style={styles.itemRow}>
+                  <View style={styles.itemLeft}>
+                    <Text style={styles.itemName} numberOfLines={2}>
+                      {item.product_name}
+                    </Text>
+                    <Text style={styles.itemMeta}>
+                      {item.quantity} × {formatCurrency(item.unit_price_cents)}
+                    </Text>
+                  </View>
+                  <Text style={styles.itemTotal}>
+                    {formatCurrency(item.line_total_cents)}
                   </Text>
                 </View>
-                <Text style={styles.itemTotal}>
-                  {formatCurrency(item.line_total_cents)}
-                </Text>
-              </View>
-            ))
+              ),
+            )
           )}
         </View>
 
@@ -337,6 +425,10 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.medium,
   },
+  rowValueWithChevron: {flexDirection: 'row', alignItems: 'center'},
+  rowValueLink: {color: COLORS.crimson, marginRight: SPACING.xs},
+  itemRight: {flexDirection: 'row', alignItems: 'center', gap: 4},
+  itemNameLink: {color: COLORS.crimson},
   itemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -69,6 +69,15 @@ export class ApiClient {
     this.relay.setOnUnauthorized(cb);
   }
 
+  // Refresh hook for the 401-retry path. Both transports get the same
+  // callback; only the one that actually issued the failing call will
+  // invoke it. The callback should refresh the token and call setAuthToken
+  // before returning true.
+  setOnRefresh(cb: (() => Promise<boolean>) | null): void {
+    this.direct.setOnRefresh(cb);
+    this.relay.setOnRefresh(cb);
+  }
+
   getMode(): ConnectionMode {
     return this.mode;
   }

@@ -113,29 +113,29 @@ const ProductEditScreen: React.FC = () => {
   }, []);
 
   // Pick up a value returned from the Scanner (capture mode). The Scanner
-  // merges {scannedBarcode} onto our route params; we hydrate the form
-  // field and immediately clear the param so a focus revisit doesn't keep
-  // re-applying a stale code. A ref tracks the last-applied raw value so
-  // that re-scanning the SAME barcode twice in a row doesn't trip a second
-  // haptic / overwrite mid-edit work — React Navigation will re-deliver the
-  // same string and the effect would otherwise re-run.
-  const lastAppliedScanRef = useRef<string | null>(null);
+  // merges {scannedBarcode} onto our route params via popTo(); we hydrate
+  // the form field and immediately clear the param. Synchronously clearing
+  // the param is the dedupe — once cleared, the effect's guard short-
+  // circuits until the user makes a fresh trip through the Scanner.
+  //
+  // Earlier versions tracked the last-applied string in a ref and skipped
+  // matching values. That broke the "scan the same code twice" flow:
+  // ProductEdit → Scanner → barcode 1234 → back → realise something's off
+  // → Scanner → barcode 1234 again → ref shortcuts → field doesn't update
+  // → user sees no feedback and reports "it says it's a duplicate."
+  // Identity-based dedupe is the wrong tool here; the param-clear handles
+  // re-fires and a genuine re-scan should always re-hydrate.
   useEffect(() => {
     if (!scannedBarcodeParam) return;
-    if (lastAppliedScanRef.current === scannedBarcodeParam) {
-      // Stale params left behind — clear and bail.
-      navigation.setParams({scannedBarcode: undefined});
-      return;
-    }
-    lastAppliedScanRef.current = scannedBarcodeParam;
     const trimmed = scannedBarcodeParam.trim();
-    if (trimmed) {
-      setForm(prev =>
-        prev.barcode === trimmed ? prev : {...prev, barcode: trimmed},
-      );
-      haptics.success();
-    }
+    // Clear first so a synchronous re-render from setForm doesn't see the
+    // param still set and queue a second pass.
     navigation.setParams({scannedBarcode: undefined});
+    if (!trimmed) return;
+    setForm(prev =>
+      prev.barcode === trimmed ? prev : {...prev, barcode: trimmed},
+    );
+    haptics.success();
   }, [scannedBarcodeParam, haptics, navigation]);
 
   // Hydrate categories alongside the product so the picker has options as
