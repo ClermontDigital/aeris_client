@@ -172,6 +172,29 @@ const App: React.FC = () => {
         ApiClient.setOnUnauthorized(() => {
           clearLocalSession();
         });
+        // Refresh-on-401 hook: when a user-traffic call returns 401, the
+        // transport calls this once before firing onUnauthorized. If a fresh
+        // token lands, the original call is retried transparently so a
+        // routine token expiry no longer kicks the user back to login
+        // mid-task. Returns true on success (post-refresh token differs
+        // from pre-refresh token + is non-null) so the transport knows to
+        // proceed with the retry.
+        ApiClient.setOnRefresh(async () => {
+          try {
+            await useAuthStore.getState().refreshSession();
+            // Success criterion: there's still a non-null token after the
+            // refresh completes. refreshSession only commits the new bearer
+            // when the server returned 2xx; on 401 it calls
+            // clearLocalSession (token → null), on transient failures it
+            // leaves the existing token in place. Comparing token-before
+            // vs token-after would yield a false negative when the server
+            // renews expiry without rotating the bearer string.
+            const after = useAuthStore.getState().token;
+            return after !== null;
+          } catch {
+            return false;
+          }
+        });
         await restoreSession();
         if (cancelled) return;
         await Promise.all([restoreCache(), initAppLock()]);
@@ -190,6 +213,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
       ApiClient.setOnUnauthorized(null);
+      ApiClient.setOnRefresh(null);
     };
   }, [initSettings, restoreSession, restoreCache, clearLocalSession, initAppLock]);
 

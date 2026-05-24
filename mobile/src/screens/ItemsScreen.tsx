@@ -125,10 +125,19 @@ const ItemsScreen: React.FC = () => {
   }, [search, fetchPage]);
 
   const handleLoadMore = useCallback(() => {
+    // Only paginate when the visible list is sourced from `items` (i.e.
+    // we're on "All" with no search, OR any filter WITH a search). When a
+    // Low/Out filter is active without search, visibleItems is sourced
+    // from the full cache and pulling more pages over the wire would be
+    // wasted bandwidth + leave the appended rows invisible behind the
+    // cache filter.
+    const searching = search.trim().length > 0;
+    const usingItemsArray = stockFilter === 'all' || searching;
+    if (!usingItemsArray) return;
     if (!isLoadingMore && page < lastPage) {
       fetchPage(page + 1, true, search);
     }
-  }, [isLoadingMore, page, lastPage, search, fetchPage]);
+  }, [isLoadingMore, page, lastPage, search, fetchPage, stockFilter]);
 
   // Total comes from the server's pagination meta (stable across scrolling).
   // Low / Out are computed across the FULL cached catalog so the tiles
@@ -174,21 +183,35 @@ const ItemsScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Tile filter — client-side over loaded pages (the relay search doesn't
-  // expose a stock-status filter parameter). When a filter is active and
-  // the FlatList scrolls to the end, onEndReached still fires against the
-  // filtered subset, so more pages keep loading as needed. Empty-state
-  // copy adapts to the active filter so the user understands why a small
-  // list might be all of it.
+  // Tile filter — when "Low" or "Out" is active and there's no search,
+  // source from the FULL product cache so the visible list matches the
+  // stat-tile count. Filtering only the loaded pages caused a confusing
+  // mismatch: tile said "Low stock 21" but the list showed 3 because only
+  // the first page was loaded. The cache is already populated for the
+  // stats, so there's no extra fetch — we just reuse it.
+  //
+  // For "All" (no filter), stay with the paginated `items` array so the
+  // user keeps progressive scroll-to-load behavior on large catalogs
+  // instead of rendering the entire cache at once. For search, also stay
+  // with paginated items — server-side search is the source of truth.
   const visibleItems = useMemo(() => {
+    const trimmedSearch = search.trim();
     if (stockFilter === 'all') return items;
-    if (stockFilter === 'low') {
-      return items.filter(
-        it => it.stock_on_hand > 0 && it.stock_on_hand < LOW_STOCK_THRESHOLD,
-      );
-    }
-    return items.filter(it => it.stock_on_hand <= 0);
-  }, [items, stockFilter]);
+    const filteredItems =
+      stockFilter === 'low'
+        ? items.filter(
+            it => it.stock_on_hand > 0 && it.stock_on_hand < LOW_STOCK_THRESHOLD,
+          )
+        : items.filter(it => it.stock_on_hand <= 0);
+    // When searching, we can't safely apply the cache (the cache doesn't
+    // know about the search term). Fall back to filtered loaded pages.
+    if (trimmedSearch || !cacheReady) return filteredItems;
+    return stockFilter === 'low'
+      ? cachedProducts.filter(
+          it => it.stock_on_hand > 0 && it.stock_on_hand < LOW_STOCK_THRESHOLD,
+        )
+      : cachedProducts.filter(it => it.stock_on_hand <= 0);
+  }, [items, cachedProducts, cacheReady, stockFilter, search]);
 
   const toggleFilter = useCallback(
     (next: StockFilter) => {

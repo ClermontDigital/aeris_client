@@ -50,8 +50,41 @@ import {generateUuid} from './uuid';
 const DEFAULT_TIMEOUT_MS = 20_000;
 const RELAY_BUFFER_MS = 3_000; // client waits this long beyond server-side timeout
 
+// Write actions are expected to return the persisted entity (Aeris2 resource
+// wrapped in {data: {...}}). If we instead get null/undefined or {data: null},
+// the dispatcher accepted the request but the entity didn't persist — exactly
+// the failure mode the marketplace team has hit before. Bail loudly so the
+// caller's screen surfaces a banner instead of silently "succeeding" with a
+// garbage normalized object.
+function assertWritePersisted(raw: unknown, action: string): void {
+  if (raw === null || raw === undefined) {
+    throw new RelayError(
+      "We couldn't save that. Please try again.",
+      'EMPTY_RESPONSE',
+      null,
+      action,
+    );
+  }
+  if (
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    'data' in (raw as Record<string, unknown>) &&
+    (raw as {data: unknown}).data == null
+  ) {
+    throw new RelayError(
+      "We couldn't save that. Please try again.",
+      'EMPTY_RESPONSE',
+      null,
+      action,
+    );
+  }
+}
+
 interface RequestOptions {
   idempotencyKey?: string;
+  // Internal-only: set true on the retry leg of a 401 → refresh → retry
+  // sequence so we don't loop forever if the refreshed bearer also 401s.
+  __retried?: boolean;
 }
 
 export class RelayClient {
@@ -59,6 +92,12 @@ export class RelayClient {
   private authToken: string | null = null;
   private timeoutMs: number = DEFAULT_TIMEOUT_MS;
   private onUnauthorizedCb: (() => void) | null = null;
+  // Caller-supplied refresh hook. When set, a 401 on a NON-refresh action
+  // triggers one attempt at this callback before bouncing the user. The
+  // callback should call refreshToken() under the hood, persist the new
+  // token, call setAuthToken(), and return true on success. Any throw or
+  // false is treated as "refresh failed" → onUnauthorized fires.
+  private onRefreshCb: (() => Promise<boolean>) | null = null;
   private workspaceCode: string = '';
 
   configure(options: {
@@ -92,6 +131,10 @@ export class RelayClient {
 
   setOnUnauthorized(cb: (() => void) | null): void {
     this.onUnauthorizedCb = cb;
+  }
+
+  setOnRefresh(cb: (() => Promise<boolean>) | null): void {
+    this.onRefreshCb = cb;
   }
 
   getWorkspaceCode(): string {
@@ -468,6 +511,11 @@ export class RelayClient {
     per_page?: number;
     date_from?: string;
     date_to?: string;
+    // Defensive product filter — Aeris2's transactions.list will honour
+    // `product_id` once the controller wiring lands. Sending it now means
+    // ProductDetail's "Recent sales" section auto-lights-up the day the
+    // server filter ships, with no mobile push needed.
+    product_id?: number;
   }): Promise<PaginatedResponse<Sale>> {
     return withReadRetry(async () => {
       const raw = await this.relayRpc<PaginatedResponse<unknown>>(
@@ -574,6 +622,7 @@ export class RelayClient {
           payload,
           {idempotencyKey},
         );
+        assertWritePersisted(raw, RELAY_ACTIONS.CUSTOMERS_CREATE);
         return normalizeCustomer(unwrapResource(raw));
       } catch (e) {
         lastError = e;
@@ -590,6 +639,7 @@ export class RelayClient {
       customer_id: id,
       id,
     });
+    assertWritePersisted(raw, RELAY_ACTIONS.CUSTOMERS_UPDATE);
     return normalizeCustomer(unwrapResource(raw));
   }
 
@@ -616,6 +666,7 @@ export class RelayClient {
           payload,
           {idempotencyKey},
         );
+        assertWritePersisted(raw, RELAY_ACTIONS.PRODUCTS_CREATE);
         return normalizeProduct(unwrapResource(raw));
       } catch (e) {
         lastError = e;
@@ -632,6 +683,7 @@ export class RelayClient {
       product_id: id,
       id,
     });
+    assertWritePersisted(raw, RELAY_ACTIONS.PRODUCTS_UPDATE);
     return normalizeProduct(unwrapResource(raw));
   }
 
@@ -656,6 +708,7 @@ export class RelayClient {
           },
           {idempotencyKey},
         );
+        assertWritePersisted(raw, RELAY_ACTIONS.INVENTORY_ADJUST_STOCK);
         return normalizeStockAdjustment(unwrapResource(raw));
       } catch (e) {
         lastError = e;
@@ -751,6 +804,34 @@ export class RelayClient {
       });
 
       if (response.status === 401) {
+        // The auth.refresh action itself is allowed to 401 — that means the
+        // token genuinely can't be refreshed (e.g. revoked, server lost the
+        // session). In that case we DO bounce. For any other action, try
+        // a one-shot refresh-and-retry before wiping the session, so a
+        // routine token expiry doesn't kick the user back to login mid-task.
+        const isRefresh = action === RELAY_ACTIONS.AUTH_REFRESH;
+        if (
+          !isRefresh &&
+          !options?.__retried &&
+          this.onRefreshCb !== null &&
+          this.authToken !== null
+        ) {
+          let refreshed = false;
+          try {
+            refreshed = await this.onRefreshCb();
+          } catch {
+            refreshed = false;
+          }
+          if (refreshed) {
+            // Retry the original call with the freshly-set bearer. The
+            // __retried flag prevents infinite recursion if the new token
+            // is also rejected.
+            return this.relayRpc<T>(action, params, {
+              ...options,
+              __retried: true,
+            });
+          }
+        }
         this.handleUnauthorized();
         const err = new Error('Authentication expired. Please log in again.');
         (err as Error & {status?: number}).status = 401;
