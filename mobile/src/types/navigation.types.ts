@@ -11,11 +11,19 @@ export type AuthStackParamList = {
   Login: undefined;
 };
 
+// Cross-tab navigation (e.g. `getParent()?.navigate('Items', {screen:
+// 'ProductDetail', params: {productId}})`) requires each tab whose
+// inner stack screens can be addressed from outside to be typed as
+// `NavigatorScreenParams<...>` (or that | undefined). If a tab is
+// typed just `undefined`, React Navigation silently fails to route
+// the nested `screen` param at runtime — the tab activates but
+// `route.params` on the destination is undefined, which renders as
+// "undefined" or crashes screens that destructure required params.
 export type AppTabParamList = {
   Dashboard: undefined;
-  QuickSale: undefined;
-  Items: undefined;
-  Customers: undefined;
+  QuickSale: NavigatorScreenParams<QuickSaleStackParamList> | undefined;
+  Items: NavigatorScreenParams<ItemsStackParamList> | undefined;
+  Customers: NavigatorScreenParams<CustomersStackParamList> | undefined;
   Transactions: NavigatorScreenParams<TransactionsStackParamList> | undefined;
   ERP: undefined;
 };

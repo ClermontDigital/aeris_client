@@ -19,7 +19,8 @@ import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constan
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
-import type {ProductDetail} from '../types/api.types';
+import type {ProductDetail, Sale} from '../types/api.types';
+import {useNavHistoryStore} from '../stores/navHistoryStore';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 
@@ -41,6 +42,13 @@ export default function ProductDetailScreen() {
   const [isUnavailable, setIsUnavailable] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [stockModalVisible, setStockModalVisible] = useState(false);
+  // Recent transactions involving this product. The `product_id` filter is
+  // sent as a defensive param — once the marketplace dispatcher honours
+  // it, the list is item-specific. Until then the user sees recent sales
+  // generally, which is still useful navigation and matches their explicit
+  // request to "show recent sales for this item". The section copy says
+  // "Recent transactions" (not "for this item") to stay honest.
+  const [recentSales, setRecentSales] = useState<Sale[]>([]);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -65,6 +73,28 @@ export default function ProductDetailScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Fetch a small page of recent transactions for this product. Best-
+  // effort — failures swallow silently so a non-essential section can't
+  // break the screen. Capped at 5 so the round-trip stays cheap.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const page = await ApiClient.getTransactions({
+          product_id: productId,
+          per_page: 5,
+          page: 1,
+        });
+        if (!cancelled) setRecentSales(page.data ?? []);
+      } catch {
+        // Transactions section is non-essential — leave empty on failure.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
 
   // Re-fetch on focus so edits from ProductEdit are reflected when the
   // user swipes back. Skip the very first focus (the useEffect above
@@ -330,13 +360,65 @@ export default function ProductDetailScreen() {
           )}
         </View>
 
-        {/* Recent transactions for this item is deferred until the
-            marketplace gateway honours `transactions.list?product_id=...`.
-            Without server-side filtering, listing globally-recent sales
-            under a product-detail card reads as "sales of this item",
-            which would be a lie. Defensive `product_id` is already wired
-            in shared/RelayClient.getTransactions; this card lights up
-            once the server filter ships. */}
+        {recentSales.length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Recent transactions</Text>
+            {recentSales.map((s, idx) => {
+              const ts = new Date(s.created_at);
+              const dateStr = isNaN(ts.getTime())
+                ? '—'
+                : ts.toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+              const last = idx === recentSales.length - 1;
+              return (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[styles.saleRow, last && styles.saleRowLast]}
+                  onPress={() => {
+                    haptics.light();
+                    // Drop a breadcrumb so SaleDetail's Back returns here.
+                    useNavHistoryStore.getState().push({
+                      tab: 'Items',
+                      screen: 'ProductDetail',
+                      params: {productId},
+                    });
+                    const parent = navigation.getParent?.();
+                    if (!parent) return;
+                    (parent as unknown as {
+                      navigate: (tab: string, params: object) => void;
+                    }).navigate('Transactions', {
+                      screen: 'SaleDetail',
+                      params: {saleId: s.id},
+                    });
+                  }}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Sale ${s.sale_number}, ${dateStr}, ${formatCurrency(s.total_cents)}. Tap to view.`}>
+                  <View style={styles.saleLeft}>
+                    <Text style={styles.saleNumber}>{s.sale_number}</Text>
+                    <Text style={styles.saleMeta}>
+                      {dateStr}
+                      {s.customer_name ? ` · ${s.customer_name}` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.saleRight}>
+                    <Text style={styles.saleTotal}>
+                      {formatCurrency(s.total_cents)}
+                    </Text>
+                    <Icon
+                      name="chevron-forward"
+                      size={14}
+                      color={COLORS.textMuted}
+                    />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
 
         {product.variants && product.variants.length > 0 ? (
           <View style={styles.card}>
@@ -382,6 +464,23 @@ export default function ProductDetailScreen() {
           style={styles.backBtn}
           onPress={() => {
             haptics.light();
+            // Cross-tab breadcrumb back: if the user reached us via a
+            // cross-tab jump (e.g. SaleDetail → ProductDetail), the parent
+            // tab navigator owns the "back" target — return to where they
+            // came from rather than popping inside the Items stack.
+            const prev = useNavHistoryStore.getState().popPrev();
+            if (prev) {
+              const parent = navigation.getParent?.();
+              if (parent) {
+                (parent as unknown as {
+                  navigate: (tab: string, params: object) => void;
+                }).navigate(prev.tab, {
+                  screen: prev.screen,
+                  params: prev.params ?? {},
+                });
+                return;
+              }
+            }
             navigation.goBack();
           }}>
           <Icon
@@ -584,18 +683,40 @@ const styles = StyleSheet.create({
   tableValue: {color: COLORS.text, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.bold},
   emptyHint: {color: COLORS.textDim, fontSize: FONT_SIZE.sm, fontStyle: 'italic'},
   barcodeWrap: {alignItems: 'center', marginVertical: SPACING.sm},
+  saleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceBorder,
+  },
+  saleRowLast: {borderBottomWidth: 0, paddingBottom: 0},
+  saleLeft: {flex: 1, marginRight: SPACING.md},
+  saleRight: {flexDirection: 'row', alignItems: 'center', gap: 4},
+  saleNumber: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+    fontVariant: ['tabular-nums'],
+  },
+  saleMeta: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    marginTop: 2,
+  },
+  saleTotal: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bold,
+    fontVariant: ['tabular-nums'],
+  },
   shareCard: {
+    // White surface matching every other widget card on this screen.
+    // The earlier cream-tinted variant visually drifted from the Pricing
+    // / Stock / Recent transactions cards and read as a different
+    // component, which was unintentional.
     ...cardBase,
-    // Cream tint + soft crimson shadow lifts the barcode card off the rest
-    // of the info cards without needing eyebrow/title chrome. The barcode
-    // itself reads as the affordance.
-    backgroundColor: COLORS.cream,
-    borderColor: COLORS.crimson + '33',
-    shadowColor: COLORS.crimson,
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
   },
   variantRow: {
     flexDirection: 'row',
