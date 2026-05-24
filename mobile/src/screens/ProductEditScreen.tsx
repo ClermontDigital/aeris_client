@@ -220,6 +220,8 @@ const ProductEditScreen: React.FC = () => {
   // Synchronous double-tap guard — see CustomerEditScreen for rationale.
   const submitLockRef = useRef(false);
   const syncProducts = useProductCacheStore(s => s.syncProducts);
+  const getByBarcode = useProductCacheStore(s => s.getByBarcode);
+  const cachedProducts = useProductCacheStore(s => s.products);
 
   const handleSubmit = useCallback(async () => {
     if (submitLockRef.current) return;
@@ -227,6 +229,46 @@ const ProductEditScreen: React.FC = () => {
       haptics.error();
       return;
     }
+
+    // Client-side pre-checks against the cached catalog. The server is the
+    // source of truth, but these guards turn a confusing server-side
+    // "SKU already in use" / "barcode already in use" round-trip into an
+    // immediate, clearly-labelled field-level error. Edit mode (we know
+    // our own id) excludes ourselves from collision detection.
+    const trimmedSku = form.sku.trim().toLowerCase();
+    const trimmedBarcode = form.barcode.trim();
+    const skuClash = trimmedSku
+      ? cachedProducts.find(
+          p =>
+            typeof p?.sku === 'string' &&
+            p.sku.toLowerCase() === trimmedSku &&
+            (productId === null || p.id !== productId),
+        )
+      : null;
+    const barcodeClash = trimmedBarcode
+      ? (() => {
+          const hit = getByBarcode(trimmedBarcode);
+          return hit && (productId === null || hit.id !== productId)
+            ? hit
+            : null;
+        })()
+      : null;
+    if (skuClash) {
+      haptics.error();
+      setFieldErrors(p => ({
+        ...p,
+        sku: `This SKU is already used by "${skuClash.name}".`,
+      }));
+      return;
+    }
+    if (barcodeClash) {
+      haptics.error();
+      setError(
+        `This barcode is already on "${barcodeClash.name}". Edit that item instead, or scan a different barcode.`,
+      );
+      return;
+    }
+
     submitLockRef.current = true;
     setSaving(true);
     setError(null);
@@ -282,12 +324,35 @@ const ProductEditScreen: React.FC = () => {
       navigation.goBack();
     } catch (e) {
       haptics.error();
-      setError(e instanceof Error ? e.message : 'Failed to save item');
+      const msg = e instanceof Error ? e.message : 'Failed to save item';
+      // Server-side field errors come back in the message string (e.g.
+      // "This SKU is already in use." from Laravel's unique rule). Route
+      // them into the field-level error map so the user sees the red
+      // border on the actual offending input instead of just a top
+      // banner. Falls back to the top banner if we can't classify.
+      const lower = msg.toLowerCase();
+      if (lower.includes('sku')) {
+        setFieldErrors(p => ({...p, sku: msg}));
+      } else if (lower.includes('barcode')) {
+        setError(msg);
+      } else {
+        setError(msg);
+      }
     } finally {
       setSaving(false);
       submitLockRef.current = false;
     }
-  }, [form, isEdit, productId, runValidation, haptics, navigation, syncProducts]);
+  }, [
+    form,
+    isEdit,
+    productId,
+    runValidation,
+    haptics,
+    navigation,
+    syncProducts,
+    cachedProducts,
+    getByBarcode,
+  ]);
 
   if (loading) {
     return (

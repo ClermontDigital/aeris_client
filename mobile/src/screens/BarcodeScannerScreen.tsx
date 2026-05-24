@@ -4,10 +4,12 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   StyleSheet,
   Alert,
   Linking,
+  type GestureResponderEvent,
 } from 'react-native';
 import {CameraView, useCameraPermissions} from 'expo-camera';
 import {useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
@@ -51,6 +53,21 @@ const BarcodeScannerScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const [permission, requestPermission] = useCameraPermissions();
   const [torchOn, setTorchOn] = useState(false);
+  // expo-camera v55 doesn't expose a focus-point API — its only knobs are
+  // `autofocus` ('off' = continuous AF, 'on' = lock once), `zoom` (0..1),
+  // torch, flash, and facing. We default to continuous AF and give the
+  // operator a zoom affordance so they can frame a small/distant barcode
+  // without physically moving the phone. iPhone wide lenses can't focus
+  // closer than ~6–12 cm, so the legend nudges the user to back off when
+  // the barcode fills the frame.
+  //
+  // Zoom is capped at 0.4 — anything above that on a wide lens turns into
+  // unusable digital crop and kills decode accuracy.
+  const ZOOM_MAX = 0.4;
+  const ZOOM_STEP = 0.05;
+  const [zoom, setZoom] = useState(0);
+  const [focusAt, setFocusAt] = useState<{x: number; y: number} | null>(null);
+  const focusReticleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [scannedProduct, setScannedProduct] = useState<
     Product | ProductDetail | null
   >(null);
@@ -233,6 +250,47 @@ const BarcodeScannerScreen: React.FC = () => {
     scanLockRef.current = false;
   }, []);
 
+  // Tap on the camera preview. expo-camera v55 has no focus-point API and
+  // the previous remount-on-tap "fix" caused visible black flashes without
+  // actually refocusing. We keep the reticle as a passive visual ack of
+  // where the user tapped — continuous AF (`autofocus="off"`) handles
+  // re-acquisition on its own. If the camera can't lock, the answer is
+  // zoom (bottom buttons) or backing the phone off.
+  const handleFocusTap = useCallback((e: GestureResponderEvent) => {
+    const {locationX, locationY} = e.nativeEvent;
+    setFocusAt({x: locationX, y: locationY});
+    if (focusReticleTimer.current) clearTimeout(focusReticleTimer.current);
+    focusReticleTimer.current = setTimeout(() => setFocusAt(null), 700);
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    haptics.light();
+    setZoom(z => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)));
+  }, [haptics]);
+
+  const handleZoomOut = useCallback(() => {
+    haptics.light();
+    setZoom(z => Math.max(0, +(z - ZOOM_STEP).toFixed(2)));
+  }, [haptics]);
+
+  // Display zoom as a multiplier. zoom=0 → 1.0x, zoom=ZOOM_MAX (0.4) →
+  // ~3.0x. Linear mapping is good enough for a UI hint; the underlying
+  // expo-camera curve is non-linear but the operator just needs feedback
+  // that the buttons are doing something.
+  const zoomLabel = `${(1 + zoom * 5).toFixed(1)}x`;
+
+  // Clean up focus timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (focusReticleTimer.current) clearTimeout(focusReticleTimer.current);
+    };
+  }, []);
+
+  const handleCancel = useCallback(() => {
+    haptics.light();
+    navigation.goBack();
+  }, [navigation, haptics]);
+
   // Permission not yet determined
   if (!permission) {
     return (
@@ -287,24 +345,45 @@ const BarcodeScannerScreen: React.FC = () => {
           Auto-rearm path: clearing scannedProduct/notFound also re-mounts
           the camera, which is fine — expo-camera's mount time is < 200ms. */}
       {isFocused && !scannedProduct && !notFound ? (
-        <CameraView
+        <Pressable
           style={styles.camera}
-          facing="back"
-          enableTorch={torchOn}
-          autofocus="on"
-          barcodeScannerSettings={{
-            barcodeTypes: [
-              'ean13',
-              'ean8',
-              'upc_a',
-              'upc_e',
-              'code128',
-              'code39',
-            ],
-          }}
-          onBarcodeScanned={
-            scanLock || isLookingUp ? undefined : handleBarcodeScanned
-          }
+          onPress={handleFocusTap}
+          accessibilityRole="button"
+          accessibilityLabel="Tap on the barcode to focus the camera">
+          <CameraView
+            style={styles.camera}
+            facing="back"
+            enableTorch={torchOn}
+            autofocus="off"
+            zoom={zoom}
+            barcodeScannerSettings={{
+              barcodeTypes: [
+                'ean13',
+                'ean8',
+                'upc_a',
+                'upc_e',
+                'code128',
+                'code39',
+              ],
+            }}
+            onBarcodeScanned={
+              scanLock || isLookingUp ? undefined : handleBarcodeScanned
+            }
+          />
+        </Pressable>
+      ) : null}
+
+      {/* Transient tap-to-focus reticle — small circle that fades the user's
+          tap into a visual confirmation that focus is being re-acquired.
+          Sits above the camera but below the topOverlay; pointerEvents=none
+          so it never blocks subsequent taps on the same area. */}
+      {focusAt ? (
+        <View
+          style={[
+            styles.focusReticle,
+            {left: focusAt.x - 28, top: focusAt.y - 28},
+          ]}
+          pointerEvents="none"
         />
       ) : null}
 
@@ -325,6 +404,9 @@ const BarcodeScannerScreen: React.FC = () => {
           <Text style={styles.reticleLegend}>
             Centre the barcode in the box
           </Text>
+          <Text style={styles.reticleHint}>
+            Hold the phone 10–15 cm away · use zoom to frame
+          </Text>
         </View>
       ) : null}
 
@@ -339,14 +421,27 @@ const BarcodeScannerScreen: React.FC = () => {
         </View>
       ) : null}
 
-      {/* Top overlay */}
+      {/* Top overlay — Cancel left, title centre, torch right. The user
+          needs a clear exit affordance from the scanner if nothing scans;
+          previously the only way back was the system-level swipe gesture,
+          which is invisible to a first-time operator. */}
       <View style={styles.topOverlay}>
+        <TouchableOpacity
+          style={styles.cancelButton}
+          onPress={handleCancel}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel and go back"
+          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
         <Text style={styles.topTitle}>
           {mode === 'capture' ? 'Capture Barcode' : 'Scan Barcode'}
         </Text>
         <TouchableOpacity
           style={styles.torchButton}
-          onPress={() => setTorchOn(prev => !prev)}>
+          onPress={() => setTorchOn(prev => !prev)}
+          accessibilityRole="button"
+          accessibilityLabel={torchOn ? 'Turn torch off' : 'Turn torch on'}>
           <Icon
             name={torchOn ? 'flash' : 'flash-off'}
             size={22}
@@ -402,6 +497,37 @@ const BarcodeScannerScreen: React.FC = () => {
               style={styles.dismissButton}
               onPress={handleDismiss}>
               <Text style={styles.dismissText}>Scan Again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Zoom controls. The only reliable lever expo-camera v55 gives us
+            for framing a small/distant barcode without physically moving
+            the phone. Hidden while a result card is up (where it'd just
+            be noise) and during lookup. */}
+        {!scannedProduct && !notFound && !isLookingUp ? (
+          <View style={styles.zoomRow}>
+            <TouchableOpacity
+              style={[styles.zoomButton, zoom <= 0 && styles.zoomButtonDisabled]}
+              onPress={handleZoomOut}
+              disabled={zoom <= 0}
+              accessibilityRole="button"
+              accessibilityLabel="Zoom out"
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+              <Text style={styles.zoomButtonText}>−</Text>
+            </TouchableOpacity>
+            <Text style={styles.zoomLabel}>{zoomLabel}</Text>
+            <TouchableOpacity
+              style={[
+                styles.zoomButton,
+                zoom >= ZOOM_MAX && styles.zoomButtonDisabled,
+              ]}
+              onPress={handleZoomIn}
+              disabled={zoom >= ZOOM_MAX}
+              accessibilityRole="button"
+              accessibilityLabel="Zoom in"
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+              <Text style={styles.zoomButtonText}>+</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -528,6 +654,16 @@ const styles = StyleSheet.create({
     textShadowOffset: {width: 0, height: 1},
     textShadowRadius: 2,
   },
+  reticleHint: {
+    marginTop: 4,
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.regular,
+    opacity: 0.55,
+    textShadowColor: 'rgba(0, 0, 0, 0.45)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 2,
+  },
   busyCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -571,6 +707,30 @@ const styles = StyleSheet.create({
     borderColor: COLORS.toolbarBtnBorder,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cancelButton: {
+    minWidth: 64,
+    height: 40,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  // Transient tap-to-focus indicator. 56×56 cream-bordered circle that
+  // fades after ~700ms (handled in JS via the focusReticleTimer).
+  focusReticle: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 247, 230, 0.95)',
+    zIndex: 3,
   },
   // Semi-transparent navy backdrop so any text rendered directly in the
   // bottom area (manual-entry toggle, errors) stays legible against an
@@ -661,6 +821,42 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     textAlign: 'center',
     marginBottom: SPACING.sm,
+  },
+  // Zoom controls sit above the manual-entry toggle. Pill-shaped row so
+  // the buttons read as a single grouped control rather than free-floating.
+  zoomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  zoomButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.toolbarBtn,
+    borderWidth: 1,
+    borderColor: COLORS.toolbarBtnBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonDisabled: {
+    opacity: 0.35,
+  },
+  zoomButtonText: {
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.xl,
+    fontFamily: FONT_FAMILY.medium,
+    lineHeight: FONT_SIZE.xl + 4,
+  },
+  zoomLabel: {
+    minWidth: 56,
+    textAlign: 'center',
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
   },
   manualToggle: {
     flexDirection: 'row',

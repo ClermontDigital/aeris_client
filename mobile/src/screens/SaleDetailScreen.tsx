@@ -28,6 +28,7 @@ import ErrorBanner from '../components/ErrorBanner';
 import type {SaleDetail, Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
+import {useNavHistoryStore} from '../stores/navHistoryStore';
 
 type SaleDetailRouteProp = RouteProp<TransactionsStackParamList, 'SaleDetail'>;
 type Nav = NativeStackNavigationProp<TransactionsStackParamList>;
@@ -94,6 +95,81 @@ export default function SaleDetailScreen() {
     load();
   }, [load]);
 
+  // Cross-tab navigators: tap a customer name → Customers tab, CustomerDetail.
+  // Tap a line-item → Items tab, ProductDetail. Both jump out of the
+  // Transactions stack via the parent tab navigator.
+  //
+  // CRITICAL: these `useCallback`s MUST live above the early-return guards
+  // below. React hooks must run in the same order on every render — the
+  // previous shape (callbacks declared *after* the isLoading/isUnavailable/
+  // notFound returns) called fewer hooks on the loading frame than on the
+  // committed frame, which crashes the screen with "rendered more hooks
+  // than previous render" the moment the user taps a transaction row.
+  //
+  // Cross-tab nav also pushes a breadcrumb so the back button on the
+  // destination screen can return here, not bounce to ItemsList/CustomersList.
+  const pushCrumb = useNavHistoryStore(s => s.push);
+  const openCustomer = useCallback(
+    (id: number) => {
+      haptics.light();
+      const parent = navigation.getParent?.();
+      if (!parent) return;
+      pushCrumb({
+        tab: 'Transactions',
+        screen: 'SaleDetail',
+        params: {saleId},
+      });
+      (parent as unknown as {
+        navigate: (tab: string, params: object) => void;
+      }).navigate('Customers', {
+        screen: 'CustomerDetail',
+        params: {customerId: id},
+      });
+    },
+    [navigation, haptics, pushCrumb, saleId],
+  );
+  const openProduct = useCallback(
+    (id: number) => {
+      haptics.light();
+      const parent = navigation.getParent?.();
+      if (!parent) return;
+      pushCrumb({
+        tab: 'Transactions',
+        screen: 'SaleDetail',
+        params: {saleId},
+      });
+      (parent as unknown as {
+        navigate: (tab: string, params: object) => void;
+      }).navigate('Items', {
+        screen: 'ProductDetail',
+        params: {productId: id},
+      });
+    },
+    [navigation, haptics, pushCrumb, saleId],
+  );
+
+  // Back button: consult the breadcrumb trail first, fall through to
+  // native stack pop. This is what lets a deep TransactionList → SaleA →
+  // ProductX → SaleB → ProductY journey unwind one hop at a time.
+  const popPrev = useNavHistoryStore(s => s.popPrev);
+  const handleBack = useCallback(() => {
+    haptics.light();
+    const prev = popPrev();
+    if (prev) {
+      const parent = navigation.getParent?.();
+      if (parent) {
+        (parent as unknown as {
+          navigate: (tab: string, params: object) => void;
+        }).navigate(prev.tab, {
+          screen: prev.screen,
+          params: prev.params ?? {},
+        });
+        return;
+      }
+    }
+    navigation.goBack();
+  }, [navigation, haptics, popPrev]);
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -150,43 +226,6 @@ export default function SaleDetailScreen() {
 
   const customerName = sale.customer?.name || sale.customer_name || 'Walk-in';
   const customerId = sale.customer?.id ?? sale.customer_id ?? null;
-
-  // Cross-tab navigators: tap a customer name → Customers tab, CustomerDetail.
-  // Tap a line-item → Items tab, ProductDetail. Both jump out of the
-  // Transactions stack via the parent tab navigator. If getParent() is
-  // unavailable (e.g. rendered outside the tab nav in a test), the tap is
-  // a no-op rather than a crash.
-  const openCustomer = useCallback(
-    (id: number) => {
-      haptics.light();
-      const parent = navigation.getParent?.();
-      if (!parent) return;
-      // Typed cross-stack jumps require an `any` here — the parent's
-      // ParamList is AppTabParamList, but we don't import that to keep
-      // SaleDetail decoupled.
-      (parent as unknown as {
-        navigate: (tab: string, params: object) => void;
-      }).navigate('Customers', {
-        screen: 'CustomerDetail',
-        params: {customerId: id},
-      });
-    },
-    [navigation, haptics],
-  );
-  const openProduct = useCallback(
-    (id: number) => {
-      haptics.light();
-      const parent = navigation.getParent?.();
-      if (!parent) return;
-      (parent as unknown as {
-        navigate: (tab: string, params: object) => void;
-      }).navigate('Items', {
-        screen: 'ProductDetail',
-        params: {productId: id},
-      });
-    },
-    [navigation, haptics],
-  );
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -338,12 +377,7 @@ export default function SaleDetailScreen() {
             }}>
             <Text style={styles.primaryBtnText}>View Receipt</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => {
-              haptics.light();
-              navigation.goBack();
-            }}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <Icon
               name="chevron-back"
               size={ICON_SIZE.action}
