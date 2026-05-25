@@ -366,7 +366,14 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <StatusBar hidden />
+        {/* StatusBar is hidden globally, but `barStyle="dark-content"` is
+            set defensively: if a future modal or OS-specific case ever
+            surfaces the status bar, the clock/battery text needs to be
+            DARK because the safe-area sides on the home chrome are now
+            cream (per the v1.3.45 self-contained pendant SVG). White
+            text on cream would be unreadable. Cost of being defensive
+            is zero — the prop is ignored while `hidden` is true. */}
+        <StatusBar hidden barStyle="dark-content" />
         <NavigationContainer
           theme={{
             dark: true,
