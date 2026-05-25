@@ -2,7 +2,7 @@
   "expo": {
     "name": "AERIS",
     "slug": "aeris",
-    "version": "1.3.40",
+    "version": "1.3.41",
     "orientation": "default",
     "icon": "./assets/images/app-icon.png",
     "scheme": "aeris",
@@ -34,7 +34,8 @@
         },
         "NSCameraUsageDescription": "AERIS uses the camera to scan product barcodes at the point of sale so you can add items to a transaction without typing.",
         "NSFaceIDUsageDescription": "AERIS uses Face ID to unlock the app between sessions so you don't have to re-enter your PIN every time you switch back.",
-        "NSLocalNetworkUsageDescription": "AERIS connects to your on-premises AERIS server on the local network when Direct connection mode is enabled."
+        "NSLocalNetworkUsageDescription": "AERIS connects to your on-premises AERIS server on the local network when Direct connection mode is enabled.",
+        "NSLocationWhenInUseUsageDescription": "AERIS does not collect your location. This permission is referenced by the camera library used for barcode scanning and is required by Apple even when location features are not used."
       },
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": [
@@ -91,6 +92,7 @@
         {
           "cameraPermissionText": "AERIS uses the camera to scan product barcodes at the point of sale so you can add items to a transaction without typing.",
           "enableMicrophonePermission": false,
+          "enableLocation": false,
           "enableCodeScanner": true
         }
       ],
