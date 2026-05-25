@@ -80,8 +80,8 @@ const BAND_TOP = 30;
 const BAND_H = 48;
 const TONGUE_TOP_W = 200;
 const TONGUE_BOTTOM_W = 140;
-const TONGUE_PROTRUSION = 24;
-const TONGUE_RADIUS = 22;
+const TONGUE_PROTRUSION = 16;
+const TONGUE_RADIUS = 14;
 
 // "Pop to root" when a focused tab is re-tapped. React Navigation v7
 // bottom-tabs DOES NOT do this by default — pressing the focused tab
