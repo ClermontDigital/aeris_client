@@ -1,5 +1,33 @@
 import React, {useCallback, useEffect, useRef} from 'react';
-import {StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState, AppStateStatus} from 'react-native';
+import {BackHandler, StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState, AppStateStatus} from 'react-native';
+
+// ---------------------------------------------------------------------------
+// React Native 0.83.4 removed the imperative `BackHandler.removeEventListener`
+// API (the new shape returns a subscription whose `.remove()` does the unsub).
+// `react-native-modal` v13.0.1, which we use for StockAdjustModal /
+// SettingsModal / Session*Modal, still calls the removed API in its
+// `componentWillUnmount`. The throw propagates as "undefined is not a
+// function" and any time a screen owning one of these modals unmounts (e.g.
+// popping ProductDetail by tapping the Items tab) the App.tsx ErrorBoundary
+// catches it and the user sees "Something went wrong + Retry → Dashboard".
+//
+// Polyfill the removed method as a no-op BEFORE any modal mounts. Safe
+// because on RN 0.83 the addEventListener subscription's `.remove()` is the
+// real unsub path — there's nothing for the legacy API to actually clean up.
+// Lives outside the React tree so it runs at module-load.
+//
+// TODO(react-native-modal): remove this shim when react-native-modal is
+// bumped to a version that uses the subscription `.remove()` pattern (v14+).
+// ---------------------------------------------------------------------------
+{
+  const bh = BackHandler as unknown as {
+    removeEventListener?: (...args: unknown[]) => void;
+  };
+  if (typeof bh.removeEventListener !== 'function') {
+    bh.removeEventListener = () => {};
+  }
+}
+
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {NavigationContainer} from '@react-navigation/native';
 import {activateKeepAwakeAsync} from 'expo-keep-awake';
