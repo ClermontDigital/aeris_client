@@ -69,10 +69,48 @@ const BarcodeScannerScreen: React.FC = () => {
   // platform enumerates devices (one-frame splash). The `isActive` gate
   // on <Camera> handles that — we just render the centered spinner.
   // TODO(stocktake): swap to `useCameraDevice('back', {physicalDevices:
-  // ['ultra-wide-angle-camera']})` once stocktake mode is wired up, so
-  // close-up shelf scans use the macro-friendly lens. See MEMORY.md
-  // "Stocktake via vision-camera".
-  const device = useCameraDevice('back');
+  // Request a VIRTUAL multi-lens back device. On iPhone Pro models (and
+  // iPhone 13+ with dual cameras) this hands us a device that iOS
+  // automatically switches between based on focus distance — when the
+  // user holds the phone close to a barcode (< ~10 cm), the system
+  // transparently swaps to the ultra-wide lens, which can focus down
+  // to ~2 cm. The wide lens alone is mechanically limited to ~10 cm
+  // minimum focus distance and produces the "barcode is blurry up
+  // close" effect.
+  //
+  // physicalDevices is a *preference*. vision-camera matches the
+  // closest available device; on a single-lens iPhone (SE, base iPhone)
+  // we fall back to plain 'wide-angle-camera' transparently, so this
+  // is safe to apply unconditionally.
+  //
+  // The lens priority `['ultra-wide-angle-camera', 'wide-angle-camera',
+  // 'telephoto-camera']` requests "give me everything you have"; iOS
+  // exposes the combined virtual device (e.g. `back-dual-wide-camera`,
+  // `back-triple-camera`) and handles the lens switching internally.
+  const defaultDevice = useCameraDevice('back', {
+    physicalDevices: [
+      'ultra-wide-angle-camera',
+      'wide-angle-camera',
+      'telephoto-camera',
+    ],
+  });
+  // Macro-only device for the explicit "Macro" toggle below. On phones
+  // without an ultra-wide lens this falls back to whatever 'back' picks
+  // — which is the same as defaultDevice, so the toggle is a no-op for
+  // those users. We only show the toggle button when defaultDevice
+  // actually exposes the ultra-wide lens.
+  const macroDevice = useCameraDevice('back', {
+    physicalDevices: ['ultra-wide-angle-camera'],
+  });
+  const [isMacroMode, setIsMacroMode] = useState(false);
+  const device = isMacroMode ? macroDevice ?? defaultDevice : defaultDevice;
+  // Show the macro toggle only on devices that actually have an
+  // ultra-wide lens. defaultDevice.physicalDevices lists the lens
+  // identifiers the virtual device combines; ultra-wide presence ⇒
+  // toggle is meaningful.
+  const hasMacroLens =
+    defaultDevice?.physicalDevices?.includes('ultra-wide-angle-camera') ??
+    false;
   // Pick a format with phase-detection AF. Without this, vision-camera
   // selects a default format and on some devices that format has
   // `autoFocusSystem: 'none'` — so tap-to-focus is a silent no-op and
@@ -412,6 +450,7 @@ const BarcodeScannerScreen: React.FC = () => {
           isActive={isFocused && !scannedProduct && !notFound}
           torch={torchOn ? 'on' : 'off'}
           zoom={zoom}
+          enableZoomGesture
           codeScanner={codeScanner}
         />
       </Pressable>
@@ -448,7 +487,7 @@ const BarcodeScannerScreen: React.FC = () => {
             Centre the barcode in the box · Tap to refocus
           </Text>
           <Text style={styles.reticleHint}>
-            Hold the phone 10–15 cm away · use zoom to frame
+            Move closer for macro focus · pinch zoom to frame
           </Text>
         </View>
       ) : null}
@@ -480,17 +519,45 @@ const BarcodeScannerScreen: React.FC = () => {
         <Text style={styles.topTitle}>
           {mode === 'capture' ? 'Capture Barcode' : 'Scan Barcode'}
         </Text>
-        <TouchableOpacity
-          style={styles.torchButton}
-          onPress={() => setTorchOn(prev => !prev)}
-          accessibilityRole="button"
-          accessibilityLabel={torchOn ? 'Turn torch off' : 'Turn torch on'}>
-          <Icon
-            name={torchOn ? 'flash' : 'flash-off'}
-            size={22}
-            color={COLORS.cream}
-          />
-        </TouchableOpacity>
+        <View style={styles.topOverlayRight}>
+          {hasMacroLens ? (
+            <TouchableOpacity
+              style={[
+                styles.macroButton,
+                isMacroMode && styles.macroButtonActive,
+              ]}
+              onPress={() => {
+                haptics.selection();
+                setIsMacroMode(prev => !prev);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{selected: isMacroMode}}
+              accessibilityLabel={
+                isMacroMode
+                  ? 'Disable macro lens (return to auto)'
+                  : 'Enable macro lens for close-up scanning'
+              }>
+              <Text
+                style={[
+                  styles.macroButtonText,
+                  isMacroMode && styles.macroButtonTextActive,
+                ]}>
+                Macro
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            style={styles.torchButton}
+            onPress={() => setTorchOn(prev => !prev)}
+            accessibilityRole="button"
+            accessibilityLabel={torchOn ? 'Turn torch off' : 'Turn torch on'}>
+            <Icon
+              name={torchOn ? 'flash' : 'flash-off'}
+              size={22}
+              color={COLORS.cream}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Bottom area */}
@@ -708,6 +775,11 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xl,
     fontFamily: FONT_FAMILY.medium,
   },
+  topOverlayRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
   torchButton: {
     width: 40,
     height: 40,
@@ -717,6 +789,28 @@ const styles = StyleSheet.create({
     borderColor: COLORS.toolbarBtnBorder,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  macroButton: {
+    height: 40,
+    paddingHorizontal: SPACING.sm + 2,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.toolbarBtn,
+    borderWidth: 1,
+    borderColor: COLORS.toolbarBtnBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  macroButtonActive: {
+    backgroundColor: COLORS.cream,
+    borderColor: COLORS.cream,
+  },
+  macroButtonText: {
+    color: COLORS.cream,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  macroButtonTextActive: {
+    color: COLORS.navy,
   },
   cancelButton: {
     minWidth: 64,
