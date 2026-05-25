@@ -202,7 +202,10 @@ const ProductEditScreen: React.FC = () => {
   // enables/disables as the user types instead of only after a submit
   // attempt populates the errors map.
   const isValid = useMemo(() => {
-    if (!form.name.trim() || !form.sku.trim()) return false;
+    if (!form.name.trim()) return false;
+    // SKU is only required on CREATE — on EDIT the field is read-only,
+    // hydrated from the server, and never sent in the patch.
+    if (!isEdit && !form.sku.trim()) return false;
     const cents = dollarsToCents(form.basePriceDollars);
     if (cents === null || cents <= 0) return false;
     // category_id is required server-side (Rule::exists on the FK). The
@@ -219,7 +222,8 @@ const ProductEditScreen: React.FC = () => {
   const runValidation = useCallback((): boolean => {
     const errs: typeof fieldErrors = {};
     if (!form.name.trim()) errs.name = 'Name is required';
-    if (!form.sku.trim()) errs.sku = 'SKU is required';
+    // SKU validation skipped on EDIT (read-only).
+    if (!isEdit && !form.sku.trim()) errs.sku = 'SKU is required';
     const cents = dollarsToCents(form.basePriceDollars);
     if (cents === null) errs.basePrice = 'Price is required';
     else if (cents <= 0) errs.basePrice = 'Price must be greater than zero';
@@ -235,6 +239,11 @@ const ProductEditScreen: React.FC = () => {
 
   // Synchronous double-tap guard — see CustomerEditScreen for rationale.
   const submitLockRef = useRef(false);
+  // What we last sent to the server on update — drives the smart error
+  // routing below. If the server complains about a field we deliberately
+  // OMITTED from the patch (because the user didn't change it), the
+  // message is bogus and we reframe instead of misleading the user.
+  const lastSentPatchRef = useRef<ProductUpdateInput | null>(null);
   const syncProducts = useProductCacheStore(s => s.syncProducts);
   const getByBarcode = useProductCacheStore(s => s.getByBarcode);
   const cachedProducts = useProductCacheStore(s => s.products);
@@ -345,15 +354,13 @@ const ProductEditScreen: React.FC = () => {
         if (originalDetail) {
           const orig = originalDetail;
           if (input.name !== (orig.name ?? '').trim()) patch.name = input.name;
-          // Case-insensitive SKU diff: a case-only edit ("FW-001" → "fw-001")
-          // shouldn't trigger a server unique:products,sku validation round-
-          // trip on update (the validator is broken — see top-of-handler
-          // comment). Treat case-only changes as a no-op for the patch.
-          if (
-            input.sku.toLowerCase() !== (orig.sku ?? '').trim().toLowerCase()
-          ) {
-            patch.sku = input.sku;
-          }
+          // SKU is never sent in an update patch. SKUs are product-specific
+          // identifiers managed by the core system — the in-app UI renders
+          // the SKU field read-only on edit (see the SKU input above), so
+          // by definition it can't have been edited here. Omitting it also
+          // sidesteps the known server-side `unique:products,sku`
+          // validator that doesn't reliably exclude the current row on
+          // update.
           if (input.category_id !== orig.category_id) {
             patch.category_id = input.category_id;
           }
@@ -390,6 +397,7 @@ const ProductEditScreen: React.FC = () => {
           navigation.goBack();
           return;
         }
+        lastSentPatchRef.current = patch;
         await ApiClient.updateProduct(productId, patch);
       } else {
         await ApiClient.createProduct(input);
@@ -405,15 +413,26 @@ const ProductEditScreen: React.FC = () => {
     } catch (e) {
       haptics.error();
       const msg = e instanceof Error ? e.message : 'Failed to save item';
-      // Server-side field errors come back in the message string (e.g.
-      // "This SKU is already in use." from Laravel's unique rule). Route
-      // them into the field-level error map so the user sees the red
-      // border on the actual offending input instead of just a top
-      // banner. Falls back to the top banner if we can't classify.
       const lower = msg.toLowerCase();
-      if (lower.includes('sku')) {
+      // Smart routing: if the server complains about a field we did NOT
+      // send in the patch, the message is bogus (server-side validator
+      // bug — known to mislabel a BARCODE conflict as an SKU error on
+      // update). Reframe so the user understands the actual likely
+      // cause is the field they just edited.
+      const sentSku = lastSentPatchRef.current?.sku !== undefined;
+      const sentBarcode = lastSentPatchRef.current?.barcode !== undefined;
+      const looksLikeSkuError = lower.includes('sku');
+      const looksLikeBarcodeError = lower.includes('barcode');
+      if (looksLikeSkuError && !sentSku && sentBarcode) {
+        // Server said "SKU" but we sent a barcode-only patch. Treat as
+        // a barcode conflict (the actual likely cause) and show under
+        // the barcode field's banner.
+        setError(
+          'That barcode is already in use on another item. Try a different barcode or open the existing item.',
+        );
+      } else if (looksLikeSkuError && sentSku) {
         setFieldErrors(p => ({...p, sku: msg}));
-      } else if (lower.includes('barcode')) {
+      } else if (looksLikeBarcodeError) {
         setError(msg);
       } else {
         setError(msg);
@@ -491,21 +510,40 @@ const ProductEditScreen: React.FC = () => {
               ) : null}
             </View>
             <View style={styles.field}>
-              <Text style={styles.label}>SKU *</Text>
+              <Text style={styles.label}>SKU {isEdit ? '' : '*'}</Text>
               <TextInput
-                style={[styles.input, fieldErrors.sku ? styles.inputError : null]}
+                style={[
+                  styles.input,
+                  fieldErrors.sku ? styles.inputError : null,
+                  isEdit ? styles.inputReadOnly : null,
+                ]}
                 value={form.sku}
-                onChangeText={t => {
-                  set('sku', t);
-                  if (fieldErrors.sku)
-                    setFieldErrors(p => ({...p, sku: undefined}));
-                }}
+                onChangeText={
+                  isEdit
+                    ? undefined
+                    : t => {
+                        set('sku', t);
+                        if (fieldErrors.sku)
+                          setFieldErrors(p => ({...p, sku: undefined}));
+                      }
+                }
+                editable={!isEdit}
                 placeholder="e.g. FW-001"
                 placeholderTextColor={COLORS.inputPlaceholder}
                 autoCapitalize="characters"
                 autoCorrect={false}
-                accessibilityLabel="SKU"
+                accessibilityLabel={
+                  isEdit
+                    ? `SKU ${form.sku}. Read-only — set by the system.`
+                    : 'SKU'
+                }
               />
+              {isEdit ? (
+                <Text style={styles.hint}>
+                  SKU is set by the system and can&apos;t be changed from the
+                  app.
+                </Text>
+              ) : null}
               {fieldErrors.sku ? (
                 <Text style={styles.fieldError}>{fieldErrors.sku}</Text>
               ) : null}
@@ -824,6 +862,13 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.regular,
   },
   inputError: {borderColor: COLORS.danger},
+  // Read-only inputs (e.g. SKU on edit) get a muted background + slightly
+  // dimmed text so it's visually obvious the field can't be tapped to
+  // change. The `editable={false}` prop blocks focus + keyboard.
+  inputReadOnly: {
+    backgroundColor: COLORS.surfaceHover ?? '#f1ece1',
+    color: COLORS.textMuted,
+  },
   fieldError: {
     color: COLORS.danger,
     fontSize: FONT_SIZE.xs,
