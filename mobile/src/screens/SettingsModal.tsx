@@ -258,95 +258,108 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
         keyboardShouldPersistTaps="handled">
         {variant === 'modal' ? <Text style={styles.title}>Settings</Text> : null}
 
-        <Text style={styles.label}>Connection</Text>
-        <View style={styles.modeRow}>
-          <TouchableOpacity
-            style={[styles.modeBtn, mode === 'direct' && styles.modeBtnActive]}
-            onPress={() => setMode('direct')}>
-            <Text
-              style={[
-                styles.modeText,
-                mode === 'direct' && styles.modeTextActive,
-              ]}>
-              Direct
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeBtn, mode === 'relay' && styles.modeBtnActive]}
-            onPress={() => setMode('relay')}>
-            <Text
-              style={[
-                styles.modeText,
-                mode === 'relay' && styles.modeTextActive,
-              ]}>
-              Relay
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {/* Connection — card 1 */}
+        <View style={styles.section}>
+          <EyebrowLabel>Connection</EyebrowLabel>
+          <View style={styles.modeRow}>
+            <TouchableOpacity
+              style={[styles.modeBtn, mode === 'direct' && styles.modeBtnActive]}
+              onPress={() => setMode('direct')}>
+              <Text
+                style={[
+                  styles.modeText,
+                  mode === 'direct' && styles.modeTextActive,
+                ]}>
+                Direct
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeBtn, mode === 'relay' && styles.modeBtnActive]}
+              onPress={() => setMode('relay')}>
+              <Text
+                style={[
+                  styles.modeText,
+                  mode === 'relay' && styles.modeTextActive,
+                ]}>
+                Relay
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-        {mode === 'direct' ? (
-          <>
-            <Text style={styles.label}>Server URL</Text>
-            <View style={styles.urlRow}>
-              <TextInput
-                style={styles.input}
-                value={baseUrl}
-                onChangeText={setBaseUrl}
-                placeholder="http://aeris.local:8000"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity style={styles.testBtn} onPress={handleTest}>
-                <Text style={styles.testText}>Test</Text>
-              </TouchableOpacity>
+          {mode === 'direct' ? (
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Server URL</Text>
+              <View style={styles.urlRow}>
+                <TextInput
+                  style={styles.input}
+                  value={baseUrl}
+                  onChangeText={setBaseUrl}
+                  placeholder="http://aeris.local:8000"
+                  placeholderTextColor={COLORS.inputPlaceholder}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity style={styles.testBtn} onPress={handleTest}>
+                  <Text style={styles.testText}>Test</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </>
-        ) : (
-          <>
-            <Text style={styles.label}>Relay URL</Text>
-            <View style={styles.urlRow}>
-              <TextInput
-                style={styles.input}
-                value={relayUrl}
-                onChangeText={setRelayUrl}
-                placeholder="https://api.aeris.team"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity style={styles.testBtn} onPress={handleTest}>
-                <Text style={styles.testText}>Test</Text>
-              </TouchableOpacity>
+          ) : (
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Relay URL</Text>
+              <View style={styles.urlRow}>
+                <TextInput
+                  style={styles.input}
+                  value={relayUrl}
+                  onChangeText={setRelayUrl}
+                  placeholder="https://api.aeris.team"
+                  placeholderTextColor={COLORS.inputPlaceholder}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity style={styles.testBtn} onPress={handleTest}>
+                  <Text style={styles.testText}>Test</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </>
-        )}
-
-        <Text style={styles.label}>Session Timeout: {sessionTimeout} min</Text>
-        <TextInput
-          style={styles.input}
-          value={String(sessionTimeout)}
-          onChangeText={t => {
-            const n = parseInt(t, 10);
-            if (!isNaN(n) && n >= 5 && n <= 120) setSessionTimeout(n);
-          }}
-          keyboardType="numeric"
-        />
-
-        <View style={styles.switchRow}>
-          <Text style={styles.label}>Session Management</Text>
-          <Switch value={enableSessions} onValueChange={setEnableSessions} />
+          )}
         </View>
 
-        <View style={styles.switchRow}>
-          <Text style={styles.label}>Haptic Feedback</Text>
-          <Switch value={hapticsEnabled} onValueChange={setHapticsEnabled} />
+        {/* Preferences — card 2 */}
+        <View style={styles.section}>
+          <EyebrowLabel>Preferences</EyebrowLabel>
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>
+              Session timeout · {sessionTimeout} min
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={String(sessionTimeout)}
+              onChangeText={t => {
+                const n = parseInt(t, 10);
+                if (!isNaN(n) && n >= 5 && n <= 120) setSessionTimeout(n);
+              }}
+              keyboardType="numeric"
+              placeholderTextColor={COLORS.inputPlaceholder}
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Session management</Text>
+            <Switch value={enableSessions} onValueChange={setEnableSessions} />
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Haptic feedback</Text>
+            <Switch value={hapticsEnabled} onValueChange={setHapticsEnabled} />
+          </View>
         </View>
 
+        {/* App lock — card 3, only when relevant */}
         {isAuthenticated && hasPin ? (
-          <View style={styles.lockSection}>
+          <View style={styles.section}>
             <EyebrowLabel>App lock</EyebrowLabel>
             {lockBiometricAvailable ? (
               <View style={styles.switchRow}>
-                <Text style={styles.label}>Unlock with biometrics</Text>
+                <Text style={styles.switchLabel}>Unlock with biometrics</Text>
                 <Switch
                   value={lockBiometricEnabled}
                   onValueChange={async v => {
@@ -430,9 +443,13 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
                 requires deliberate keyboard input, then a destructive
                 Alert.alert confirmation, before the browser opens. */}
             <Text style={styles.deleteConfirmLabel}>
-              To request account deletion, type{' '}
+              <Text style={styles.deleteConfirmLabelStrong}>Note:</Text> this
+              only removes the account from THIS device — it does not delete
+              your AERIS account on the server. To permanently delete your
+              account, type{' '}
               <Text style={styles.deleteConfirmLabelStrong}>DELETE</Text>{' '}
-              below.
+              below; a confirmation page will open in your browser and your
+              workspace administrator will be notified to process the request.
             </Text>
             <TextInput
               style={styles.deleteConfirmInput}
@@ -628,17 +645,46 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.semibold,
     fontSize: FONT_SIZE.lg,
   },
-  pageContent: {padding: SPACING.lg, paddingBottom: SPACING.xxl},
+  pageContent: {padding: SPACING.md, paddingBottom: SPACING.xxl},
   title: {fontSize: 22, fontFamily: FONT_FAMILY.bold, color: COLORS.navy, marginBottom: 20},
+  // Card container for each settings section — white surface on the cream
+  // page bg so groupings read as deliberate UI cards instead of a single
+  // monotone beige sheet. Matches the visual treatment used by Product /
+  // Customer detail and edit forms.
+  section: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    borderRadius: 12,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  field: {marginTop: SPACING.sm + 4},
+  fieldLabel: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    fontFamily: FONT_FAMILY.medium,
+    marginBottom: SPACING.xs,
+  },
+  switchLabel: {
+    fontSize: 15,
+    color: COLORS.text,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  // Modal-only inline label kept for the legacy variant (LoginScreen,
+  // ERPScreen) which still inlines the form without cards.
   label: {fontSize: 14, color: COLORS.textMuted, marginTop: 12, marginBottom: 4},
   input: {
     borderWidth: 1,
     borderColor: COLORS.inputBorder,
     borderRadius: 8,
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
     fontSize: 15,
+    minHeight: 44,
     flex: 1,
     color: COLORS.text,
+    backgroundColor: COLORS.inputBg,
   },
   urlRow: {flexDirection: 'row', gap: 8, alignItems: 'center'},
   testBtn: {backgroundColor: COLORS.navy, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8},
@@ -646,12 +692,14 @@ const styles = StyleSheet.create({
   modeRow: {flexDirection: 'row', gap: 8, marginTop: 4},
   modeBtn: {
     flex: 1,
-    paddingVertical: 10,
+    minHeight: 44,
+    paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.inputBorder,
     alignItems: 'center',
-    backgroundColor: COLORS.background, // page surface (paper)
+    justifyContent: 'center',
+    backgroundColor: COLORS.inputBg, // matches the input fields
   },
   modeBtnActive: {
     backgroundColor: COLORS.navy,
@@ -659,7 +707,14 @@ const styles = StyleSheet.create({
   },
   modeText: {color: COLORS.textMuted, fontFamily: FONT_FAMILY.medium},
   modeTextActive: {color: COLORS.cream},
-  switchRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16},
+  switchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    minHeight: 44,
+    marginTop: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
   buttons: {flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 24},
   cancelBtn: {paddingHorizontal: 16, paddingVertical: 10},
   cancelText: {color: COLORS.textMuted, fontSize: 16},
@@ -672,11 +727,17 @@ const styles = StyleSheet.create({
   // form. Intent: the user has to scroll to find these and read the
   // header before they can act, which dramatically reduces accidental
   // sign-outs.
+  // Danger zone wraps in the same white-card pattern as other sections
+  // but sits below an extra top margin to visually separate "settings I
+  // tweak often" from "actions I should think twice about".
   dangerZone: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.destructive + '33',
+    borderRadius: 12,
+    padding: SPACING.md,
     marginTop: SPACING.xl,
-    paddingTop: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.inputBorder,
+    marginBottom: SPACING.md,
   },
   dangerEyebrow: {color: COLORS.destructive},
   dangerHelp: {
@@ -746,12 +807,9 @@ const styles = StyleSheet.create({
   // Royal Red per Brand Guidelines v0.3 §10 — destructive/irreversible actions.
   deleteAccountText: {color: COLORS.destructive, fontSize: FONT_SIZE.md, fontFamily: FONT_FAMILY.semibold},
   deleteAccountTextDisabled: {color: COLORS.inputPlaceholder},
-  lockSection: {
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.inputBorder,
-  },
+  // lockSection is now wrapped in `styles.section` at the call site, but
+  // retained for any legacy refs.
+  lockSection: {marginTop: 0},
   resetPinBtn: {
     marginTop: 12,
     paddingVertical: 10,
