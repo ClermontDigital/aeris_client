@@ -117,15 +117,16 @@ describe('ProductEditScreen', () => {
       const {getByText, getByLabelText} = render(<ProductEditScreen />);
       await waitFor(() => expect(getByText('New item')).toBeTruthy());
 
-      // Save button starts disabled (no name/sku/price/category). The PillButton
-      // exposes its label via accessibilityLabel by default.
+      // Save button starts disabled (no name/price/category). SKU is no
+      // longer in this list — it's auto-generated server-side at submit.
       const saveBtn = getByLabelText('Save item');
       expect(saveBtn.props.accessibilityState?.disabled).toBe(true);
 
       // Fill required fields. accessibilityLabel-keyed inputs make this
-      // resilient to label-text changes.
+      // resilient to label-text changes. SKU is intentionally NOT filled
+      // — the field is read-only on this screen and gets auto-generated
+      // on save.
       fireEvent.changeText(getByLabelText('Item name'), 'Flat white');
-      fireEvent.changeText(getByLabelText('SKU'), 'FW-001');
       fireEvent.changeText(getByLabelText('Sell price in dollars'), '5.25');
       // category_id is required server-side (Rule::exists FK) — the form
       // mirrors that, so the picker must be opened + a category selected
@@ -143,7 +144,6 @@ describe('ProductEditScreen', () => {
       await waitFor(() => expect(getByText('New item')).toBeTruthy());
 
       fireEvent.changeText(getByLabelText('Item name'), 'Free swag');
-      fireEvent.changeText(getByLabelText('SKU'), 'FREE-1');
       fireEvent.changeText(getByLabelText('Sell price in dollars'), '0');
 
       const saveBtn = getByLabelText('Save item');
@@ -156,7 +156,6 @@ describe('ProductEditScreen', () => {
       await waitFor(() => expect(getByText('New item')).toBeTruthy());
 
       fireEvent.changeText(getByLabelText('Item name'), 'Flat white');
-      fireEvent.changeText(getByLabelText('SKU'), 'FW-001');
       fireEvent.changeText(getByLabelText('Sell price in dollars'), '5.25');
       fireEvent.changeText(getByLabelText('Cost price in dollars'), '1.80');
       fireEvent.press(getByLabelText(/Category:/));
@@ -170,7 +169,12 @@ describe('ProductEditScreen', () => {
       await waitFor(() => expect(mockCreateProduct).toHaveBeenCalledTimes(1));
       const payload = mockCreateProduct.mock.calls[0][0];
       expect(payload.name).toBe('Flat white');
-      expect(payload.sku).toBe('FW-001');
+      // SKU is auto-generated client-side (server's `unique:products,sku`
+      // validator can't false-positive on a value the user never typed).
+      // Format is `SKU-${barcode}` if barcode is filled, else
+      // `SKU-${8charUUIDPrefix}`. The user typed no barcode here so we
+      // expect the UUID form.
+      expect(payload.sku).toMatch(/^SKU-[A-Z0-9]{8}$/);
       // Facade-level input is cents; the relay-client (shared) converts to
       // dollar fields on the wire — see RelayClientWrites.test.ts.
       expect(payload.base_price_cents).toBe(525);
@@ -189,7 +193,6 @@ describe('ProductEditScreen', () => {
       await waitFor(() => expect(getByText('New item')).toBeTruthy());
 
       fireEvent.changeText(getByLabelText('Item name'), 'Widget');
-      fireEvent.changeText(getByLabelText('SKU'), 'W-1');
       fireEvent.changeText(getByLabelText('Sell price in dollars'), '19.99');
       fireEvent.press(getByLabelText(/Category:/));
       fireEvent.press(getByLabelText('Category Pastry'));

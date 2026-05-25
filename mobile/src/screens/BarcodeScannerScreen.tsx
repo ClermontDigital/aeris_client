@@ -2,7 +2,6 @@ import React, {useState, useCallback, useEffect, useMemo, useRef} from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   Pressable,
   ActivityIndicator,
@@ -14,17 +13,24 @@ import {
 import {
   Camera,
   useCameraDevice,
+  useCameraFormat,
   useCameraPermission,
   useCodeScanner,
   type Code,
   type CodeType,
 } from 'react-native-vision-camera';
-import {useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useCartStore} from '../stores/cartStore';
+import {useScannerVisibilityStore} from '../stores/scannerVisibilityStore';
 import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
 import type {Product, ProductDetail} from '../types/api.types';
@@ -67,6 +73,16 @@ const BarcodeScannerScreen: React.FC = () => {
   // close-up shelf scans use the macro-friendly lens. See MEMORY.md
   // "Stocktake via vision-camera".
   const device = useCameraDevice('back');
+  // Pick a format with phase-detection AF. Without this, vision-camera
+  // selects a default format and on some devices that format has
+  // `autoFocusSystem: 'none'` — so tap-to-focus is a silent no-op and
+  // continuous AF never kicks in. Sorted by priority: AF first, then a
+  // sane video resolution. Format is undefined while the device hook
+  // is still resolving.
+  const format = useCameraFormat(device, [
+    {autoFocusSystem: 'phase-detection'},
+    {videoResolution: {width: 1920, height: 1080}},
+  ]);
   const cameraRef = useRef<Camera>(null);
   const [torchOn, setTorchOn] = useState(false);
   // Zoom maps to the device's native range. vision-camera exposes
@@ -92,10 +108,7 @@ const BarcodeScannerScreen: React.FC = () => {
   >(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [notFound, setNotFound] = useState(false);
-  const [manualEntry, setManualEntry] = useState(false);
-  const [manualBarcode, setManualBarcode] = useState('');
   const [scanLock, setScanLock] = useState(false);
-  const [manualFocused, setManualFocused] = useState(false);
   // Synchronous lock for capture mode. expo-camera can call onBarcodeScanned
   // twice within the same tick before React commits a setScanLock(true), so
   // the state-driven gate isn't enough to prevent double pops/double lookups.
@@ -238,13 +251,6 @@ const BarcodeScannerScreen: React.FC = () => {
     return () => clearTimeout(t);
   }, [notFound]);
 
-  const handleManualSubmit = useCallback(() => {
-    const code = manualBarcode.trim();
-    if (!code) return;
-    lookupBarcode(code);
-    setManualBarcode('');
-  }, [manualBarcode, lookupBarcode]);
-
   const handleAddToCart = useCallback(() => {
     if (!scannedProduct) return;
     addItem(scannedProduct as Product);
@@ -261,24 +267,30 @@ const BarcodeScannerScreen: React.FC = () => {
     scanLockRef.current = false;
   }, []);
 
-  // Tap-to-focus on the camera preview. vision-camera v4 exposes a true
-  // imperative `camera.focus({x, y})` that targets the native focus +
-  // exposure metering at the tap point — NO remount, NO blink. If the
-  // device doesn't support tap-to-focus (some Androids), the call
-  // throws; we swallow and still show the reticle as visual feedback
-  // since the user-perceived action ("I tapped, something happened")
-  // is preserved.
-  const handleFocusTap = useCallback(async (e: GestureResponderEvent) => {
-    const {locationX, locationY} = e.nativeEvent;
-    setFocusAt({x: locationX, y: locationY});
-    if (focusReticleTimer.current) clearTimeout(focusReticleTimer.current);
-    focusReticleTimer.current = setTimeout(() => setFocusAt(null), 700);
-    try {
-      await cameraRef.current?.focus({x: locationX, y: locationY});
-    } catch {
-      // Device doesn't support focus-point or focus is busy — silent.
-    }
-  }, []);
+  // Tap-to-focus. Gates on `device.supportsFocus` to avoid the silent
+  // catch hiding "this device doesn't support focus at all" from us in
+  // logs. The reticle still shows on tap regardless so the user gets
+  // visual feedback that the tap was registered.
+  const handleFocusTap = useCallback(
+    async (e: GestureResponderEvent) => {
+      const {locationX, locationY} = e.nativeEvent;
+      setFocusAt({x: locationX, y: locationY});
+      if (focusReticleTimer.current) clearTimeout(focusReticleTimer.current);
+      focusReticleTimer.current = setTimeout(() => setFocusAt(null), 700);
+      if (!device?.supportsFocus) {
+        // Skip the imperative call; continuous AF (selected via format
+        // above) is doing what it can.
+        return;
+      }
+      try {
+        await cameraRef.current?.focus({x: locationX, y: locationY});
+      } catch {
+        // Focus is busy or interrupted — next tap retries. Continuous AF
+        // is still running underneath.
+      }
+    },
+    [device],
+  );
 
   const handleZoomIn = useCallback(() => {
     haptics.light();
@@ -290,16 +302,25 @@ const BarcodeScannerScreen: React.FC = () => {
     setZoom(z => Math.max(zoomMin, +(z - ZOOM_STEP).toFixed(2)));
   }, [haptics, zoomMin]);
 
-  // Display zoom as a multiplier (e.g. "1.0x", "2.5x"). vision-camera's
-  // zoom is already in device-multiplier units, so no conversion needed.
-  const zoomLabel = `${zoom.toFixed(1)}x`;
-
   // Clean up focus timer on unmount.
   useEffect(() => {
     return () => {
       if (focusReticleTimer.current) clearTimeout(focusReticleTimer.current);
     };
   }, []);
+
+  // Tell AppTabsInner to hide the pendant + gear while the camera is up.
+  // The chrome reads `useScannerVisibilityStore.isScannerVisible`; we
+  // flip it on focus and back on blur (useFocusEffect's cleanup fires
+  // on blur AND unmount, so navigating away via swipe-back or tab tap
+  // both restore the header).
+  const setScannerVisible = useScannerVisibilityStore(s => s.setScannerVisible);
+  useFocusEffect(
+    useCallback(() => {
+      setScannerVisible(true);
+      return () => setScannerVisible(false);
+    }, [setScannerVisible]),
+  );
 
   const handleCancel = useCallback(() => {
     haptics.light();
@@ -387,10 +408,11 @@ const BarcodeScannerScreen: React.FC = () => {
           ref={cameraRef}
           style={styles.camera}
           device={device}
+          format={format}
           isActive={isFocused && !scannedProduct && !notFound}
           torch={torchOn ? 'on' : 'off'}
           zoom={zoom}
-          codeScanner={scanLock || isLookingUp ? undefined : codeScanner}
+          codeScanner={codeScanner}
         />
       </Pressable>
 
@@ -540,7 +562,6 @@ const BarcodeScannerScreen: React.FC = () => {
               hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
               <Text style={styles.zoomButtonText}>−</Text>
             </TouchableOpacity>
-            <Text style={styles.zoomLabel}>{zoomLabel}</Text>
             <TouchableOpacity
               style={[
                 styles.zoomButton,
@@ -556,41 +577,6 @@ const BarcodeScannerScreen: React.FC = () => {
           </View>
         ) : null}
 
-        {/* Manual entry */}
-        <TouchableOpacity
-          style={styles.manualToggle}
-          onPress={() => setManualEntry(prev => !prev)}>
-          <Icon name="keypad-outline" size={16} color={COLORS.cream} />
-          <Text style={styles.manualToggleText}>
-            {manualEntry ? 'Hide manual entry' : 'Enter barcode manually'}
-          </Text>
-        </TouchableOpacity>
-
-        {manualEntry ? (
-          <View style={styles.manualInputRow}>
-            <TextInput
-              style={[
-                styles.manualInput,
-                manualFocused && styles.manualInputFocused,
-              ]}
-              placeholder="Barcode number"
-              placeholderTextColor={COLORS.inputPlaceholder}
-              value={manualBarcode}
-              onChangeText={setManualBarcode}
-              onFocus={() => setManualFocused(true)}
-              onBlur={() => setManualFocused(false)}
-              keyboardType="default"
-              autoCapitalize="none"
-              returnKeyType="search"
-              onSubmitEditing={handleManualSubmit}
-            />
-            <TouchableOpacity
-              style={styles.manualSubmit}
-              onPress={handleManualSubmit}>
-              <Icon name="search" size={20} color={COLORS.white} />
-            </TouchableOpacity>
-          </View>
-        ) : null}
       </View>
     </View>
   );
@@ -874,52 +860,6 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xl,
     fontFamily: FONT_FAMILY.medium,
     lineHeight: FONT_SIZE.xl + 4,
-  },
-  zoomLabel: {
-    minWidth: 56,
-    textAlign: 'center',
-    color: COLORS.cream,
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.medium,
-  },
-  manualToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.xs,
-    paddingVertical: SPACING.sm,
-  },
-  // Cream on navy backdrop. textMuted (slate-navy) was unreadable here.
-  manualToggleText: {
-    color: COLORS.cream,
-    fontSize: FONT_SIZE.sm,
-  },
-  manualInputRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  manualInput: {
-    flex: 1,
-    height: 44,
-    backgroundColor: COLORS.inputBg,
-    borderRadius: BORDER_RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    color: COLORS.text,
-    fontSize: FONT_SIZE.md,
-    borderWidth: 1,
-    borderColor: COLORS.inputBorder,
-  },
-  manualInputFocused: {
-    borderColor: COLORS.inputFocusBorder,
-    backgroundColor: COLORS.inputFocusBg,
-  },
-  manualSubmit: {
-    width: 44,
-    height: 44,
-    backgroundColor: COLORS.accent,
-    borderRadius: BORDER_RADIUS.md,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   permissionTitle: {
     color: COLORS.text,

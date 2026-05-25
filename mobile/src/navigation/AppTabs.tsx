@@ -12,7 +12,7 @@ import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import Svg, {Path} from 'react-native-svg';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {useNavigation, StackActions, useNavigationState} from '@react-navigation/native';
+import {useNavigation, StackActions} from '@react-navigation/native';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
@@ -28,6 +28,7 @@ import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
 import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
+import {useScannerVisibilityStore} from '../stores/scannerVisibilityStore';
 import {getItemCount} from '@aeris/shared';
 import {COLORS, FONT_SIZE, FONT_FAMILY} from '../constants/theme';
 import type {AppTabParamList, AppStackParamList} from '../types/navigation.types';
@@ -129,22 +130,13 @@ const AppTabsInner: React.FC = () => {
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const cartCount = useCartStore(s => getItemCount(s.items));
   const {width: screenWidth} = useWindowDimensions();
-  // Whether the currently-focused tab's nested stack is on the Scanner
-  // screen. When true, hide the pendant header so the camera can take
-  // over the full top of the screen — otherwise the camera preview
-  // starts below the navy tongue + cream shoulders, which reads as
-  // wasted chrome on a viewfinder-style UI.
-  const isOnScanner = useNavigationState(state => {
-    if (!state) return false;
-    const focusedTab = state.routes[state.index];
-    // Tab routes for QuickSale/Items wrap a Stack — peek at its current
-    // route name. Dashboard/Customers/Transactions don't host Scanner so
-    // they short-circuit harmlessly.
-    const innerState = focusedTab?.state;
-    if (!innerState || innerState.routes === undefined) return false;
-    const innerRoute = innerState.routes[innerState.index ?? 0];
-    return innerRoute?.name === 'Scanner';
-  });
+  // Hide the pendant + gear when the Scanner screen is focused.
+  // Reading via a Zustand store rather than useNavigationState because
+  // AppTabsInner is rendered inside the parent AppStack — useNavigationState
+  // would resolve to AppStack's state (just [Tabs, Settings]) and never
+  // see the Scanner route nested inside Items/QuickSale stacks. The
+  // Scanner screen itself flips this store on focus/blur via useFocusEffect.
+  const isOnScanner = useScannerVisibilityStore(s => s.isScannerVisible);
 
   const paths = useMemo(() => {
     const cx = screenWidth / 2;
