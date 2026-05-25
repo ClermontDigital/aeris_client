@@ -27,6 +27,7 @@ import {
   FONT_FAMILY,
   BORDER_RADIUS,
 } from '../constants/theme';
+import * as ExpoCrypto from 'expo-crypto';
 import ApiClient from '../services/ApiClient';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useHaptics} from '../hooks/useHaptics';
@@ -81,6 +82,22 @@ function dollarsToCents(text: string): number | null {
 function centsToDollarsString(cents: number | null | undefined): string {
   if (cents == null) return '';
   return (cents / 100).toFixed(2);
+}
+
+// Generate a client-side SKU on CREATE. SKUs are product-specific
+// identifiers managed by the core system — the in-app UI shouldn't ask
+// the user to type one. Server-side `unique:products,sku` collisions
+// on user-typed values were the cause of the recurring "This SKU is
+// already in use" pain (raised 10+ times). Prefer barcode-derived (it
+// makes the SKU stable across re-imports), fall back to a short UUID
+// suffix. Caller pre-checks against `cachedProducts` for collisions.
+function generateAutoSku(barcode: string | undefined): string {
+  const trimmed = (barcode ?? '').trim();
+  if (trimmed) {
+    return `SKU-${trimmed}`;
+  }
+  const uuid = ExpoCrypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+  return `SKU-${uuid}`;
 }
 
 const ProductEditScreen: React.FC = () => {
@@ -203,9 +220,11 @@ const ProductEditScreen: React.FC = () => {
   // attempt populates the errors map.
   const isValid = useMemo(() => {
     if (!form.name.trim()) return false;
-    // SKU is only required on CREATE — on EDIT the field is read-only,
-    // hydrated from the server, and never sent in the patch.
-    if (!isEdit && !form.sku.trim()) return false;
+    // SKU is NEVER validated user-side. On EDIT it's read-only (hydrated
+    // from server). On CREATE it's auto-generated client-side from the
+    // barcode (or a short UUID) at submit time — the user never types
+    // an SKU, so the "already in use" server error class can't be
+    // triggered from this form.
     const cents = dollarsToCents(form.basePriceDollars);
     if (cents === null || cents <= 0) return false;
     // category_id is required server-side (Rule::exists on the FK). The
@@ -222,8 +241,7 @@ const ProductEditScreen: React.FC = () => {
   const runValidation = useCallback((): boolean => {
     const errs: typeof fieldErrors = {};
     if (!form.name.trim()) errs.name = 'Name is required';
-    // SKU validation skipped on EDIT (read-only).
-    if (!isEdit && !form.sku.trim()) errs.sku = 'SKU is required';
+    // SKU validation removed — see isValid above.
     const cents = dollarsToCents(form.basePriceDollars);
     if (cents === null) errs.basePrice = 'Price is required';
     else if (cents <= 0) errs.basePrice = 'Price must be greater than zero';
@@ -255,36 +273,20 @@ const ProductEditScreen: React.FC = () => {
       return;
     }
 
-    // Client-side pre-checks against the cached catalog. The server is the
-    // source of truth, but these guards turn a confusing server-side
-    // "SKU already in use" / "barcode already in use" round-trip into an
-    // immediate, clearly-labelled field-level error.
-    //
-    // EDIT MODE: skip the SKU/barcode collision check entirely when the
-    // field is UNCHANGED from the loaded value. A stale cache entry or a
-    // misnormalised id can otherwise cause the current product to fail
-    // to be excluded from the find(), tripping a false-positive "already
-    // in use" on the user's own row. The send-only-changed-fields patch
-    // below also stops the server from second-guessing unchanged fields.
-    const trimmedSku = form.sku.trim().toLowerCase();
+    // Client-side pre-check against the cached catalog. The server is
+    // the source of truth, but the barcode guard turns a confusing
+    // server-side "already in use" round-trip into an immediate, clearly
+    // labelled error. SKU is NEVER pre-checked here because:
+    //  - CREATE: the SKU is auto-generated below with its own cache
+    //    collision retry (see `resolvedSku` block in handleSubmit).
+    //  - EDIT: SKU is read-only, never changed from the loaded value,
+    //    and never sent in the update patch. There's nothing to clash
+    //    against.
     const trimmedBarcode = form.barcode.trim();
-    const skuUnchanged =
-      isEdit && originalDetail
-        ? trimmedSku === (originalDetail.sku ?? '').trim().toLowerCase()
-        : false;
     const barcodeUnchanged =
       isEdit && originalDetail
         ? trimmedBarcode === (originalDetail.barcode ?? '').trim()
         : false;
-    const skuClash =
-      trimmedSku && !skuUnchanged
-        ? cachedProducts.find(
-            p =>
-              typeof p?.sku === 'string' &&
-              p.sku.toLowerCase() === trimmedSku &&
-              (productId === null || p.id !== productId),
-          )
-        : null;
     const barcodeClash =
       trimmedBarcode && !barcodeUnchanged
         ? (() => {
@@ -294,14 +296,6 @@ const ProductEditScreen: React.FC = () => {
               : null;
           })()
         : null;
-    if (skuClash) {
-      haptics.error();
-      setFieldErrors(p => ({
-        ...p,
-        sku: `This SKU is already used by "${skuClash.name}".`,
-      }));
-      return;
-    }
     if (barcodeClash) {
       haptics.error();
       setError(
@@ -326,9 +320,42 @@ const ProductEditScreen: React.FC = () => {
       // runValidation gates category_id being non-null before we get here,
       // so the non-null assertion is safe. category_id is a real FK on the
       // server (Rule::exists) — sending 0 or omitting it trips validation.
+      // SKU resolution:
+      //  - EDIT: form.sku is the loaded server value (input field is
+      //    read-only). Used for the diff comparison; never sent in the
+      //    update patch (server validator misbehaves on update).
+      //  - CREATE: auto-generate client-side. Prefer barcode-derived
+      //    (stable + identifies the product), fall back to a short UUID
+      //    suffix. Loop-with-collision-check against the cached catalog
+      //    to avoid a doomed round-trip when the derived value already
+      //    exists. ProductCreateInput.sku is required by the server.
+      let resolvedSku = form.sku.trim();
+      if (!isEdit) {
+        let candidate = generateAutoSku(form.barcode);
+        let attempts = 0;
+        // Walk the cache for an unused SKU. UUID collisions are
+        // astronomically rare; barcode-derived collisions happen when
+        // the same physical item is re-added (which is the user's
+        // problem to resolve via the existing item's edit screen, but
+        // we still don't want to crash the form). Cap at 5 retries
+        // before giving up and shipping the candidate to the server.
+        while (
+          attempts < 5 &&
+          cachedProducts.some(
+            p =>
+              typeof p?.sku === 'string' &&
+              p.sku.toLowerCase() === candidate.toLowerCase(),
+          )
+        ) {
+          attempts += 1;
+          candidate = generateAutoSku(undefined); // force UUID path on retry
+        }
+        resolvedSku = candidate;
+      }
+
       const input: ProductCreateInput = {
         name: form.name.trim(),
-        sku: form.sku.trim(),
+        sku: resolvedSku,
         category_id: form.categoryId!,
         base_price_cents: baseCents,
         ...(form.barcode.trim() ? {barcode: form.barcode.trim()} : {}),
@@ -510,43 +537,26 @@ const ProductEditScreen: React.FC = () => {
               ) : null}
             </View>
             <View style={styles.field}>
-              <Text style={styles.label}>SKU {isEdit ? '' : '*'}</Text>
+              <Text style={styles.label}>SKU</Text>
               <TextInput
-                style={[
-                  styles.input,
-                  fieldErrors.sku ? styles.inputError : null,
-                  isEdit ? styles.inputReadOnly : null,
-                ]}
+                style={[styles.input, styles.inputReadOnly]}
                 value={form.sku}
-                onChangeText={
-                  isEdit
-                    ? undefined
-                    : t => {
-                        set('sku', t);
-                        if (fieldErrors.sku)
-                          setFieldErrors(p => ({...p, sku: undefined}));
-                      }
+                editable={false}
+                placeholder={
+                  isEdit ? '' : 'Auto-generated when saved'
                 }
-                editable={!isEdit}
-                placeholder="e.g. FW-001"
                 placeholderTextColor={COLORS.inputPlaceholder}
-                autoCapitalize="characters"
-                autoCorrect={false}
                 accessibilityLabel={
                   isEdit
                     ? `SKU ${form.sku}. Read-only — set by the system.`
-                    : 'SKU'
+                    : 'SKU. Auto-generated when saved.'
                 }
               />
-              {isEdit ? (
-                <Text style={styles.hint}>
-                  SKU is set by the system and can&apos;t be changed from the
-                  app.
-                </Text>
-              ) : null}
-              {fieldErrors.sku ? (
-                <Text style={styles.fieldError}>{fieldErrors.sku}</Text>
-              ) : null}
+              <Text style={styles.hint}>
+                {isEdit
+                  ? "SKU is set by the system and can't be changed from the app."
+                  : "SKU is generated automatically when the item is saved."}
+              </Text>
             </View>
             <View style={styles.field}>
               <Text style={styles.label}>Barcode</Text>
