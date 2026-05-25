@@ -122,6 +122,14 @@ export default function SaleDetailScreen() {
       (parent as unknown as {
         navigate: (tab: string, params: object) => void;
       }).navigate('Customers', {
+        // initial: false APPENDS CustomerDetail onto the inner stack
+        // with CustomersList as the underlying screen — so a subsequent
+        // tap on the Customers tab can pop-to-root back to the list.
+        // The default (initial: true) replaces the stack with just the
+        // target screen, leaving nothing to pop to. Counter-intuitive
+        // boolean per React Navigation v7 nested-navigator semantics —
+        // verified against `getActionFromState`.
+        initial: false,
         screen: 'CustomerDetail',
         params: {customerId: id},
       });
@@ -141,6 +149,9 @@ export default function SaleDetailScreen() {
       (parent as unknown as {
         navigate: (tab: string, params: object) => void;
       }).navigate('Items', {
+        // initial: false — see openCustomer above. Keeps ItemsList
+        // beneath ProductDetail so the Items tab can pop-to-root.
+        initial: false,
         screen: 'ProductDetail',
         params: {productId: id},
       });
@@ -161,6 +172,10 @@ export default function SaleDetailScreen() {
         (parent as unknown as {
           navigate: (tab: string, params: object) => void;
         }).navigate(prev.tab, {
+          // initial: false keeps the destination tab's list mounted
+          // beneath the breadcrumb target so a later tab-tap reset
+          // still works.
+          initial: false,
           screen: prev.screen,
           params: prev.params ?? {},
         });

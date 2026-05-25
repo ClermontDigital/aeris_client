@@ -158,9 +158,12 @@ export default function CustomerDetailScreen() {
         screen: 'CustomerDetail',
         params: {customerId},
       });
-      // `initial: false` preserves TransactionList under SaleDetail so
-      // back goes to the list, not to the previous tab. See CheckoutScreen
-      // for the full rationale.
+      // initial: false APPENDS SaleDetail onto the Transactions stack
+      // with TransactionList beneath, so a later Transactions-tab tap
+      // pops back to the list. The default `initial: true` REPLACES the
+      // stack with just SaleDetail — verified against React Navigation v7
+      // `getActionFromState`. The reverse name is counter-intuitive but
+      // the behavior is the right one.
       navigation.navigate('Transactions', {
         screen: 'SaleDetail',
         params: {saleId},
@@ -477,6 +480,7 @@ export default function CustomerDetailScreen() {
                 (parent as unknown as {
                   navigate: (tab: string, params: object) => void;
                 }).navigate(prev.tab, {
+                  initial: false,
                   screen: prev.screen,
                   params: prev.params ?? {},
                 });

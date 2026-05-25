@@ -8,11 +8,13 @@ import type {User} from '../types/api.types';
 // Drop every cookie the WebView accumulated this session. ERPScreen +
 // MainScreen embed the Aeris2 webapp in a react-native-webview, and that
 // view stores Laravel session cookies in the system cookie jar — those
-// outlive the bearer token unless we explicitly wipe them. Called from both
-// the explicit logout and the 401-driven clearLocalSession so a stale
-// session cookie can't carry an unauthenticated user back into the
-// webview after the API token is gone. Best-effort: catches/swallows
-// failures so a cookie-store error never blocks the auth wipe.
+// outlive the bearer token unless we explicitly wipe them. Called ONLY
+// from the explicit `logout` path; the 401-driven `clearLocalSession`
+// no longer wipes cookies because the gateway sets XSRF/session cookies
+// that the next post-login call needs to carry — wiping on every 401
+// caused the "tap Retry twice and it works" post-login symptom. Best-
+// effort: catches/swallows failures so a cookie-store error never
+// blocks the auth wipe.
 async function clearWebViewCookies(): Promise<void> {
   try {
     await CookieManager.clearAll(true);  // true = include httpOnly
@@ -228,7 +230,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
     await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
-    await clearWebViewCookies();
+    // DO NOT wipe cookies here. The gateway may set XSRF / session
+    // cookies on the first call that subsequent calls expect; nuking
+    // them on every 401-driven session wipe was the cause of the
+    // post-login "tap Retry twice and it works" symptom — the user's
+    // freshly-minted bearer first call 401'd because the cookie was
+    // gone, then the failed response set the cookie, and the second
+    // tap finally succeeded. Cookies belong to explicit `logout`
+    // (where the user deliberately leaves) and to the WebView, not to
+    // the auth-rejection wipe path.
     set({
       user: null,
       token: null,

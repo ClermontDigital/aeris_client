@@ -86,7 +86,13 @@ export default function ProductDetailScreen() {
           per_page: 5,
           page: 1,
         });
-        if (!cancelled) setRecentSales(page.data ?? []);
+        // DEFENSIVE: a malformed relay response (no `data` array) would
+        // otherwise propagate undefined into recentSales and crash the
+        // section's .map below. Coerce to [] at the boundary.
+        if (!cancelled) {
+          const list = Array.isArray(page?.data) ? page.data : [];
+          setRecentSales(list);
+        }
       } catch {
         // Transactions section is non-essential — leave empty on failure.
       }
@@ -391,6 +397,12 @@ export default function ProductDetailScreen() {
                     (parent as unknown as {
                       navigate: (tab: string, params: object) => void;
                     }).navigate('Transactions', {
+                      // initial: false APPENDS SaleDetail onto the
+                      // Transactions stack with TransactionList beneath, so
+                      // a later Transactions-tab tap pops back to the list.
+                      // The default `initial: true` REPLACES the stack with
+                      // just SaleDetail — counter-intuitive RN7 semantic.
+                      initial: false,
                       screen: 'SaleDetail',
                       params: {saleId: s.id},
                     });
@@ -475,6 +487,7 @@ export default function ProductDetailScreen() {
                 (parent as unknown as {
                   navigate: (tab: string, params: object) => void;
                 }).navigate(prev.tab, {
+                  initial: false,
                   screen: prev.screen,
                   params: prev.params ?? {},
                 });

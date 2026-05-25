@@ -11,6 +11,16 @@ export type AuthStackParamList = {
   Login: undefined;
 };
 
+// App-level native stack — wraps the bottom-tab navigator so non-tab
+// screens (Settings) can be pushed over the whole app shell. The tab
+// navigator lives under the `Tabs` route; `Settings` is a sibling that
+// slides in with the native push transition. `AppTabs.tsx` exports this
+// stack as its default; `Tabs` mounts the actual bottom-tab navigator.
+export type AppStackParamList = {
+  Tabs: NavigatorScreenParams<AppTabParamList> | undefined;
+  Settings: undefined;
+};
+
 // Cross-tab navigation (e.g. `getParent()?.navigate('Items', {screen:
 // 'ProductDetail', params: {productId}})`) requires each tab whose
 // inner stack screens can be addressed from outside to be typed as
