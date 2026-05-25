@@ -2,7 +2,7 @@
   "expo": {
     "name": "AERIS",
     "slug": "aeris",
-    "version": "1.3.39",
+    "version": "1.3.40",
     "orientation": "default",
     "icon": "./assets/images/app-icon.png",
     "scheme": "aeris",
@@ -87,9 +87,11 @@
         }
       ],
       [
-        "expo-camera",
+        "react-native-vision-camera",
         {
-          "cameraPermission": "AERIS uses the camera to scan product barcodes at the point of sale so you can add items to a transaction without typing."
+          "cameraPermissionText": "AERIS uses the camera to scan product barcodes at the point of sale so you can add items to a transaction without typing.",
+          "enableMicrophonePermission": false,
+          "enableCodeScanner": true
         }
       ],
       [
