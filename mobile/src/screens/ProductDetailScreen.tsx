@@ -20,6 +20,7 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {ProductDetail, Sale} from '../types/api.types';
+import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
@@ -42,6 +43,15 @@ export default function ProductDetailScreen() {
   const [isUnavailable, setIsUnavailable] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [stockModalVisible, setStockModalVisible] = useState(false);
+  const addItem = useCartStore(s => s.addItem);
+  const [addedToCartMsg, setAddedToCartMsg] = useState<string | null>(null);
+  // Auto-dismiss the cart-confirmation message after 2.5s so the
+  // affordance reads as a transient toast rather than a sticky banner.
+  useEffect(() => {
+    if (!addedToCartMsg) return;
+    const t = setTimeout(() => setAddedToCartMsg(null), 2500);
+    return () => clearTimeout(t);
+  }, [addedToCartMsg]);
   // Recent transactions involving this product. The `product_id` filter is
   // sent as a defensive param — once the marketplace dispatcher honours
   // it, the list is item-specific. Until then the user sees recent sales
@@ -269,6 +279,22 @@ export default function ProductDetailScreen() {
           </View>
           <View style={styles.actionRow}>
             <PillButton
+              label="Add to cart"
+              icon="shopping-cart"
+              variant="solid"
+              onPress={() => {
+                if (product.stock_on_hand <= 0) {
+                  haptics.error();
+                  setAddedToCartMsg('Out of stock — can’t add to cart.');
+                  return;
+                }
+                addItem(product);
+                haptics.success();
+                setAddedToCartMsg(`${product.name} added to cart.`);
+              }}
+              accessibilityLabel={`Add ${product.name} to cart`}
+            />
+            <PillButton
               label="Edit"
               icon="settings"
               variant="secondary"
@@ -288,6 +314,13 @@ export default function ProductDetailScreen() {
               accessibilityLabel="Adjust stock for this item"
             />
           </View>
+          {addedToCartMsg ? (
+            <Text
+              style={styles.addedToCartConfirm}
+              accessibilityLiveRegion="polite">
+              {addedToCartMsg}
+            </Text>
+          ) : null}
         </View>
 
         {product.barcode && canEncodeCode128B(product.barcode) ? (
@@ -598,6 +631,12 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: SPACING.sm,
     marginTop: SPACING.md,
+  },
+  addedToCartConfirm: {
+    color: COLORS.success,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+    marginTop: SPACING.sm,
   },
   categoryPill: {
     flexDirection: 'row',
