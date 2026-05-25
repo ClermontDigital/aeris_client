@@ -85,6 +85,10 @@ export class DirectClient {
   // attempt at this callback before bouncing the user. See RelayClient
   // for the same mechanic.
   private onRefreshCb: (() => Promise<boolean>) | null = null;
+  // Single-flight refresh promise — see RelayClient.refreshPromise for
+  // the full rationale. Parallel 401s collapse onto one auth.refresh
+  // round-trip so racers can't poison each other.
+  private refreshPromise: Promise<boolean> | null = null;
 
   configure(options: {baseUrl?: string; timeoutMs?: number}): void {
     if (options.baseUrl !== undefined) this.baseUrl = options.baseUrl;
@@ -694,6 +698,8 @@ export class DirectClient {
         // wiping the session. The refresh endpoint itself is exempt so a
         // genuine "can't refresh" condition still bounces the user. Same
         // mechanic as RelayClient — see RelayClient.relayRpc for context.
+        // Parallel 401s share `refreshPromise` so they collapse onto ONE
+        // refresh round-trip and all retry with the same fresh bearer.
         const isRefresh = path === '/api/v1/auth/refresh';
         if (
           !isRefresh &&
@@ -701,12 +707,19 @@ export class DirectClient {
           this.onRefreshCb !== null &&
           this.authToken !== null
         ) {
-          let refreshed = false;
-          try {
-            refreshed = await this.onRefreshCb();
-          } catch {
-            refreshed = false;
+          if (!this.refreshPromise) {
+            const cb = this.onRefreshCb;
+            this.refreshPromise = (async () => {
+              try {
+                return await cb();
+              } catch {
+                return false;
+              }
+            })().finally(() => {
+              this.refreshPromise = null;
+            });
           }
+          const refreshed = await this.refreshPromise;
           if (refreshed) {
             return this.request<T>(method, path, body, {
               ...options,

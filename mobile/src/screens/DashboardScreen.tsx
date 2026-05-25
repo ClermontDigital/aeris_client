@@ -1,6 +1,5 @@
 import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
-  AppState,
   View,
   Text,
   ScrollView,
@@ -119,7 +118,19 @@ const DashboardScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  // In-flight guard: collapse concurrent fetchSummary invocations onto
+  // ONE round-trip. Cold-start can fire from the initial useEffect, the
+  // useFocusEffect first-focus path, AND the AppState change listener
+  // within milliseconds — without this, two or three parallel 401s race
+  // the refresh path and the second racer's clearLocalSession poisons
+  // the first racer's freshly-minted bearer. The single-flight refresh
+  // on RelayClient/DirectClient is the other half of this fix.
+  const inFlightRef = useRef<Promise<void> | null>(null);
+
   const fetchSummary = useCallback(async (isRefresh = false) => {
+    if (inFlightRef.current) {
+      return inFlightRef.current;
+    }
     if (isRefresh) {
       setIsRefreshing(true);
     } else {
@@ -127,15 +138,21 @@ const DashboardScreen: React.FC = () => {
     }
     setError(null);
 
-    try {
-      // Daily summary drives the hero card + stat strip. Recent
-      // transactions in parallel feeds the Recent Customers list below
-      // — 50 sales is enough to find 5 unique named customers in any
-      // realistic dataset.
-      const [data, transactionsPage] = await Promise.all([
-        ApiClient.getDailySummary(),
-        ApiClient.getTransactions({page: 1, per_page: 50}).catch(() => null),
-      ]);
+    const run = async (): Promise<void> => {
+      try {
+        // Daily summary drives the hero card + stat strip. Recent
+        // transactions feeds the Recent Customers list below.
+        //
+        // Sequential — NOT Promise.all — on the cold-start path. If the
+        // bearer is expired, the first call triggers the single-flight
+        // refresh and the second call rides the fresh token. Promise.all
+        // here used to send two parallel 401s and trip the refresh race
+        // (see RelayClient.refreshPromise rationale).
+        const data = await ApiClient.getDailySummary();
+        const transactionsPage = await ApiClient.getTransactions({
+          page: 1,
+          per_page: 50,
+        }).catch(() => null);
       // Fallback when `dashboard.summary` undercounts vs the
       // `transactions.list` we just pulled. v1.3.27's first attempt used
       // `toISOString().slice(0,10)` which is UTC — a sale at 9am AEST
@@ -180,15 +197,20 @@ const DashboardScreen: React.FC = () => {
         setRecentCustomers(pickRecentUniqueCustomers(transactionsPage.data, 5));
       }
       setLastUpdated(new Date());
-    } catch (e) {
-      const message =
-        e instanceof Error ? e.message : 'Failed to load dashboard';
-      haptics.error();
-      setError(message);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
+      } catch (e) {
+        const message =
+          e instanceof Error ? e.message : 'Failed to load dashboard';
+        haptics.error();
+        setError(message);
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    };
+    inFlightRef.current = run().finally(() => {
+      inFlightRef.current = null;
+    });
+    return inFlightRef.current;
   }, [haptics]);
 
   useEffect(() => {
@@ -222,19 +244,33 @@ const DashboardScreen: React.FC = () => {
   const lastSaleAt = useCartStore(s => s.lastSaleAt);
   useEffect(() => {
     if (!lastSaleAt) return;
-    const t = setTimeout(() => fetchSummary(), 750);
+    const t = setTimeout(() => {
+      // CHAIN — don't bypass the in-flight guard, but make sure the
+      // post-sale refresh actually fires even if another fetch was in
+      // flight at the 750ms mark. Without this chain, the in-flight
+      // guard short-circuits the post-sale invocation and the new
+      // sale silently fails to land on the dashboard until the user
+      // pulls to refresh.
+      const inFlight = inFlightRef.current;
+      if (inFlight) {
+        inFlight.finally(() => fetchSummary());
+      } else {
+        fetchSummary();
+      }
+    }, 750);
     return () => clearTimeout(t);
   }, [lastSaleAt, fetchSummary]);
 
-  // Refetch when the app foregrounds from background — a swipe-back-in after
-  // closing the app (or the OS suspending it) won't re-mount the screen but
-  // the dashboard's totals could be stale by then.
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') fetchSummary();
-    });
-    return () => sub.remove();
-  }, [fetchSummary]);
+  // App.tsx already owns a single debounced AppState listener that
+  // refreshes the session on foreground. A per-screen listener here
+  // used to fire fetchSummary on every transient inactive→active blip
+  // (keyboard, Face ID prompt, control centre swipe), and on the
+  // immediate post-login activation it triggered a parallel fetch that
+  // raced the freshly-acquired bearer through the 401 retry path —
+  // exactly the "Retry button twice after sign-in" symptom the user
+  // reports. The useFocusEffect above covers the "tab back here"
+  // case; lastSaleAt covers "just rang a sale".
+
 
   const todayString = new Date().toLocaleDateString('en-US', {
     weekday: 'long',

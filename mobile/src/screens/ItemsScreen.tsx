@@ -56,7 +56,15 @@ const ItemsScreen: React.FC = () => {
   // not just the pages the operator has scrolled into view on this screen.
   // `lastSynced` lets the empty-state copy distinguish "no cache yet" from
   // "really zero low-stock items".
-  const cachedProducts = useProductCacheStore(s => s.products);
+  //
+  // DEFENSIVE: the selector returns the live `products` slot, but a
+  // refocus that races a syncProducts() rehydrate can briefly expose
+  // intermediate states. Coercing to `[]` here guarantees the `.filter`
+  // calls in `visibleItems` / `stats` below never see undefined and
+  // crash the screen with "undefined is not a function" during a tab
+  // re-tap from ProductDetail. This was the root cause of the "Something
+  // went wrong" boundary firing on the Items tab.
+  const cachedProducts = useProductCacheStore(s => s.products) ?? [];
   const cacheLastSynced = useProductCacheStore(s => s.lastSynced);
   const syncProducts = useProductCacheStore(s => s.syncProducts);
   const isSyncingCache = useProductCacheStore(s => s.isSyncing);
@@ -150,7 +158,13 @@ const ItemsScreen: React.FC = () => {
   // knows whether the number is preliminary.
   const cacheReady = cachedProducts.length > 0 && cacheLastSynced !== null;
   const stats = useMemo(() => {
-    const source = cacheReady ? cachedProducts : items;
+    // DEFENSIVE: belt-and-braces. cachedProducts is already nullish-
+    // coalesced at the selector boundary, but the for-of loop below
+    // would throw "undefined is not iterable" if either source were
+    // ever falsy — keeping the screen render-safe is cheap insurance.
+    const source = cacheReady
+      ? (Array.isArray(cachedProducts) ? cachedProducts : [])
+      : (Array.isArray(items) ? items : []);
     let lowStock = 0;
     let outOfStock = 0;
     for (const it of source) {
@@ -195,22 +209,30 @@ const ItemsScreen: React.FC = () => {
   // instead of rendering the entire cache at once. For search, also stay
   // with paginated items — server-side search is the source of truth.
   const visibleItems = useMemo(() => {
+    // DEFENSIVE: re-coerce to arrays at the memo boundary. The state
+    // hooks above already guarantee these are arrays in practice, but
+    // a cache rehydrate racing a tab re-focus has historically managed
+    // to surface an intermediate undefined value here, crashing the
+    // screen with "undefined is not a function" inside the ErrorBoundary
+    // when the user taps the Items tab from ProductDetail.
+    const safeItems = Array.isArray(items) ? items : [];
+    const safeCache = Array.isArray(cachedProducts) ? cachedProducts : [];
     const trimmedSearch = search.trim();
-    if (stockFilter === 'all') return items;
+    if (stockFilter === 'all') return safeItems;
     const filteredItems =
       stockFilter === 'low'
-        ? items.filter(
+        ? safeItems.filter(
             it => it.stock_on_hand > 0 && it.stock_on_hand < LOW_STOCK_THRESHOLD,
           )
-        : items.filter(it => it.stock_on_hand <= 0);
+        : safeItems.filter(it => it.stock_on_hand <= 0);
     // When searching, we can't safely apply the cache (the cache doesn't
     // know about the search term). Fall back to filtered loaded pages.
     if (trimmedSearch || !cacheReady) return filteredItems;
     return stockFilter === 'low'
-      ? cachedProducts.filter(
+      ? safeCache.filter(
           it => it.stock_on_hand > 0 && it.stock_on_hand < LOW_STOCK_THRESHOLD,
         )
-      : cachedProducts.filter(it => it.stock_on_hand <= 0);
+      : safeCache.filter(it => it.stock_on_hand <= 0);
   }, [items, cachedProducts, cacheReady, stockFilter, search]);
 
   const toggleFilter = useCallback(

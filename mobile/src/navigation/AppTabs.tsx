@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, {useMemo} from 'react';
 import {
   View,
   Image,
@@ -11,7 +11,10 @@ import {
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import Svg, {Path} from 'react-native-svg';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import {useNavigation, StackActions} from '@react-navigation/native';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
 import DashboardScreen from '../screens/DashboardScreen';
 import QuickSaleStack from './QuickSaleStack';
@@ -19,7 +22,7 @@ import ItemsStack from './ItemsStack';
 import CustomersStack from './CustomersStack';
 import TransactionsStack from './TransactionsStack';
 import ERPScreen from '../screens/ERPScreen';
-import SettingsModal from '../screens/SettingsModal';
+import {SettingsScreen} from '../screens/SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
@@ -27,7 +30,7 @@ import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
 import {getItemCount} from '@aeris/shared';
 import {COLORS, FONT_SIZE, FONT_FAMILY} from '../constants/theme';
-import type {AppTabParamList} from '../types/navigation.types';
+import type {AppTabParamList, AppStackParamList} from '../types/navigation.types';
 
 const Tab = createBottomTabNavigator<AppTabParamList>();
 
@@ -79,14 +82,51 @@ const TONGUE_BOTTOM_W = 140;
 const TONGUE_PROTRUSION = 24;
 const TONGUE_RADIUS = 22;
 
-const AppTabs: React.FC = () => {
+// "Pop to root" when a focused tab is re-tapped. React Navigation v7
+// bottom-tabs DOES NOT do this by default — pressing the focused tab
+// is a no-op unless you intercept tabPress. Without this listener, a
+// user who drilled into ItemsList → ProductDetail → CustomerDetail then
+// taps Items expecting "take me back to the list" stays stuck on the
+// detail screen. Also resets the cross-tab breadcrumb history so the
+// next deep journey starts clean (a bottom-nav tap is the universal
+// "I'm done exploring, fresh start" signal).
+// Typed as `any` for the Tab.Screen `listeners` prop — React Navigation's
+// `EventListenerCallback` generics depend on the tab's specific route
+// name, so a single shared helper can't satisfy four call sites without
+// resorting to `any`. Functionality and runtime types are correct.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const popToRootOnReTap: any = ({navigation}: any) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tabPress: (_e: any) => {
+    if (navigation.isFocused()) {
+      // popToTop walks the inner stack back to its initialRouteName
+      // screen. If we're already at root it's a cheap no-op.
+      navigation.dispatch(StackActions.popToTop());
+      useNavHistoryStore.getState().reset();
+    } else {
+      // Different tab → switching tabs counts as a fresh exploration.
+      useNavHistoryStore.getState().reset();
+    }
+  },
+});
+
+// Inner tab navigator — the actual bottom-tab UI plus the brand chrome
+// (pendant + wordmark + gear). This used to be the file's default
+// export; it's now wrapped by `AppTabs` (a native-stack) so the gear
+// can push the Settings page as a proper screen with native back chrome
+// instead of opening a modal overlay.
+const AppTabsInner: React.FC = () => {
   const connectionMode = useSettingsStore(s => s.settings.connectionMode);
   const baseUrl = useSettingsStore(s => s.settings.baseUrl);
   const {isServerReachable} = useNetworkStatus(baseUrl);
   const showErpTab = connectionMode !== 'relay' || isServerReachable;
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
-  const [settingsVisible, setSettingsVisible] = useState(false);
+  // Gear icon now navigates to the AppStack's Settings route on the
+  // parent navigator instead of opening a local modal. getParent() is
+  // typed as the AppStack so navigate('Settings') is checked.
+  const stackNav =
+    useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const cartCount = useCartStore(s => getItemCount(s.items));
   const {width: screenWidth} = useWindowDimensions();
 
@@ -150,7 +190,7 @@ const AppTabs: React.FC = () => {
       <TouchableOpacity
         onPress={() => {
           haptics.light();
-          setSettingsVisible(true);
+          stackNav.navigate('Settings');
         }}
         style={[styles.gearBtn, {top: insets.top + 36}]}
         accessibilityRole="button"
@@ -181,6 +221,7 @@ const AppTabs: React.FC = () => {
         <Tab.Screen
           name="QuickSale"
           component={QuickSaleStack}
+          listeners={popToRootOnReTap}
           options={{
             tabBarLabel: 'Sale',
             tabBarIcon: ({color, size}) => (
@@ -201,6 +242,7 @@ const AppTabs: React.FC = () => {
         <Tab.Screen
           name="Items"
           component={ItemsStack}
+          listeners={popToRootOnReTap}
           options={{
             tabBarIcon: ({color, size}) => (
               <Icon name="cube" size={size} color={color} />
@@ -210,6 +252,7 @@ const AppTabs: React.FC = () => {
         <Tab.Screen
           name="Customers"
           component={CustomersStack}
+          listeners={popToRootOnReTap}
           options={{
             tabBarIcon: ({color, size}) => (
               <Icon name="people" size={size} color={color} />
@@ -219,6 +262,7 @@ const AppTabs: React.FC = () => {
         <Tab.Screen
           name="Transactions"
           component={TransactionsStack}
+          listeners={popToRootOnReTap}
           options={{
             tabBarIcon: ({color, size}) => (
               <Icon name="receipt" size={size} color={color} />
@@ -238,13 +282,31 @@ const AppTabs: React.FC = () => {
           />
         )}
       </Tab.Navigator>
-      <SettingsModal
-        visible={settingsVisible}
-        onClose={() => setSettingsVisible(false)}
-      />
     </View>
   );
 };
+
+// AppStack — native-stack wrapper around the tab navigator. Hosts the
+// Settings page as a sibling route so the gear icon pushes a real
+// screen (slide-in on iOS, fade on Android) rather than opening a
+// bottom-sheet modal. RootNavigator continues to import this file's
+// default export, so this wrapper is transparent to upstream code.
+const Stack = createNativeStackNavigator<AppStackParamList>();
+
+const AppTabs: React.FC = () => (
+  <Stack.Navigator
+    initialRouteName="Tabs"
+    screenOptions={{
+      headerShown: false,
+      // SettingsScreen owns its own header (back chevron + title +
+      // save). Default native-stack animations: slide-from-right on
+      // iOS, fade on Android — matches platform expectations and the
+      // brief's "page-style transition" requirement.
+    }}>
+    <Stack.Screen name="Tabs" component={AppTabsInner} />
+    <Stack.Screen name="Settings" component={SettingsScreen} />
+  </Stack.Navigator>
+);
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.navy},

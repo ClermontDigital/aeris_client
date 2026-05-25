@@ -98,6 +98,16 @@ export class RelayClient {
   // token, call setAuthToken(), and return true on success. Any throw or
   // false is treated as "refresh failed" → onUnauthorized fires.
   private onRefreshCb: (() => Promise<boolean>) | null = null;
+  // Single-flight refresh: when multiple in-flight calls all 401 at once
+  // (e.g. Dashboard's Promise.all on cold-start), they must collapse onto
+  // ONE refresh round-trip and all retry with the resulting token. Without
+  // this, parallel callers race the store mutation: one wins the refresh,
+  // commits the new bearer; the other reads the store mid-`clearLocalSession`
+  // and sees null → fires `handleUnauthorized` → wipes the freshly-minted
+  // session out from under the first caller. That race was the actual cause
+  // of "after a day my saved login bounces me back to the sign-in screen
+  // even with Keep Me Signed In ticked".
+  private refreshPromise: Promise<boolean> | null = null;
   private workspaceCode: string = '';
 
   configure(options: {
@@ -805,10 +815,19 @@ export class RelayClient {
 
       if (response.status === 401) {
         // The auth.refresh action itself is allowed to 401 — that means the
-        // token genuinely can't be refreshed (e.g. revoked, server lost the
+        // token genuinely can't be refreshed (revoked, server lost the
         // session). In that case we DO bounce. For any other action, try
         // a one-shot refresh-and-retry before wiping the session, so a
         // routine token expiry doesn't kick the user back to login mid-task.
+        //
+        // CRITICAL: parallel 401s (e.g. Dashboard's Promise.all on cold
+        // start) must collapse onto ONE refresh round-trip. Without the
+        // single-flight `refreshPromise`, racer A and racer B both call
+        // `onRefreshCb()` — A wins, B reads the store mid-update and sees
+        // a half-applied state, returns false, fires `handleUnauthorized`,
+        // and wipes the session A just refreshed. That race is the actual
+        // cause of "I get bounced back to login after a day even with
+        // Keep Me Signed In ticked".
         const isRefresh = action === RELAY_ACTIONS.AUTH_REFRESH;
         if (
           !isRefresh &&
@@ -816,12 +835,19 @@ export class RelayClient {
           this.onRefreshCb !== null &&
           this.authToken !== null
         ) {
-          let refreshed = false;
-          try {
-            refreshed = await this.onRefreshCb();
-          } catch {
-            refreshed = false;
+          if (!this.refreshPromise) {
+            const cb = this.onRefreshCb;
+            this.refreshPromise = (async () => {
+              try {
+                return await cb();
+              } catch {
+                return false;
+              }
+            })().finally(() => {
+              this.refreshPromise = null;
+            });
           }
+          const refreshed = await this.refreshPromise;
           if (refreshed) {
             // Retry the original call with the freshly-set bearer. The
             // __retried flag prevents infinite recursion if the new token
