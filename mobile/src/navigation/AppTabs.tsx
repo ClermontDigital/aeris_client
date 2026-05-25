@@ -147,17 +147,26 @@ const AppTabsInner: React.FC = () => {
     const tbiR = cx + TONGUE_BOTTOM_W / 2;
     const tongueBottomY = BAND_H + TONGUE_PROTRUSION;
     return {
-      // Quadratic control at (tbiL, 0) forces a horizontal tangent at
-      // the chrome edge and a vertical tangent at the tongue side —
-      // smooth shoulder, no visible corner.
+      // Cream cutouts extend the full SVG height (down to tongueBottomY)
+      // and trace the tongue's bottom-corner arcs on their inner edge.
+      // Stopping at BAND_H instead would leave the SVG below the chrome
+      // transparent on the outer sides of the tongue, exposing the navy
+      // SafeAreaView bg and showing two sharp 90° corners at the screen
+      // edges. Quadratic control at (tbiL, 0) / (tbiR, 0) keeps a
+      // horizontal tangent at the chrome top and vertical tangent at the
+      // tongue side — smooth shoulder, no visible corner.
       creamLeft:
         `M 0 0 L ${ttiL} 0 ` +
         `Q ${tbiL} 0, ${tbiL} ${BAND_H} ` +
-        `L 0 ${BAND_H} Z`,
+        `L ${tbiL} ${tongueBottomY - TONGUE_RADIUS} ` +
+        `A ${TONGUE_RADIUS} ${TONGUE_RADIUS} 0 0 0 ${tbiL + TONGUE_RADIUS} ${tongueBottomY} ` +
+        `L 0 ${tongueBottomY} Z`,
       creamRight:
         `M ${screenWidth} 0 L ${ttiR} 0 ` +
         `Q ${tbiR} 0, ${tbiR} ${BAND_H} ` +
-        `L ${screenWidth} ${BAND_H} Z`,
+        `L ${tbiR} ${tongueBottomY - TONGUE_RADIUS} ` +
+        `A ${TONGUE_RADIUS} ${TONGUE_RADIUS} 0 0 1 ${tbiR - TONGUE_RADIUS} ${tongueBottomY} ` +
+        `L ${screenWidth} ${tongueBottomY} Z`,
       tongue:
         `M ${tbiL} ${BAND_H} L ${tbiR} ${BAND_H} ` +
         `L ${tbiR} ${tongueBottomY - TONGUE_RADIUS} ` +
