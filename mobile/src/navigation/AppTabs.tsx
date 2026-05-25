@@ -187,9 +187,25 @@ const AppTabsInner: React.FC = () => {
               style={[styles.svgWrap, {height: svgHeight}]}
               pointerEvents="none">
               <Svg width={screenWidth} height={svgHeight}>
-                {/* Pendant shoulders match the page background (paper) so
-                    the pendant chrome flows seamlessly into the page
-                    below. */}
+                {/* Self-contained pendant: every pixel inside the SVG box
+                    is painted by the SVG itself, not borrowed from a
+                    parent layer. Order matters — base cream first, navy
+                    chrome strip on top, cream cutouts eat into chrome on
+                    the sides, tongue protrudes below. Without the explicit
+                    base+chrome rects the cream cutouts depend on the
+                    SafeAreaView bg above and the Tab.Navigator screen
+                    below resolving to the right colors, which doesn't
+                    hold in iOS's overflow:visible compositing path — the
+                    transparent gap below topBar would expose navy and
+                    paint two visible 90° corners at the screen edges. */}
+                <Path
+                  d={`M0 0 H${screenWidth} V${svgHeight} H0 Z`}
+                  fill={COLORS.background}
+                />
+                <Path
+                  d={`M0 0 H${screenWidth} V${BAND_H} H0 Z`}
+                  fill={COLORS.navy}
+                />
                 <Path d={paths.creamLeft} fill={COLORS.background} />
                 <Path d={paths.creamRight} fill={COLORS.background} />
                 <Path d={paths.tongue} fill={COLORS.navy} />
