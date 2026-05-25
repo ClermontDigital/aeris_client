@@ -296,7 +296,12 @@ export default function ProductDetailScreen() {
           // rather than floating glyphs on the page.
           <View style={styles.shareCard}>
             <View style={styles.barcodeWrap}>
-              <Barcode value={product.barcode} width={300} height={84} />
+              <Barcode
+                value={product.barcode}
+                width={300}
+                height={84}
+                showText={false}
+              />
             </View>
           </View>
         ) : null}

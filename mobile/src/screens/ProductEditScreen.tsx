@@ -31,7 +31,12 @@ import ApiClient from '../services/ApiClient';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
-import type {Category, ProductCreateInput} from '../types/api.types';
+import type {
+  Category,
+  ProductCreateInput,
+  ProductDetail,
+  ProductUpdateInput,
+} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 
 type Nav = NativeStackNavigationProp<ItemsStackParamList, 'ProductEdit'>;
@@ -92,6 +97,16 @@ const ProductEditScreen: React.FC = () => {
   const scannedBarcodeParam = route.params?.scannedBarcode ?? null;
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  // Snapshot of the loaded product so we can diff against the form on
+  // save and send ONLY changed fields. This is the v1.3.38 fix for the
+  // "This SKU is already in use" error on a barcode-only update: the
+  // server's unique:products,sku validator on UPDATE doesn't reliably
+  // exclude the current product, so re-sending the unchanged SKU trips
+  // a false-positive 422. Sending a real partial patch keeps the
+  // server's validator out of the way.
+  const [originalDetail, setOriginalDetail] = useState<ProductDetail | null>(
+    null,
+  );
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -154,6 +169,7 @@ const ProductEditScreen: React.FC = () => {
         if (cancelled) return;
         setCategories(cats);
         if (detail) {
+          setOriginalDetail(detail);
           setForm({
             name: detail.name ?? '',
             sku: detail.sku ?? '',
@@ -233,26 +249,42 @@ const ProductEditScreen: React.FC = () => {
     // Client-side pre-checks against the cached catalog. The server is the
     // source of truth, but these guards turn a confusing server-side
     // "SKU already in use" / "barcode already in use" round-trip into an
-    // immediate, clearly-labelled field-level error. Edit mode (we know
-    // our own id) excludes ourselves from collision detection.
+    // immediate, clearly-labelled field-level error.
+    //
+    // EDIT MODE: skip the SKU/barcode collision check entirely when the
+    // field is UNCHANGED from the loaded value. A stale cache entry or a
+    // misnormalised id can otherwise cause the current product to fail
+    // to be excluded from the find(), tripping a false-positive "already
+    // in use" on the user's own row. The send-only-changed-fields patch
+    // below also stops the server from second-guessing unchanged fields.
     const trimmedSku = form.sku.trim().toLowerCase();
     const trimmedBarcode = form.barcode.trim();
-    const skuClash = trimmedSku
-      ? cachedProducts.find(
-          p =>
-            typeof p?.sku === 'string' &&
-            p.sku.toLowerCase() === trimmedSku &&
-            (productId === null || p.id !== productId),
-        )
-      : null;
-    const barcodeClash = trimmedBarcode
-      ? (() => {
-          const hit = getByBarcode(trimmedBarcode);
-          return hit && (productId === null || hit.id !== productId)
-            ? hit
-            : null;
-        })()
-      : null;
+    const skuUnchanged =
+      isEdit && originalDetail
+        ? trimmedSku === (originalDetail.sku ?? '').trim().toLowerCase()
+        : false;
+    const barcodeUnchanged =
+      isEdit && originalDetail
+        ? trimmedBarcode === (originalDetail.barcode ?? '').trim()
+        : false;
+    const skuClash =
+      trimmedSku && !skuUnchanged
+        ? cachedProducts.find(
+            p =>
+              typeof p?.sku === 'string' &&
+              p.sku.toLowerCase() === trimmedSku &&
+              (productId === null || p.id !== productId),
+          )
+        : null;
+    const barcodeClash =
+      trimmedBarcode && !barcodeUnchanged
+        ? (() => {
+            const hit = getByBarcode(trimmedBarcode);
+            return hit && (productId === null || hit.id !== productId)
+              ? hit
+              : null;
+          })()
+        : null;
     if (skuClash) {
       haptics.error();
       setFieldErrors(p => ({
@@ -300,16 +332,64 @@ const ProductEditScreen: React.FC = () => {
       };
 
       if (isEdit && productId !== null) {
-        // Update is a partial — we send the full set since the server
-        // accepts a strict superset and the fields are all user-edited.
-        // Stock is excluded on edit; adjustments flow through StockAdjust.
-        // `track_stock` is ALSO excluded on edit: ProductDetail doesn't
-        // expose the real flag (form.trackStock was inferred from
-        // stock_on_hand > 0), so including it would silently flip the
-        // flag off when editing a tracked product that's currently at 0
-        // stock. Edit-time changes to track_stock should go through the
-        // web admin until ProductDetail exposes the field.
-        const {stock_quantity: _stock, track_stock: _track, ...patch} = input;
+        // Real partial patch: send ONLY fields the user actually changed.
+        // The server's unique:products,sku validator on UPDATE has been
+        // observed to false-positive against the current row (the rule
+        // isn't excluding by id reliably across the dispatcher), and
+        // re-sending an unchanged SKU trips it every time. Diffing the
+        // form against the loaded `originalDetail` keeps the validator
+        // out of the way for the common "I'm only changing the barcode"
+        // workflow. Stock + track_stock excluded on edit by design (see
+        // earlier comment).
+        const patch: ProductUpdateInput = {};
+        if (originalDetail) {
+          const orig = originalDetail;
+          if (input.name !== (orig.name ?? '').trim()) patch.name = input.name;
+          // Case-insensitive SKU diff: a case-only edit ("FW-001" → "fw-001")
+          // shouldn't trigger a server unique:products,sku validation round-
+          // trip on update (the validator is broken — see top-of-handler
+          // comment). Treat case-only changes as a no-op for the patch.
+          if (
+            input.sku.toLowerCase() !== (orig.sku ?? '').trim().toLowerCase()
+          ) {
+            patch.sku = input.sku;
+          }
+          if (input.category_id !== orig.category_id) {
+            patch.category_id = input.category_id;
+          }
+          if (input.base_price_cents !== orig.price_cents) {
+            patch.base_price_cents = input.base_price_cents;
+          }
+          const origBarcode = (orig.barcode ?? '').trim();
+          const newBarcode = (input.barcode ?? '').trim();
+          if (newBarcode !== origBarcode) {
+            patch.barcode = newBarcode;
+          }
+          if (
+            input.cost_price_cents !== undefined &&
+            input.cost_price_cents !== orig.cost_cents
+          ) {
+            patch.cost_price_cents = input.cost_price_cents;
+          }
+          if (
+            input.tax_rate !== undefined &&
+            input.tax_rate !== orig.tax_rate
+          ) {
+            patch.tax_rate = input.tax_rate;
+          }
+        } else {
+          // No baseline — defensive fall-through to the old "send everything"
+          // behaviour minus stock/track_stock.
+          const {stock_quantity: _stock, track_stock: _track, ...full} = input;
+          Object.assign(patch, full);
+        }
+        // Nothing to send → treat as a no-op success so the user gets the
+        // expected "Saved" feedback even when the form is untouched.
+        if (Object.keys(patch).length === 0) {
+          haptics.success();
+          navigation.goBack();
+          return;
+        }
         await ApiClient.updateProduct(productId, patch);
       } else {
         await ApiClient.createProduct(input);
@@ -352,6 +432,7 @@ const ProductEditScreen: React.FC = () => {
     syncProducts,
     cachedProducts,
     getByBarcode,
+    originalDetail,
   ]);
 
   if (loading) {
@@ -456,7 +537,12 @@ const ProductEditScreen: React.FC = () => {
               </View>
               {form.barcode.trim() ? (
                 <View style={styles.barcodePreview}>
-                  <Barcode value={form.barcode.trim()} width={260} height={70} />
+                  <Barcode
+                    value={form.barcode.trim()}
+                    width={260}
+                    height={70}
+                    showText={false}
+                  />
                 </View>
               ) : (
                 <Text style={styles.hint}>
