@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useEffect, useRef} from 'react';
+import React, {useState, useCallback, useEffect, useMemo, useRef} from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,14 @@ import {
   Linking,
   type GestureResponderEvent,
 } from 'react-native';
-import {CameraView, useCameraPermissions} from 'expo-camera';
+import {
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+  useCodeScanner,
+  type Code,
+  type CodeType,
+} from 'react-native-vision-camera';
 import {useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -51,33 +58,35 @@ const BarcodeScannerScreen: React.FC = () => {
       ? 'capture'
       : 'cart';
   const navigation = useNavigation<Nav>();
-  const [permission, requestPermission] = useCameraPermissions();
+  const {hasPermission, requestPermission} = useCameraPermission();
+  // Back-camera device. vision-camera v4 returns `undefined` while the
+  // platform enumerates devices (one-frame splash). The `isActive` gate
+  // on <Camera> handles that — we just render the centered spinner.
+  // TODO(stocktake): swap to `useCameraDevice('back', {physicalDevices:
+  // ['ultra-wide-angle-camera']})` once stocktake mode is wired up, so
+  // close-up shelf scans use the macro-friendly lens. See MEMORY.md
+  // "Stocktake via vision-camera".
+  const device = useCameraDevice('back');
+  const cameraRef = useRef<Camera>(null);
   const [torchOn, setTorchOn] = useState(false);
-  // expo-camera v55 doesn't expose a focus-point API — its only knobs are
-  // `autofocus` ('off' = continuous AF, 'on' = lock once), `zoom` (0..1),
-  // torch, flash, and facing. We default to continuous AF and give the
-  // operator a zoom affordance so they can frame a small/distant barcode
-  // without physically moving the phone. iPhone wide lenses can't focus
-  // closer than ~6–12 cm, so the legend nudges the user to back off when
-  // the barcode fills the frame.
-  //
-  // Zoom is capped at 0.4 — anything above that on a wide lens turns into
-  // unusable digital crop and kills decode accuracy.
-  const ZOOM_MAX = 0.4;
-  const ZOOM_STEP = 0.05;
-  const [zoom, setZoom] = useState(0);
+  // Zoom maps to the device's native range. vision-camera exposes
+  // `minZoom`/`maxZoom`/`neutralZoom` per-device; we clamp to a usable
+  // range (1x .. 3x equivalent) to keep digital crop sane.
+  const ZOOM_STEP = 0.25;
+  const [zoom, setZoom] = useState(1);
+  const zoomMax = useMemo(() => {
+    if (!device) return 3;
+    // Cap at min(device.maxZoom, 3x neutralZoom) — beyond that on most
+    // phones the wide lens is just upscaled pixels and decode rate
+    // tanks.
+    return Math.min(device.maxZoom ?? 3, (device.neutralZoom ?? 1) * 3);
+  }, [device]);
+  const zoomMin = device?.minZoom ?? 1;
+  // Transient on-screen reticle at the user's tap point. Driven separately
+  // from the actual `camera.focus({x,y})` call so we can show the bubble
+  // even on devices where the imperative focus is a no-op.
   const [focusAt, setFocusAt] = useState<{x: number; y: number} | null>(null);
   const focusReticleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Camera remount key. Continuous AF (`autofocus="off"`) is the right
-  // default for tracking a moving scene, BUT in practice on some iOS
-  // devices it locks onto the wood/desk in the foreground and never
-  // re-acquires focus on the barcode itself. Bumping this key on tap
-  // remounts CameraView, which forces the native side to re-initialise
-  // focus from scratch — much more reliable than fighting expo-camera's
-  // limited prop surface. There's a brief preview blink, but it's the
-  // most reliable refocus trigger available without dropping to a
-  // bespoke camera library.
-  const [cameraKey, setCameraKey] = useState(0);
   const [scannedProduct, setScannedProduct] = useState<
     Product | ProductDetail | null
   >(null);
@@ -216,14 +225,6 @@ const BarcodeScannerScreen: React.FC = () => {
     [getByBarcode, isLookingUp, scanLock, haptics, mode, navigation],
   );
 
-  const handleBarcodeScanned = useCallback(
-    (result: {data: string}) => {
-      if (scanLock) return;
-      lookupBarcode(result.data);
-    },
-    [lookupBarcode, scanLock],
-  );
-
   // Auto re-arm after a not-found result so the user doesn't have to tap
   // "Scan Again" to retry. Manual entry / found-product flow still owns its
   // own dismiss button because the user needs to choose Add-to-Cart first.
@@ -260,37 +261,38 @@ const BarcodeScannerScreen: React.FC = () => {
     scanLockRef.current = false;
   }, []);
 
-  // Tap on the camera preview triggers a forced refocus via remount.
-  // expo-camera v55 doesn't expose a focus-point or refocus API, and on
-  // some iOS devices continuous AF (`autofocus="off"`) latches onto the
-  // foreground and won't re-acquire on a barcode further back. Bumping
-  // `cameraKey` remounts <CameraView> — the native side starts focus
-  // fresh, reliably picking up the new subject. The brief preview blink
-  // is the tradeoff; it's the only available refocus trigger short of
-  // dropping to react-native-vision-camera.
-  const handleFocusTap = useCallback((e: GestureResponderEvent) => {
+  // Tap-to-focus on the camera preview. vision-camera v4 exposes a true
+  // imperative `camera.focus({x, y})` that targets the native focus +
+  // exposure metering at the tap point — NO remount, NO blink. If the
+  // device doesn't support tap-to-focus (some Androids), the call
+  // throws; we swallow and still show the reticle as visual feedback
+  // since the user-perceived action ("I tapped, something happened")
+  // is preserved.
+  const handleFocusTap = useCallback(async (e: GestureResponderEvent) => {
     const {locationX, locationY} = e.nativeEvent;
     setFocusAt({x: locationX, y: locationY});
-    setCameraKey(k => k + 1);
     if (focusReticleTimer.current) clearTimeout(focusReticleTimer.current);
     focusReticleTimer.current = setTimeout(() => setFocusAt(null), 700);
+    try {
+      await cameraRef.current?.focus({x: locationX, y: locationY});
+    } catch {
+      // Device doesn't support focus-point or focus is busy — silent.
+    }
   }, []);
 
   const handleZoomIn = useCallback(() => {
     haptics.light();
-    setZoom(z => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)));
-  }, [haptics]);
+    setZoom(z => Math.min(zoomMax, +(z + ZOOM_STEP).toFixed(2)));
+  }, [haptics, zoomMax]);
 
   const handleZoomOut = useCallback(() => {
     haptics.light();
-    setZoom(z => Math.max(0, +(z - ZOOM_STEP).toFixed(2)));
-  }, [haptics]);
+    setZoom(z => Math.max(zoomMin, +(z - ZOOM_STEP).toFixed(2)));
+  }, [haptics, zoomMin]);
 
-  // Display zoom as a multiplier. zoom=0 → 1.0x, zoom=ZOOM_MAX (0.4) →
-  // ~3.0x. Linear mapping is good enough for a UI hint; the underlying
-  // expo-camera curve is non-linear but the operator just needs feedback
-  // that the buttons are doing something.
-  const zoomLabel = `${(1 + zoom * 5).toFixed(1)}x`;
+  // Display zoom as a multiplier (e.g. "1.0x", "2.5x"). vision-camera's
+  // zoom is already in device-multiplier units, so no conversion needed.
+  const zoomLabel = `${zoom.toFixed(1)}x`;
 
   // Clean up focus timer on unmount.
   useEffect(() => {
@@ -304,8 +306,64 @@ const BarcodeScannerScreen: React.FC = () => {
     navigation.goBack();
   }, [navigation, haptics]);
 
-  // Permission not yet determined
-  if (!permission) {
+  // vision-camera's useCodeScanner runs detection on the UI thread and
+  // dispatches `onCodeScanned` with an array of Code objects per frame.
+  // We take the first valid value and feed it into our existing lookup
+  // pipeline. `codeTypes` maps 1:1 to our previous expo-camera types
+  // (hyphenated naming in vision-camera).
+  const CODE_TYPES: CodeType[] = useMemo(
+    () => ['ean-13', 'ean-8', 'upc-a', 'upc-e', 'code-128', 'code-39'],
+    [],
+  );
+  const handleCodesScanned = useCallback(
+    (codes: Code[]) => {
+      if (scanLockRef.current || isLookingUp || scanLock) return;
+      const value = codes.find(c => typeof c.value === 'string')?.value;
+      if (!value) return;
+      lookupBarcode(value);
+    },
+    [isLookingUp, scanLock, lookupBarcode],
+  );
+  const codeScanner = useCodeScanner({
+    codeTypes: CODE_TYPES,
+    onCodeScanned: handleCodesScanned,
+  });
+
+  // Permission gate. vision-camera v4's hook returns a stable
+  // `hasPermission` boolean once the platform has answered. We render
+  // a spinner while undefined-equivalent (false on first paint) and
+  // route into Grant / Open-Settings paths once we know the state.
+  // The "open Settings" fallback is essential for hard-deny — calling
+  // requestPermission() on a previously-denied state silently no-ops
+  // and the user would otherwise be staring at a dead button (Apple
+  // Review specifically tests this flow).
+  if (!hasPermission) {
+    return (
+      <View style={styles.centered}>
+        <Icon name="camera-outline" size={64} color={COLORS.textDim} />
+        <Text style={styles.permissionTitle}>Camera Access Required</Text>
+        <Text style={styles.permissionText}>
+          The barcode scanner needs access to your camera to scan product
+          barcodes. If you previously denied access, open Settings to enable
+          it.
+        </Text>
+        <TouchableOpacity
+          style={styles.permissionButton}
+          accessibilityRole="button"
+          accessibilityLabel="Grant camera permission"
+          onPress={async () => {
+            const granted = await requestPermission();
+            if (!granted) Linking.openSettings();
+          }}>
+          <Text style={styles.permissionButtonText}>Grant Permission</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Device enumeration is async on first paint. Show a spinner while
+  // we wait — typically resolves within one frame.
+  if (!device) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.accent} />
@@ -313,79 +371,28 @@ const BarcodeScannerScreen: React.FC = () => {
     );
   }
 
-  // Permission denied. We have two flavours:
-  // - First-time / soft-deny: canAskAgain=true → the OS-level prompt will
-  //   appear on requestPermission(). Show "Grant Permission".
-  // - Hard-deny (user disabled it in Settings, or denied with "Don't ask
-  //   again" on Android): canAskAgain=false → requestPermission() silently
-  //   no-ops. Show "Open Settings" instead so the user has a path forward,
-  //   not a dead button (Apple Review tests this flow).
-  if (!permission.granted) {
-    const hardDenied = !permission.canAskAgain;
-    return (
-      <View style={styles.centered}>
-        <Icon name="camera-outline" size={64} color={COLORS.textDim} />
-        <Text style={styles.permissionTitle}>Camera Access Required</Text>
-        <Text style={styles.permissionText}>
-          {hardDenied
-            ? 'Camera access is turned off for AERIS. Open Settings to re-enable it so you can scan product barcodes.'
-            : 'The barcode scanner needs access to your camera to scan product barcodes.'}
-        </Text>
-        <TouchableOpacity
-          style={styles.permissionButton}
-          accessibilityRole="button"
-          accessibilityLabel={hardDenied ? 'Open Settings' : 'Grant camera permission'}
-          onPress={() => {
-            if (hardDenied) {
-              Linking.openSettings();
-            } else {
-              requestPermission();
-            }
-          }}>
-          <Text style={styles.permissionButtonText}>
-            {hardDenied ? 'Open Settings' : 'Grant Permission'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
-      {/* Unmount the camera while the result card / not-found card is up.
-          The card visually covers the preview anyway and keeping the capture
-          pipeline running burns battery + warms the phone for nothing.
-          Auto-rearm path: clearing scannedProduct/notFound also re-mounts
-          the camera, which is fine — expo-camera's mount time is < 200ms. */}
-      {isFocused && !scannedProduct && !notFound ? (
-        <Pressable
+      {/* vision-camera's `isActive` pauses capture WITHOUT unmounting.
+          Replaces the expo-camera mount-gate that caused the preview
+          blink on every result-card show/hide cycle. Pressable wraps
+          the camera surface for tap-to-focus; the actual focus call
+          is imperative via cameraRef (no remount, no blink). */}
+      <Pressable
+        style={styles.camera}
+        onPress={handleFocusTap}
+        accessibilityRole="button"
+        accessibilityLabel="Tap on the barcode to focus the camera">
+        <Camera
+          ref={cameraRef}
           style={styles.camera}
-          onPress={handleFocusTap}
-          accessibilityRole="button"
-          accessibilityLabel="Tap on the barcode to focus the camera">
-          <CameraView
-            key={cameraKey}
-            style={styles.camera}
-            facing="back"
-            enableTorch={torchOn}
-            autofocus="off"
-            zoom={zoom}
-            barcodeScannerSettings={{
-              barcodeTypes: [
-                'ean13',
-                'ean8',
-                'upc_a',
-                'upc_e',
-                'code128',
-                'code39',
-              ],
-            }}
-            onBarcodeScanned={
-              scanLock || isLookingUp ? undefined : handleBarcodeScanned
-            }
-          />
-        </Pressable>
-      ) : null}
+          device={device}
+          isActive={isFocused && !scannedProduct && !notFound}
+          torch={torchOn ? 'on' : 'off'}
+          zoom={zoom}
+          codeScanner={scanLock || isLookingUp ? undefined : codeScanner}
+        />
+      </Pressable>
 
       {/* Transient tap-to-focus reticle — small circle that fades the user's
           tap into a visual confirmation that focus is being re-acquired.
@@ -522,9 +529,12 @@ const BarcodeScannerScreen: React.FC = () => {
         {!scannedProduct && !notFound && !isLookingUp ? (
           <View style={styles.zoomRow}>
             <TouchableOpacity
-              style={[styles.zoomButton, zoom <= 0 && styles.zoomButtonDisabled]}
+              style={[
+                styles.zoomButton,
+                zoom <= zoomMin && styles.zoomButtonDisabled,
+              ]}
               onPress={handleZoomOut}
-              disabled={zoom <= 0}
+              disabled={zoom <= zoomMin}
               accessibilityRole="button"
               accessibilityLabel="Zoom out"
               hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
@@ -534,10 +544,10 @@ const BarcodeScannerScreen: React.FC = () => {
             <TouchableOpacity
               style={[
                 styles.zoomButton,
-                zoom >= ZOOM_MAX && styles.zoomButtonDisabled,
+                zoom >= zoomMax && styles.zoomButtonDisabled,
               ]}
               onPress={handleZoomIn}
-              disabled={zoom >= ZOOM_MAX}
+              disabled={zoom >= zoomMax}
               accessibilityRole="button"
               accessibilityLabel="Zoom in"
               hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>

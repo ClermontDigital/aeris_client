@@ -122,11 +122,25 @@ jest.mock('expo-haptics', () => ({
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 
-// Mock expo-camera
-jest.mock('expo-camera', () => ({
-  CameraView: 'CameraView',
-  useCameraPermissions: jest.fn(() => [{ granted: true }, jest.fn()]),
-  BarcodeScanningResult: {},
+// Mock react-native-vision-camera. The BarcodeScannerScreen migrated
+// off expo-camera in v1.3.40 so it can use the imperative
+// `camera.focus({x,y})` API and avoid the remount blink.
+jest.mock('react-native-vision-camera', () => ({
+  Camera: 'Camera',
+  useCameraDevice: jest.fn(() => ({
+    id: 'back',
+    minZoom: 1,
+    maxZoom: 6,
+    neutralZoom: 1,
+  })),
+  useCameraPermission: jest.fn(() => ({
+    hasPermission: true,
+    requestPermission: jest.fn(() => Promise.resolve(true)),
+  })),
+  useCodeScanner: jest.fn(({onCodeScanned}) => ({
+    codeTypes: [],
+    onCodeScanned,
+  })),
 }));
 
 // Mock expo-local-authentication
