@@ -68,6 +68,16 @@ const BarcodeScannerScreen: React.FC = () => {
   const [zoom, setZoom] = useState(0);
   const [focusAt, setFocusAt] = useState<{x: number; y: number} | null>(null);
   const focusReticleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Camera remount key. Continuous AF (`autofocus="off"`) is the right
+  // default for tracking a moving scene, BUT in practice on some iOS
+  // devices it locks onto the wood/desk in the foreground and never
+  // re-acquires focus on the barcode itself. Bumping this key on tap
+  // remounts CameraView, which forces the native side to re-initialise
+  // focus from scratch — much more reliable than fighting expo-camera's
+  // limited prop surface. There's a brief preview blink, but it's the
+  // most reliable refocus trigger available without dropping to a
+  // bespoke camera library.
+  const [cameraKey, setCameraKey] = useState(0);
   const [scannedProduct, setScannedProduct] = useState<
     Product | ProductDetail | null
   >(null);
@@ -250,15 +260,18 @@ const BarcodeScannerScreen: React.FC = () => {
     scanLockRef.current = false;
   }, []);
 
-  // Tap on the camera preview. expo-camera v55 has no focus-point API and
-  // the previous remount-on-tap "fix" caused visible black flashes without
-  // actually refocusing. We keep the reticle as a passive visual ack of
-  // where the user tapped — continuous AF (`autofocus="off"`) handles
-  // re-acquisition on its own. If the camera can't lock, the answer is
-  // zoom (bottom buttons) or backing the phone off.
+  // Tap on the camera preview triggers a forced refocus via remount.
+  // expo-camera v55 doesn't expose a focus-point or refocus API, and on
+  // some iOS devices continuous AF (`autofocus="off"`) latches onto the
+  // foreground and won't re-acquire on a barcode further back. Bumping
+  // `cameraKey` remounts <CameraView> — the native side starts focus
+  // fresh, reliably picking up the new subject. The brief preview blink
+  // is the tradeoff; it's the only available refocus trigger short of
+  // dropping to react-native-vision-camera.
   const handleFocusTap = useCallback((e: GestureResponderEvent) => {
     const {locationX, locationY} = e.nativeEvent;
     setFocusAt({x: locationX, y: locationY});
+    setCameraKey(k => k + 1);
     if (focusReticleTimer.current) clearTimeout(focusReticleTimer.current);
     focusReticleTimer.current = setTimeout(() => setFocusAt(null), 700);
   }, []);
@@ -351,6 +364,7 @@ const BarcodeScannerScreen: React.FC = () => {
           accessibilityRole="button"
           accessibilityLabel="Tap on the barcode to focus the camera">
           <CameraView
+            key={cameraKey}
             style={styles.camera}
             facing="back"
             enableTorch={torchOn}
@@ -402,7 +416,7 @@ const BarcodeScannerScreen: React.FC = () => {
             <View style={[styles.reticleCorner, styles.reticleCornerBR]} />
           </View>
           <Text style={styles.reticleLegend}>
-            Centre the barcode in the box
+            Centre the barcode in the box · Tap to refocus
           </Text>
           <Text style={styles.reticleHint}>
             Hold the phone 10–15 cm away · use zoom to frame

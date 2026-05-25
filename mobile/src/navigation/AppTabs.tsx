@@ -12,7 +12,7 @@ import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import Svg, {Path} from 'react-native-svg';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {useNavigation, StackActions} from '@react-navigation/native';
+import {useNavigation, StackActions, useNavigationState} from '@react-navigation/native';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
@@ -129,6 +129,22 @@ const AppTabsInner: React.FC = () => {
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const cartCount = useCartStore(s => getItemCount(s.items));
   const {width: screenWidth} = useWindowDimensions();
+  // Whether the currently-focused tab's nested stack is on the Scanner
+  // screen. When true, hide the pendant header so the camera can take
+  // over the full top of the screen — otherwise the camera preview
+  // starts below the navy tongue + cream shoulders, which reads as
+  // wasted chrome on a viewfinder-style UI.
+  const isOnScanner = useNavigationState(state => {
+    if (!state) return false;
+    const focusedTab = state.routes[state.index];
+    // Tab routes for QuickSale/Items wrap a Stack — peek at its current
+    // route name. Dashboard/Customers/Transactions don't host Scanner so
+    // they short-circuit harmlessly.
+    const innerState = focusedTab?.state;
+    if (!innerState || innerState.routes === undefined) return false;
+    const innerRoute = innerState.routes[innerState.index ?? 0];
+    return innerRoute?.name === 'Scanner';
+  });
 
   const paths = useMemo(() => {
     const cx = screenWidth / 2;
@@ -163,41 +179,44 @@ const AppTabsInner: React.FC = () => {
 
   return (
     <View style={styles.root}>
-      <SafeAreaView edges={['top']} style={styles.topBar}>
-        <View style={styles.topBarRow}>
-          <View style={[styles.svgWrap, {height: svgHeight}]} pointerEvents="none">
-            <Svg width={screenWidth} height={svgHeight}>
-              {/* Pendant shoulders match the page background (paper) so the
-                  pendant chrome flows seamlessly into the page below — the
-                  prior warm-cream shoulders read as a stray colour band
-                  between navy chrome and paper page. The path names retain
-                  their `creamLeft` / `creamRight` keys for legacy, but they
-                  fill with whatever the page surface currently is. */}
-              <Path d={paths.creamLeft} fill={COLORS.background} />
-              <Path d={paths.creamRight} fill={COLORS.background} />
-              <Path d={paths.tongue} fill={COLORS.navy} />
-            </Svg>
+      {isOnScanner ? null : (
+        <SafeAreaView edges={['top']} style={styles.topBar}>
+          <View style={styles.topBarRow}>
+            <View
+              style={[styles.svgWrap, {height: svgHeight}]}
+              pointerEvents="none">
+              <Svg width={screenWidth} height={svgHeight}>
+                {/* Pendant shoulders match the page background (paper) so
+                    the pendant chrome flows seamlessly into the page
+                    below. */}
+                <Path d={paths.creamLeft} fill={COLORS.background} />
+                <Path d={paths.creamRight} fill={COLORS.background} />
+                <Path d={paths.tongue} fill={COLORS.navy} />
+              </Svg>
+            </View>
+            <Image
+              source={require('../../assets/images/aeris-wordmark.png')}
+              style={styles.brandWordmark}
+              accessibilityIgnoresInvertColors
+              accessibilityLabel="Aeris"
+              resizeMode="contain"
+            />
           </View>
-          <Image
-            source={require('../../assets/images/aeris-wordmark.png')}
-            style={styles.brandWordmark}
-            accessibilityIgnoresInvertColors
-            accessibilityLabel="Aeris"
-            resizeMode="contain"
-          />
-        </View>
-      </SafeAreaView>
-      <TouchableOpacity
-        onPress={() => {
-          haptics.light();
-          stackNav.navigate('Settings');
-        }}
-        style={[styles.gearBtn, {top: insets.top + 36}]}
-        accessibilityRole="button"
-        accessibilityLabel="Open settings"
-        hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-        <Icon name="settings-outline" size={22} color={COLORS.navy} />
-      </TouchableOpacity>
+        </SafeAreaView>
+      )}
+      {isOnScanner ? null : (
+        <TouchableOpacity
+          onPress={() => {
+            haptics.light();
+            stackNav.navigate('Settings');
+          }}
+          style={[styles.gearBtn, {top: insets.top + 36}]}
+          accessibilityRole="button"
+          accessibilityLabel="Open settings"
+          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+          <Icon name="settings-outline" size={22} color={COLORS.navy} />
+        </TouchableOpacity>
+      )}
       <Tab.Navigator
         initialRouteName="Dashboard"
         screenOptions={{
