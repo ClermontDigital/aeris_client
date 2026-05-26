@@ -104,6 +104,11 @@ export interface SaleDetail extends Sale {
 }
 
 export interface SaleItem {
+  // sale_items.id — the per-line PK required by sales.refund's `items[]`
+  // payload (RefundParams.items[].sale_item_id). May be 0 on legacy data
+  // shapes that don't include the row id; callers MUST filter those out
+  // before submitting a per-items refund.
+  id: number;
   product_id: number;
   product_name: string;
   sku: string;
@@ -313,6 +318,58 @@ export interface DailyZReport {
   sales_by_staff: Record<string, number>; // staff name → count of completed sales
   hourly_breakdown: Record<string, number>; // hour ('00'..'23') → count of completed sales
   sales_by_status: Record<string, number>; // status → count of sales
+}
+
+// SalesAPIController::refund response. The `refund` row is a negative-amount
+// payment record persisted to the sale's payments list; `sale` is the full
+// SaleResource post-refund (status flips to `refunded` once fully refunded);
+// `idempotent_replay` is true when a same-key + same-body retry returns the
+// cached prior response instead of processing a fresh refund.
+export interface Refund {
+  id: number;
+  sale_id: number;
+  amount: number; // negative (dollars, e.g. -47.50)
+  payment_method: string; // post-coercion (e.g. 'eftpos' for 'card')
+  reference: string;
+  processed_at: string; // ISO 8601
+}
+
+export interface RefundParams {
+  // Required dispatcher alias; goes into the URL on direct mode.
+  sale_id: number;
+  // Decimal dollars (e.g. 47.50). Optional — omit when refunding by items
+  // or for a full refund. If both `amount` and `items` are sent, server
+  // ignores `amount` and computes the refund from `items`.
+  amount?: number;
+  // Per-item refund. Server aggregates duplicate sale_item_ids before
+  // processing and rejects (422) any line that would push cumulative
+  // refunded qty above the original sold qty.
+  items?: Array<{sale_item_id: number; quantity: number}>;
+  // Optional; server enforces <= 500 chars.
+  reason?: string;
+  // Default 'cash'. 'card' is coerced to 'eftpos' in the persisted row.
+  // 'original_method' looks up the most recent positive payment on this
+  // sale and reuses its method.
+  refund_method?: 'cash' | 'card' | 'original_method';
+  // REQUIRED. UUID minted client-side (use expo-crypto.randomUUID on the
+  // mobile UI layer). Reuse on retry to avoid double-refund; mint a fresh
+  // key whenever the user changes anything in the refund sheet.
+  idempotency_key: string;
+}
+
+export interface RefundResponse {
+  success: true;
+  message: string;
+  data: {
+    refund: Refund;
+    sale: SaleDetail;
+    idempotent_replay: boolean;
+  };
+}
+
+export interface RefundErrorResponse {
+  success: false;
+  message: string; // human-readable error string from server
 }
 
 export interface PaginatedResponse<T> {

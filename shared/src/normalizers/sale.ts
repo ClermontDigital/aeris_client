@@ -55,6 +55,16 @@ function normalizeSaleItem(input: unknown): SaleItem {
   // server's `price` (dollars) when the cents mirror isn't present.
   const product = (raw.product || {}) as Record<string, unknown>;
   return {
+    // SaleItemResource emits `id` as the sale_items.id PK; we need it for
+    // per-item refunds. Falls through to `sale_item_id` for resources that
+    // alias the column, and to 0 when neither is present (legacy receipt
+    // shapes) — the refund UI filters those out.
+    id:
+      typeof raw.id === 'number'
+        ? raw.id
+        : typeof raw.sale_item_id === 'number'
+        ? raw.sale_item_id
+        : 0,
     product_id: asNumber(raw.product_id),
     product_name:
       asString(raw.product_name) || asString(product.name),

@@ -1,5 +1,7 @@
 export {RelayClient} from './RelayClient';
 export {RelayError} from './RelayError';
+export {RefundError, classifyRefundError} from './RefundError';
+export type {RefundErrorKind} from './RefundError';
 export {
   SALE_RETRY,
   READ_RETRY,
