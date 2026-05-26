@@ -234,22 +234,6 @@ export default function CartScreen() {
     [discountMode, haptics],
   );
 
-  const handleClearCart = useCallback(() => {
-    Alert.alert(
-      'Clear cart',
-      'Are you sure you want to remove all items from the cart?',
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {text: 'Clear', style: 'destructive', onPress: () => clear()},
-      ],
-    );
-  }, [clear]);
-
-  const handleCheckout = useCallback(() => {
-    haptics.medium();
-    navigation.navigate('Checkout');
-  }, [navigation, haptics]);
-
   const handleBackToProducts = useCallback(() => {
     // Pop back if we have history (came from ProductGrid → Cart navigate),
     // otherwise jump to ProductGrid directly. Both land on the same screen
@@ -261,6 +245,32 @@ export default function CartScreen() {
       navigation.navigate('ProductGrid');
     }
   }, [navigation]);
+
+  const handleClearCart = useCallback(() => {
+    Alert.alert(
+      'Clear cart',
+      'Are you sure you want to remove all items from the cart?',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Clear',
+          style: 'destructive',
+          // Cart is now empty so nothing to do on this screen — kick the
+          // user straight back to the product list, which is where they'd
+          // start a fresh sale anyway.
+          onPress: () => {
+            clear();
+            handleBackToProducts();
+          },
+        },
+      ],
+    );
+  }, [clear, handleBackToProducts]);
+
+  const handleCheckout = useCallback(() => {
+    haptics.medium();
+    navigation.navigate('Checkout');
+  }, [navigation, haptics]);
 
   const handleSwipeDelete = useCallback(
     (productId: number) => {

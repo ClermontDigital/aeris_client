@@ -235,17 +235,9 @@ export default function ProductDetailScreen() {
                   />
                   <Text style={styles.meta}>{product.sku || '—'}</Text>
                 </View>
-                {product.barcode ? (
-                  <View style={styles.metaItem}>
-                    <Icon
-                      name="barcode-outline"
-                      size={12}
-                      color={COLORS.textMuted}
-                      style={styles.metaIcon}
-                    />
-                    <Text style={styles.meta}>{product.barcode}</Text>
-                  </View>
-                ) : null}
+                {/* Barcode number intentionally omitted here — the actual
+                    rendered barcode below already exposes the value, so
+                    showing the digits again above is redundant. */}
               </View>
             </View>
             <View
