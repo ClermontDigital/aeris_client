@@ -77,7 +77,10 @@ const TabButton: React.FC<BottomTabBarButtonProps> = ({
 // quadratic control point at the intersection of the chrome edge and
 // the tongue side.
 const BAND_TOP = 30;
-const BAND_H = 48;
+// BAND_H is the vertical span of the Bezier shoulder — the curve from
+// (ttiL, cutoutTopY) to (tbiL, bandY). Smaller = less navy sitting below
+// the wordmark before the tongue starts. Tuned to 36 in v1.3.47 (was 48).
+const BAND_H = 36;
 const TONGUE_TOP_W = 200;
 const TONGUE_BOTTOM_W = 140;
 const TONGUE_PROTRUSION = 16;
@@ -138,79 +141,78 @@ const AppTabsInner: React.FC = () => {
   // Scanner screen itself flips this store on focus/blur via useFocusEffect.
   const isOnScanner = useScannerVisibilityStore(s => s.isScannerVisible);
 
+  // Chrome layout:
+  //   y = 0          → screen top (behind status bar)
+  //   y = cutoutTopY → top of the cream cutout. Above this the chrome
+  //                    stays full-width (no taper into the safe area).
+  //   y = bandY      → bottom of the Bezier shoulder = tongue starts
+  //   y = tongueBottomY → bottom of the tongue
+  const cutoutTopY = insets.top + BAND_TOP;
+  const bandY = cutoutTopY + BAND_H;
+  const tongueBottomY = bandY + TONGUE_PROTRUSION;
+  const svgHeight = tongueBottomY;
+
   const paths = useMemo(() => {
     const cx = screenWidth / 2;
-    // Top points: wide tongue shoulders. Bottom points: narrow tongue base.
     const ttiL = cx - TONGUE_TOP_W / 2;
     const ttiR = cx + TONGUE_TOP_W / 2;
     const tbiL = cx - TONGUE_BOTTOM_W / 2;
     const tbiR = cx + TONGUE_BOTTOM_W / 2;
-    const tongueBottomY = BAND_H + TONGUE_PROTRUSION;
     return {
-      // Cream cutouts extend the full SVG height (down to tongueBottomY)
-      // and trace the tongue's bottom-corner arcs on their inner edge.
-      // Stopping at BAND_H instead would leave the SVG below the chrome
-      // transparent on the outer sides of the tongue, exposing the navy
-      // SafeAreaView bg and showing two sharp 90° corners at the screen
-      // edges. Quadratic control at (tbiL, 0) / (tbiR, 0) keeps a
-      // horizontal tangent at the chrome top and vertical tangent at the
-      // tongue side — smooth shoulder, no visible corner.
+      // Cream cutout starts at cutoutTopY (NOT at SVG y=0) so the chrome
+      // stays full-width from screen top down to cutoutTopY — wide navy
+      // banner with sharp 90° outer corners. Bezier control at
+      // (tbiL, cutoutTopY) / (tbiR, cutoutTopY) keeps horizontal tangent
+      // at the chrome bottom edge and vertical tangent at the tongue side.
       creamLeft:
-        `M 0 0 L ${ttiL} 0 ` +
-        `Q ${tbiL} 0, ${tbiL} ${BAND_H} ` +
+        `M 0 ${cutoutTopY} L ${ttiL} ${cutoutTopY} ` +
+        `Q ${tbiL} ${cutoutTopY}, ${tbiL} ${bandY} ` +
         `L ${tbiL} ${tongueBottomY - TONGUE_RADIUS} ` +
         `A ${TONGUE_RADIUS} ${TONGUE_RADIUS} 0 0 0 ${tbiL + TONGUE_RADIUS} ${tongueBottomY} ` +
         `L 0 ${tongueBottomY} Z`,
       creamRight:
-        `M ${screenWidth} 0 L ${ttiR} 0 ` +
-        `Q ${tbiR} 0, ${tbiR} ${BAND_H} ` +
+        `M ${screenWidth} ${cutoutTopY} L ${ttiR} ${cutoutTopY} ` +
+        `Q ${tbiR} ${cutoutTopY}, ${tbiR} ${bandY} ` +
         `L ${tbiR} ${tongueBottomY - TONGUE_RADIUS} ` +
         `A ${TONGUE_RADIUS} ${TONGUE_RADIUS} 0 0 1 ${tbiR - TONGUE_RADIUS} ${tongueBottomY} ` +
         `L ${screenWidth} ${tongueBottomY} Z`,
       tongue:
-        `M ${tbiL} ${BAND_H} L ${tbiR} ${BAND_H} ` +
+        `M ${tbiL} ${bandY} L ${tbiR} ${bandY} ` +
         `L ${tbiR} ${tongueBottomY - TONGUE_RADIUS} ` +
         `A ${TONGUE_RADIUS} ${TONGUE_RADIUS} 0 0 1 ${tbiR - TONGUE_RADIUS} ${tongueBottomY} ` +
         `L ${tbiL + TONGUE_RADIUS} ${tongueBottomY} ` +
         `A ${TONGUE_RADIUS} ${TONGUE_RADIUS} 0 0 1 ${tbiL} ${tongueBottomY - TONGUE_RADIUS} Z`,
     };
-  }, [screenWidth]);
-
-  const svgHeight = BAND_H + TONGUE_PROTRUSION;
+  }, [screenWidth, cutoutTopY, bandY, tongueBottomY]);
 
   return (
     <View style={styles.root}>
       {isOnScanner ? null : (
         <SafeAreaView edges={['top']} style={styles.topBar}>
+          {/* SVG sibling of topBarRow, absolute-positioned to cover from
+              the SafeAreaView's outer top (behind the status bar) down
+              past the tongue. Painting the chrome inside the SVG — rather
+              than relying on SafeAreaView's bg — gives the chrome a
+              continuous tapered silhouette with no 90° step at the safe
+              area boundary. */}
+          <View
+            style={[styles.svgWrap, {height: svgHeight}]}
+            pointerEvents="none">
+            <Svg width={screenWidth} height={svgHeight}>
+              <Path
+                d={`M0 0 H${screenWidth} V${svgHeight} H0 Z`}
+                fill={COLORS.background}
+              />
+              <Path
+                d={`M0 0 H${screenWidth} V${bandY} H0 Z`}
+                fill={COLORS.navy}
+              />
+              <Path d={paths.creamLeft} fill={COLORS.background} />
+              <Path d={paths.creamRight} fill={COLORS.background} />
+              <Path d={paths.tongue} fill={COLORS.navy} />
+            </Svg>
+          </View>
           <View style={styles.topBarRow}>
-            <View
-              style={[styles.svgWrap, {height: svgHeight}]}
-              pointerEvents="none">
-              <Svg width={screenWidth} height={svgHeight}>
-                {/* Self-contained pendant: every pixel inside the SVG box
-                    is painted by the SVG itself, not borrowed from a
-                    parent layer. Order matters — base cream first, navy
-                    chrome strip on top, cream cutouts eat into chrome on
-                    the sides, tongue protrudes below. Without the explicit
-                    base+chrome rects the cream cutouts depend on the
-                    SafeAreaView bg above and the Tab.Navigator screen
-                    below resolving to the right colors, which doesn't
-                    hold in iOS's overflow:visible compositing path — the
-                    transparent gap below topBar would expose navy and
-                    paint two visible 90° corners at the screen edges. */}
-                <Path
-                  d={`M0 0 H${screenWidth} V${svgHeight} H0 Z`}
-                  fill={COLORS.background}
-                />
-                <Path
-                  d={`M0 0 H${screenWidth} V${BAND_H} H0 Z`}
-                  fill={COLORS.navy}
-                />
-                <Path d={paths.creamLeft} fill={COLORS.background} />
-                <Path d={paths.creamRight} fill={COLORS.background} />
-                <Path d={paths.tongue} fill={COLORS.navy} />
-              </Svg>
-            </View>
             <Image
               source={require('../../assets/images/aeris-wordmark.png')}
               style={styles.brandWordmark}
@@ -345,24 +347,34 @@ const AppTabs: React.FC = () => (
 );
 
 const styles = StyleSheet.create({
-  root: {flex: 1, backgroundColor: COLORS.navy},
-  topBar: {backgroundColor: COLORS.navy, overflow: 'visible'},
+  // Root bg flipped from navy to cream — the chrome is now painted
+  // entirely inside the SVG, so the root no longer needs to seed navy.
+  // Keeping it navy would leak through the cream cutouts at the screen
+  // edges in any non-SVG-painted region (e.g. below the tongue).
+  root: {flex: 1, backgroundColor: COLORS.background},
+  // SafeAreaView bg flipped to transparent for the same reason — the
+  // SVG paints the navy chrome rect itself, including the safe-area
+  // zone. zIndex:2 keeps the SafeAreaView (and its overflowing SVG —
+  // the tongue protrudes TONGUE_PROTRUSION px past the SafeAreaView's
+  // box) above the Tab.Navigator that renders later in the JSX flow.
+  topBar: {backgroundColor: 'transparent', overflow: 'visible', zIndex: 2},
   topBarRow: {
     minHeight: 76,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
   },
-  // The Svg lives flush to the left edge and the cream/navy boundary
-  // resolves itself within the path data — no flex/centre layout to
-  // fight with. `top: BAND_TOP` puts the band below the navy chrome
-  // strip so the wordmark, which is centred in topBarRow, straddles
-  // the chrome and the tongue.
+  // svgWrap covers the FULL chrome area, anchored at the SafeAreaView's
+  // outer top (top:0 — position:absolute is relative to the padding
+  // edge, which sits at the safe-area-view's outer top, not after its
+  // paddingTop). The SVG inside is sized to bandY + TONGUE_PROTRUSION,
+  // so it paints the chrome from behind the status bar down through
+  // the tongue.
   svgWrap: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: BAND_TOP,
+    top: 0,
   },
   brandWordmark: {
     width: 130,
