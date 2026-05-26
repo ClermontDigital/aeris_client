@@ -28,7 +28,7 @@ import ErrorBanner from '../components/ErrorBanner';
 import type {SaleDetail, Sale} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
-import {useNavHistoryStore} from '../stores/navHistoryStore';
+import {useNavHistoryStore, type CrumbTab} from '../stores/navHistoryStore';
 
 type SaleDetailRouteProp = RouteProp<TransactionsStackParamList, 'SaleDetail'>;
 type Nav = NativeStackNavigationProp<TransactionsStackParamList>;
@@ -109,13 +109,61 @@ export default function SaleDetailScreen() {
   // Cross-tab nav also pushes a breadcrumb so the back button on the
   // destination screen can return here, not bounce to ItemsList/CustomersList.
   const pushCrumb = useNavHistoryStore(s => s.push);
+
+  // SaleDetail is reachable from multiple tabs:
+  //   - Transactions tab: TransactionList → SaleDetail
+  //   - Items tab: ProductDetail → SaleDetail (v1.3.56+ — TransactionList /
+  //     SaleDetail / Receipt are also registered in ItemsStack)
+  //   - Customers tab: CustomerDetail → SaleDetail (cross-tab in)
+  //
+  // Two things follow:
+  //   1. If we want to navigate to a screen the CURRENT stack already
+  //      hosts, prefer a local push so swipe-back returns through the
+  //      same tab the user has been browsing in.
+  //   2. When we DO cross-tab, the breadcrumb's `tab` field must reflect
+  //      the *current* tab so a later Back returns to this SaleDetail in
+  //      the tab the user came from — not a hardcoded "Transactions"
+  //      which would bounce them to a different tab.
+  const getCurrentTab = useCallback((): CrumbTab => {
+    const parent = navigation.getParent?.();
+    const state = parent?.getState?.();
+    const name = state?.routes?.[state.index]?.name;
+    // Defensive default: 'Transactions' has historically been the most
+    // common SaleDetail origin and is a safe back destination.
+    if (
+      name === 'Items' ||
+      name === 'Customers' ||
+      name === 'Transactions' ||
+      name === 'QuickSale' ||
+      name === 'Dashboard' ||
+      name === 'ERP'
+    ) {
+      return name;
+    }
+    return 'Transactions';
+  }, [navigation]);
+
   const openCustomer = useCallback(
     (id: number) => {
       haptics.light();
+      const currentTab = getCurrentTab();
+      // Customers tab's stack also hosts CustomerDetail — only cross-tab
+      // when we're NOT already inside Customers. Cast via unknown
+      // because the Nav prop's type is bound to TransactionsStackParamList
+      // (no 'CustomerDetail' there), but at runtime React Navigation
+      // looks the route up by name so this is safe.
+      if (currentTab === 'Customers') {
+        (
+          navigation as unknown as {
+            navigate: (screen: string, params: object) => void;
+          }
+        ).navigate('CustomerDetail', {customerId: id});
+        return;
+      }
       const parent = navigation.getParent?.();
       if (!parent) return;
       pushCrumb({
-        tab: 'Transactions',
+        tab: currentTab,
         screen: 'SaleDetail',
         params: {saleId},
       });
@@ -134,15 +182,28 @@ export default function SaleDetailScreen() {
         params: {customerId: id},
       });
     },
-    [navigation, haptics, pushCrumb, saleId],
+    [navigation, haptics, pushCrumb, saleId, getCurrentTab],
   );
+
   const openProduct = useCallback(
     (id: number) => {
       haptics.light();
+      const currentTab = getCurrentTab();
+      // Items tab's stack hosts ProductDetail — local navigate when we're
+      // already there. Saves a cross-tab bounce that visually flickers.
+      // Cast via unknown for the same Nav-prop-typing reason as openCustomer.
+      if (currentTab === 'Items') {
+        (
+          navigation as unknown as {
+            navigate: (screen: string, params: object) => void;
+          }
+        ).navigate('ProductDetail', {productId: id});
+        return;
+      }
       const parent = navigation.getParent?.();
       if (!parent) return;
       pushCrumb({
-        tab: 'Transactions',
+        tab: currentTab,
         screen: 'SaleDetail',
         params: {saleId},
       });
@@ -156,7 +217,7 @@ export default function SaleDetailScreen() {
         params: {productId: id},
       });
     },
-    [navigation, haptics, pushCrumb, saleId],
+    [navigation, haptics, pushCrumb, saleId, getCurrentTab],
   );
 
   // Back button: consult the breadcrumb trail first, fall through to
