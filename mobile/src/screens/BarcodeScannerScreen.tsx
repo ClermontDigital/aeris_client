@@ -146,6 +146,13 @@ const BarcodeScannerScreen: React.FC = () => {
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [scanLock, setScanLock] = useState(false);
+  // Set true the moment the user taps Cancel (or otherwise dismisses the
+  // scanner) so we can paint an opaque overlay over the camera surface
+  // before navigation.goBack() kicks off the transition. Without this,
+  // vision-camera pauses on its last captured frame while `isFocused`
+  // flips false during the slide-out — the user sees a frozen camera
+  // image during the transition which reads as "broken / paused".
+  const [isExiting, setIsExiting] = useState(false);
   // Synchronous lock for capture mode. expo-camera can call onBarcodeScanned
   // twice within the same tick before React commits a setScanLock(true), so
   // the state-driven gate isn't enough to prevent double pops/double lookups.
@@ -295,6 +302,7 @@ const BarcodeScannerScreen: React.FC = () => {
     if (!scannedProduct) return;
     addItem(scannedProduct as Product);
     haptics.success();
+    setIsExiting(true);
     navigation.goBack();
   }, [scannedProduct, addItem, haptics, navigation]);
 
@@ -377,8 +385,20 @@ const BarcodeScannerScreen: React.FC = () => {
 
   const handleCancel = useCallback(() => {
     haptics.light();
+    setIsExiting(true);
     navigation.goBack();
   }, [navigation, haptics]);
+
+  // Same overlay-on-exit treatment for swipe-back / hardware back. Fires
+  // before the screen actually unmounts, so the overlay paints over the
+  // camera surface before the slide-out transition exposes its frozen
+  // last frame.
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', () => {
+      setIsExiting(true);
+    });
+    return unsub;
+  }, [navigation]);
 
   // vision-camera's useCodeScanner runs detection on the UI thread and
   // dispatches `onCodeScanned` with an array of Code objects per frame.
@@ -451,7 +471,11 @@ const BarcodeScannerScreen: React.FC = () => {
           Replaces the expo-camera mount-gate that caused the preview
           blink on every result-card show/hide cycle. Pressable wraps
           the camera surface for tap-to-focus; the actual focus call
-          is imperative via cameraRef (no remount, no blink). */}
+          is imperative via cameraRef (no remount, no blink).
+
+          isExiting flips isActive false so vision-camera stops capturing
+          immediately; the exit overlay below then paints over whatever
+          frozen frame the surface is left holding. */}
       <Pressable
         style={styles.camera}
         onPress={handleFocusTap}
@@ -462,7 +486,7 @@ const BarcodeScannerScreen: React.FC = () => {
           style={styles.camera}
           device={device}
           format={format}
-          isActive={isFocused && !scannedProduct && !notFound}
+          isActive={isFocused && !scannedProduct && !notFound && !isExiting}
           torch={torchOn ? 'on' : 'off'}
           zoom={zoom}
           enableZoomGesture
@@ -665,6 +689,14 @@ const BarcodeScannerScreen: React.FC = () => {
         ) : null}
 
       </View>
+
+      {/* Exit overlay — covers the camera surface during the slide-out
+          transition so the user doesn't see vision-camera's frozen last
+          frame. Matches the page background (cream) so the scanner reads
+          as cleanly "closing" into the POS surface beneath it. */}
+      {isExiting ? (
+        <View style={styles.exitOverlay} pointerEvents="none" />
+      ) : null}
     </View>
   );
 };
@@ -683,6 +715,13 @@ const styles = StyleSheet.create({
   },
   camera: {
     ...StyleSheet.absoluteFillObject,
+  },
+  // Z-order: above the camera Pressable, above the top/bottom overlays.
+  // Bg matches the page paper so the scanner reads as closing into POS.
+  exitOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: COLORS.background,
+    zIndex: 1000,
   },
   busyOverlay: {
     ...StyleSheet.absoluteFillObject,
