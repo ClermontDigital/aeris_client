@@ -133,6 +133,8 @@ export class ApiClient {
     this.active.getReceipt(...args);
   getInvoicePdfUrl = (...args: Parameters<RelayClient['getInvoicePdfUrl']>) =>
     this.active.getInvoicePdfUrl(...args);
+  refundSale = (...args: Parameters<RelayClient['refundSale']>) =>
+    this.active.refundSale(...args);
 
   // --- Customers ---
   searchCustomers = (...args: Parameters<RelayClient['searchCustomers']>) =>

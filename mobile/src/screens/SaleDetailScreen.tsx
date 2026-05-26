@@ -6,12 +6,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
+import RefundModal from '../components/RefundModal';
 import {
   COLORS,
   SPACING,
@@ -23,12 +25,25 @@ import {
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
+import {useAuthStore} from '../stores/authStore';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
-import type {SaleDetail, Sale} from '../types/api.types';
+import type {SaleDetail, Sale, RefundResponse} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 import {useNavHistoryStore, type CrumbTab} from '../stores/navHistoryStore';
+
+// Roles permitted to issue a refund. The User shape only exposes `role`
+// (no abilities map), so we whitelist the elevated roles seen on existing
+// Aeris2 deployments. The server still enforces the `sales:refund` ability
+// on the token — UI gating is just a kindness so non-eligible cashiers
+// don't get a 403 banner.
+const REFUND_ROLES = new Set(['manager', 'admin', 'owner']);
+
+function canUserRefund(role: string | undefined | null): boolean {
+  if (!role) return false;
+  return REFUND_ROLES.has(role.toLowerCase());
+}
 
 type SaleDetailRouteProp = RouteProp<TransactionsStackParamList, 'SaleDetail'>;
 type Nav = NativeStackNavigationProp<TransactionsStackParamList>;
@@ -72,6 +87,9 @@ export default function SaleDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUnavailable, setIsUnavailable] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [refundModalVisible, setRefundModalVisible] = useState(false);
+
+  const userRole = useAuthStore(s => s.user?.role ?? null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -303,6 +321,33 @@ export default function SaleDetailScreen() {
   const customerName = sale.customer?.name || sale.customer_name || 'Walk-in';
   const customerId = sale.customer?.id ?? sale.customer_id ?? null;
 
+  // Refund button visibility:
+  //   - Only completed sales — once refunded/voided no further refund is
+  //     possible against the same row server-side.
+  //   - Operator must hold a refund-permitted role. Server is still the
+  //     source of truth (it enforces sales:refund), this gating just keeps
+  //     the button off cashier-level screens.
+  const canRefund = sale.status === 'completed' && canUserRefund(userRole);
+
+  const handleRefunded = useCallback(
+    (response: RefundResponse) => {
+      // Refetch from the source — the response already carries the
+      // updated SaleDetail, but going through `load()` keeps the screen's
+      // loading/error state consistent with the rest of the flow.
+      void load();
+      // Per MOBILE_SALES_REFUND.md, on idempotent replay we should "just
+      // navigate forward as if it succeeded" — no second confirmation,
+      // because nothing actually changed server-side. The refetched
+      // SaleDetail tells the operator everything they need.
+      if (response.data.idempotent_replay) return;
+      Alert.alert(
+        'Refund',
+        `Refund applied · ${response.data.refund.payment_method}`,
+      );
+    },
+    [load],
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView contentContainerStyle={[styles.scroll, tabletColumnCap]}>
@@ -453,6 +498,18 @@ export default function SaleDetailScreen() {
             }}>
             <Text style={styles.primaryBtnText}>View Receipt</Text>
           </TouchableOpacity>
+          {canRefund ? (
+            <TouchableOpacity
+              style={styles.refundBtn}
+              onPress={() => {
+                haptics.light();
+                setRefundModalVisible(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Process refund">
+              <Text style={styles.refundBtnText}>Refund</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <Icon
               name="chevron-back"
@@ -464,6 +521,14 @@ export default function SaleDetailScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      {canRefund ? (
+        <RefundModal
+          visible={refundModalVisible}
+          onClose={() => setRefundModalVisible(false)}
+          sale={sale}
+          onRefunded={handleRefunded}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -617,6 +682,17 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   primaryBtnText: {color: COLORS.white, fontFamily: FONT_FAMILY.bold, fontSize: FONT_SIZE.md},
+  // Refund slots between View Receipt (primary crimson) and Back (navy ink).
+  // Royal Red secondary fill signals destructive-ish action without
+  // outshouting the primary CTA above.
+  refundBtn: {
+    backgroundColor: COLORS.royal,
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  refundBtnText: {color: COLORS.white, fontFamily: FONT_FAMILY.bold, fontSize: FONT_SIZE.md},
   backBtn: {
     flexDirection: 'row',
     backgroundColor: COLORS.text,
