@@ -293,6 +293,7 @@ export default function ProductDetailScreen() {
                 setAddedToCartMsg(`${product.name} added to cart.`);
               }}
               accessibilityLabel={`Add ${product.name} to cart`}
+              style={styles.primaryAction}
             />
             <PillButton
               label="Edit"
@@ -303,6 +304,7 @@ export default function ProductDetailScreen() {
                 navigation.navigate('ProductEdit', {productId: product.id});
               }}
               accessibilityLabel="Edit this item"
+              style={styles.secondaryAction}
             />
             <PillButton
               label="Adjust stock"
@@ -312,6 +314,7 @@ export default function ProductDetailScreen() {
                 setStockModalVisible(true);
               }}
               accessibilityLabel="Adjust stock for this item"
+              style={styles.secondaryAction}
             />
           </View>
           {addedToCartMsg ? (
@@ -632,6 +635,13 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     marginTop: SPACING.md,
   },
+  // Primary CTA spans the full row (forces the secondaries to wrap below
+  // via the actionRow's flexWrap), so the cart button is unambiguously the
+  // largest action on the page. Secondaries split the next row 50/50 via
+  // flex:1 — same width regardless of label length, keeping the action
+  // group visually balanced.
+  primaryAction: {width: '100%'},
+  secondaryAction: {flex: 1},
   addedToCartConfirm: {
     color: COLORS.success,
     fontSize: FONT_SIZE.sm,
