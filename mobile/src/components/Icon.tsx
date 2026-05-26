@@ -41,6 +41,7 @@ import {
   List,
   CalendarDays,
   Check,
+  Printer,
   type LucideProps,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -65,7 +66,7 @@ type IconName =
   | 'user' | 'users' | 'receipt' | 'bar-chart' | 'activity'
   | 'barcode' | 'key-round' | 'alert-circle' | 'alert-triangle'
   | 'zap' | 'zap-off' | 'mail' | 'phone' | 'calendar' | 'filter' | 'list'
-  | 'check'
+  | 'check' | 'printer'
   // ------- legacy ion-style aliases (kept while we migrate) -------
   | 'add' | 'remove' | 'close' | 'close-circle'
   | 'search-outline' | 'settings-outline' | 'time-outline'
@@ -95,7 +96,7 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   barcode: Barcode, 'key-round': KeyRound,
   'alert-circle': AlertCircle, 'alert-triangle': AlertTriangle,
   zap: Zap, 'zap-off': ZapOff, mail: Mail, phone: Phone,
-  calendar: Calendar, filter: Filter, check: Check,
+  calendar: Calendar, filter: Filter, check: Check, printer: Printer,
   // ion-name aliases pointing at the same lucide components
   add: Plus, remove: Minus, close: X, 'close-circle': XCircle,
   'search-outline': Search, 'settings-outline': Settings,
