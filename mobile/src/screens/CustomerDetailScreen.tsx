@@ -312,53 +312,10 @@ export default function CustomerDetailScreen() {
           </>
         ) : null}
 
-        {(customer.payment_terms ||
-          customer.credit_limit_cents != null ||
-          customer.loyalty_points != null ||
-          customer.total_orders != null ||
-          customer.total_spent_cents != null) ? (
-          <>
-            <Text style={styles.sectionLabel}>Account terms</Text>
-            <View style={styles.card}>
-              {customer.payment_terms ? (
-                <TermsRow
-                  label="Payment terms"
-                  value={customer.payment_terms}
-                  isFirst
-                />
-              ) : null}
-              {customer.credit_limit_cents != null ? (
-                <TermsRow
-                  label="Credit limit"
-                  value={formatCurrency(customer.credit_limit_cents)}
-                  isFirst={!customer.payment_terms}
-                />
-              ) : null}
-              {customer.loyalty_points != null ? (
-                <TermsRow
-                  label="Loyalty points"
-                  value={customer.loyalty_points.toLocaleString()}
-                  isFirst={
-                    !customer.payment_terms &&
-                    customer.credit_limit_cents == null
-                  }
-                />
-              ) : null}
-              {customer.total_orders != null ? (
-                <TermsRow
-                  label="Total orders"
-                  value={customer.total_orders.toLocaleString()}
-                />
-              ) : null}
-              {customer.total_spent_cents != null ? (
-                <TermsRow
-                  label="Lifetime value"
-                  value={formatCurrency(customer.total_spent_cents)}
-                />
-              ) : null}
-            </View>
-          </>
-        ) : null}
+        {/* Account terms section (payment terms / credit limit / loyalty
+            points / total orders / lifetime value) hidden for now per
+            product decision — wire it back via Customer + shared/customer
+            normalizer when the back-end fields are confirmed surfaced. */}
 
         <Text style={styles.sectionLabel}>Activity</Text>
         {customer.recent_sales.length > 0 ? (
