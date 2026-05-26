@@ -57,3 +57,53 @@ export function resolveFetchUrl(url: string): string {
   } catch { /* pass through */ }
   return url;
 }
+
+// Server-rendered branded invoice PDF flow (RelayClient.getInvoicePdfUrl
+// → signed URL → AirPrint / share sheet). Marketplace team shipped the
+// server side and confirmed `sales.invoice-pdf-url` is live; flipped ON
+// in v1.3.53. CheckoutScreen still falls back to the legacy
+// `buildReceiptHtml` flow when this is false — flip back to false and
+// re-ship to revert without a server rollback.
+export const PDF_PRINT_ENABLED = true;
+
+// Cloud-mode signed URLs MUST come back as HTTPS. Direct (LAN) mode is
+// allowed to use plain HTTP for hostnames that are LAN-only — `.local`
+// mDNS names, loopback, Android emulator host, AND RFC1918 private IP
+// ranges (10.*, 172.16-31.*, 192.168.*) because many on-prem customers
+// run the deployment at a fixed LAN IP without an mDNS name. Any other
+// shape is refused.
+export function isSignedUrlSafe(
+  url: string,
+  connectionMode: 'relay' | 'direct',
+): boolean {
+  if (!url) return false;
+  if (url.startsWith('https://')) return true;
+  if (connectionMode !== 'direct') return false;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host.endsWith('.local')) return true;
+    if (host === 'localhost') return true;
+    if (host === '127.0.0.1') return true;
+    if (host === '10.0.2.2') return true; // Android emulator → host
+    return isPrivateRfc1918(host);
+  } catch {
+    return false;
+  }
+}
+
+// Match the three RFC1918 ranges exactly: 10.0.0.0/8, 172.16.0.0/12,
+// 192.168.0.0/16. We accept literal-IPv4 only (cheap, predictable). IPv6
+// link-local could be added later if any tenant ships an on-prem box
+// without a v4 LAN address — not seen in the wild today.
+function isPrivateRfc1918(host: string): boolean {
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return false;
+  const [a, b, c, d] = m.slice(1).map(n => Number(n));
+  if ([a, b, c, d].some(n => n < 0 || n > 255 || Number.isNaN(n))) return false;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  return false;
+}

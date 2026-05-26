@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useRef} from 'react';
-import {BackHandler, StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState, AppStateStatus} from 'react-native';
+import {BackHandler, StatusBar, Platform, View, Text, StyleSheet, TouchableOpacity, AppState, AppStateStatus, Linking} from 'react-native';
 
 // ---------------------------------------------------------------------------
 // React Native 0.83.4 removed the imperative `BackHandler.removeEventListener`
@@ -316,6 +316,25 @@ const App: React.FC = () => {
     settings?.connectionMode,
     settings?.workspaceCode,
   ]);
+
+  // Register a no-op handler for the `aeris://` URL scheme declared in
+  // app.json. We don't currently route any deep links into the navigation
+  // graph, but iOS will still hand us URLs the system or another app
+  // generates (e.g. a malformed link from an email). Without a registered
+  // handler the URL silently lands and any later assumption that
+  // `Linking.getInitialURL()` returned `null` could surprise us. The
+  // handler logs the URL for triage and otherwise swallows it.
+  useEffect(() => {
+    Linking.getInitialURL()
+      .then(url => {
+        if (url) console.warn('[deepLink] initial URL ignored:', url);
+      })
+      .catch(() => {});
+    const sub = Linking.addEventListener('url', ({url}) => {
+      console.warn('[deepLink] foreground URL ignored:', url);
+    });
+    return () => sub.remove();
+  }, []);
 
   // Proactive Sanctum refresh: 2 minutes before expiry, mint a new token so
   // the user never sees a mid-shift "session expired" interruption. The
