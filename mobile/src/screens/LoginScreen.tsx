@@ -41,10 +41,17 @@ const LoginScreen: React.FC = () => {
 
   const haptics = useHaptics();
   const login = useAuthStore(s => s.login);
-  const isLoading = useAuthStore(s => s.isLoading);
   const error = useAuthStore(s => s.error);
   const errorKind = useAuthStore(s => s.errorKind);
   const clearError = useAuthStore(s => s.clearError);
+  // Local sign-in progress flag. Was previously bound to the global
+  // authStore.isLoading, but that flag also gates RootNavigator's
+  // "render null = splash" check — using it during an active login
+  // attempt blanked the screen for the network round-trip and (on a
+  // 401) showed a white page instead of the error banner. Local flag
+  // gives us the button + input disabled UX without touching the
+  // global splash gate.
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const connectionMode = useSettingsStore(s => s.settings.connectionMode);
   const persistedWorkspace = useSettingsStore(s => s.settings.workspaceCode);
   const persistedKeepSignedIn = useSettingsStore(
@@ -102,10 +109,13 @@ const LoginScreen: React.FC = () => {
     // Reset both error AND errorKind before submission so the expired
     // banner doesn't flash back if the user retries during a quick login.
     clearError();
+    setIsSigningIn(true);
     try {
       await login(email.trim(), password);
     } catch {
-      // Error is set in the store
+      // Error is set in the store; banner renders on next paint.
+    } finally {
+      setIsSigningIn(false);
     }
   }, [email, password, login, connectionMode, workspace, persistWorkspace, haptics, clearError]);
 
@@ -128,7 +138,7 @@ const LoginScreen: React.FC = () => {
   const canSubmit =
     !!email.trim() &&
     !!password.trim() &&
-    !isLoading &&
+    !isSigningIn &&
     (connectionMode !== 'relay' ||
       validateWorkspaceCode(workspace.trim().toLowerCase()) === null);
 
@@ -197,7 +207,7 @@ const LoginScreen: React.FC = () => {
                   clearButtonMode="while-editing"
                   returnKeyType="next"
                   onSubmitEditing={() => emailRef.current?.focus()}
-                  editable={!isLoading}
+                  editable={!isSigningIn}
                   accessibilityLabel="Workspace code"
                   accessibilityHint="Enter the workspace code provided by your administrator"
                 />
@@ -225,7 +235,7 @@ const LoginScreen: React.FC = () => {
                 textContentType="emailAddress"
                 returnKeyType="next"
                 onSubmitEditing={() => passwordRef.current?.focus()}
-                editable={!isLoading}
+                editable={!isSigningIn}
               />
             </View>
 
@@ -243,7 +253,7 @@ const LoginScreen: React.FC = () => {
                 textContentType="password"
                 returnKeyType="go"
                 onSubmitEditing={handleSignIn}
-                editable={!isLoading}
+                editable={!isSigningIn}
               />
             </View>
 
@@ -280,7 +290,7 @@ const LoginScreen: React.FC = () => {
               <Text style={styles.keepSignedInLabel}>Keep me signed in</Text>
             </TouchableOpacity>
 
-            {isLoading ? (
+            {isSigningIn ? (
               // Keep the inline spinner for the brief disabled+busy window —
               // PillButton has no loading state and the user needs visible
               // confirmation that auth is in flight.
