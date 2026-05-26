@@ -22,6 +22,7 @@ import {
 import ApiClient from '../services/ApiClient';
 import ErrorBanner from '../components/ErrorBanner';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
+import {usePrintReceipt} from '../hooks/usePrintReceipt';
 import type {ReceiptData} from '../types/api.types';
 import type {TransactionsStackParamList} from '../types/navigation.types';
 
@@ -41,6 +42,11 @@ export default function ReceiptViewerScreen() {
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Shared receipt-print flow (same hook CheckoutScreen uses post-sale).
+  // Branches on PDF_PRINT_ENABLED, handles cloud vs direct mode, signed-
+  // URL TTL + retry, double-tap guard, and Android share-sheet fallback.
+  const {isPrinting, printReceipt} = usePrintReceipt();
+  const [printError, setPrintError] = useState<string | null>(null);
 
   useEffect(() => {
     loadReceipt();
@@ -60,6 +66,15 @@ export default function ReceiptViewerScreen() {
       setIsLoading(false);
     }
   }, [saleId]);
+
+  const handlePrint = useCallback(async () => {
+    setPrintError(null);
+    try {
+      await printReceipt(saleId);
+    } catch {
+      setPrintError('Failed to print receipt');
+    }
+  }, [saleId, printReceipt]);
 
   // Loading state
   if (isLoading) {
@@ -203,7 +218,18 @@ export default function ReceiptViewerScreen() {
           )}
         </View>
 
-        {/* Action Buttons */}
+        {/* Print-only error — receipt itself loaded fine, but a reprint
+            attempt failed. Inline so the user keeps seeing the receipt
+            and can retry without losing context. */}
+        {printError ? (
+          <View style={styles.printErrorWrap}>
+            <ErrorBanner message={printError} onRetry={handlePrint} />
+          </View>
+        ) : null}
+
+        {/* Action Buttons — Back (secondary) + Print (primary, full-width
+            on phones, side-by-side on tablets). The Print path mirrors
+            the post-sale flow on CheckoutScreen exactly. */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={styles.backButton}
@@ -215,6 +241,26 @@ export default function ReceiptViewerScreen() {
               style={styles.backButtonIcon}
             />
             <Text style={styles.backButtonText}>Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.printButton, isPrinting && styles.printButtonBusy]}
+            onPress={handlePrint}
+            disabled={isPrinting}
+            accessibilityState={{disabled: isPrinting}}
+            accessibilityLabel="Print receipt">
+            {isPrinting ? (
+              <ActivityIndicator color={COLORS.white} size="small" />
+            ) : (
+              <>
+                <Icon
+                  name="printer"
+                  size={ICON_SIZE.action}
+                  color={COLORS.white}
+                  style={styles.backButtonIcon}
+                />
+                <Text style={styles.backButtonText}>Print</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -390,9 +436,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: SPACING.md,
   },
-  // Action Buttons
+  // Action Buttons — flex row of two equal-width buttons (Back +
+  // Print). Gap matches the inter-card spacing on the rest of the
+  // receipt view so the row reads as a deliberate pair, not a stack.
   actionButtons: {
     flexDirection: 'row',
+    gap: SPACING.sm,
   },
   backButton: {
     flex: 1,
@@ -408,5 +457,22 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.medium,
+  },
+  // Primary print CTA — crimson (Red Dirt Red, per brand spec) so it
+  // reads as the affirmative action sitting next to the navy Back.
+  printButton: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: COLORS.crimson,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  printButtonBusy: {
+    opacity: 0.7,
+  },
+  printErrorWrap: {
+    marginBottom: SPACING.md,
   },
 });
