@@ -476,6 +476,18 @@ export class DirectClient {
     });
   }
 
+  // Direct (LAN) mode counterpart of RelayClient.getInvoicePdfUrl. Same
+  // contract from the mobile caller's POV — returns {url, expires_at} —
+  // but goes straight to the deployment with the Sanctum bearer because
+  // /api/relay/rpc requires an HMAC the on-prem app doesn't hold.
+  async getInvoicePdfUrl(
+    saleId: number,
+  ): Promise<{url: string; expires_at: string}> {
+    return this.get<{url: string; expires_at: string}>(
+      `${API_ENDPOINTS.SALES_LIST}/${saleId}/invoice-pdf-url`,
+    );
+  }
+
   // --- Customers ---
   async searchCustomers(
     query: string,

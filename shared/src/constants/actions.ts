@@ -25,4 +25,5 @@ export const RELAY_ACTIONS = {
   INVENTORY_STOCK: 'inventory.stock',
   INVENTORY_ADJUST_STOCK: 'inventory.adjust-stock',
   SALES_DAILY_SUMMARY: 'sales.daily-summary',
+  SALES_INVOICE_PDF_URL: 'sales.invoice-pdf-url',
 } as const;
