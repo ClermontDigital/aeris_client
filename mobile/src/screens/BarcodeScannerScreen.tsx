@@ -6,7 +6,6 @@ import {
   Pressable,
   ActivityIndicator,
   StyleSheet,
-  Alert,
   Linking,
   type GestureResponderEvent,
 } from 'react-native';
@@ -289,15 +288,30 @@ const BarcodeScannerScreen: React.FC = () => {
     return () => clearTimeout(t);
   }, [notFound]);
 
+  // "Add to Cart" — adds the scanned product and exits the scanner back
+  // to whatever sent us here (typically QuickSale / POS). One-and-done
+  // flow for users who want to finish the sale after a single scan.
   const handleAddToCart = useCallback(() => {
     if (!scannedProduct) return;
     addItem(scannedProduct as Product);
-    Alert.alert('Added', `${scannedProduct.name} added to cart.`);
+    haptics.success();
+    navigation.goBack();
+  }, [scannedProduct, addItem, haptics, navigation]);
+
+  // "Scan Again" on a found-product card — adds the scanned product to
+  // the cart and clears the result state so the camera is ready for the
+  // next scan. Continuous-scanning flow for stocktake / multi-item carts.
+  const handleScanAgain = useCallback(() => {
+    if (!scannedProduct) return;
+    addItem(scannedProduct as Product);
+    haptics.success();
     setScannedProduct(null);
     setScanLock(false);
     scanLockRef.current = false;
-  }, [scannedProduct, addItem]);
+  }, [scannedProduct, addItem, haptics]);
 
+  // Dismiss-only path, used by the not-found card where there's nothing
+  // to add to the cart. Just clears state and re-arms the scanner.
   const handleDismiss = useCallback(() => {
     setScannedProduct(null);
     setNotFound(false);
@@ -591,7 +605,7 @@ const BarcodeScannerScreen: React.FC = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.dismissButton}
-                onPress={handleDismiss}>
+                onPress={handleScanAgain}>
                 <Text style={styles.dismissText}>Scan Again</Text>
               </TouchableOpacity>
             </View>
