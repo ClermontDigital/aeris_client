@@ -9,6 +9,8 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  InputAccessoryView,
+  Keyboard,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
@@ -42,6 +44,11 @@ type NavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<QuickSaleStackParamList, 'Checkout'>,
   BottomTabNavigationProp<AppTabParamList>
 >;
+
+// nativeID for the InputAccessoryView toolbar that sits above the iOS
+// decimal-pad when the cashier is entering cash tender. The TextInput
+// references this via inputAccessoryViewID; iOS pairs them by ID.
+const CASH_TENDER_ACCESSORY_ID = 'cash-tender-accessory';
 
 const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   {code: 'cash', name: 'Cash', requires_reference: false},
@@ -457,14 +464,35 @@ export default function CheckoutScreen() {
         {selectedMethod === 'cash' && (
           <View style={styles.cashSection}>
             <EyebrowLabel>Amount tendered</EyebrowLabel>
-            <TextInput
-              style={styles.amountInput}
-              value={amountTendered}
-              onChangeText={setAmountTendered}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor={COLORS.textDim}
-            />
+            <View style={styles.amountRow}>
+              <TextInput
+                style={styles.amountInputFlex}
+                value={amountTendered}
+                onChangeText={setAmountTendered}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={COLORS.textDim}
+                // iOS-only — surfaces a Done toolbar above the decimal-pad
+                // since the decimal-pad has no Return key. Android's
+                // numeric keyboard already supports back-button dismiss.
+                inputAccessoryViewID={
+                  Platform.OS === 'ios' ? CASH_TENDER_ACCESSORY_ID : undefined
+                }
+              />
+              {/* Quick-fill: snap tendered to the exact cart total. Common
+                  POS shortcut for the "customer hands you exact cash"
+                  case so the cashier doesn't have to type it digit-by-digit. */}
+              <TouchableOpacity
+                style={styles.exactButton}
+                onPress={() => {
+                  setAmountTendered((totalCents / 100).toFixed(2));
+                  Keyboard.dismiss();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Fill exact total">
+                <Text style={styles.exactButtonText}>Exact</Text>
+              </TouchableOpacity>
+            </View>
             {tenderedCents > 0 && tenderedCents >= totalCents && (
               <View style={styles.changeDisplay}>
                 <Text style={styles.changeLabel}>Change</Text>
@@ -480,6 +508,25 @@ export default function CheckoutScreen() {
               </Text>
             )}
           </View>
+        )}
+
+        {/* iOS-only accessory toolbar — a Done bar sitting directly above
+            the decimal-pad keyboard so the cashier always has a clearly
+            labelled dismiss affordance. decimal-pad has no Return key,
+            which was leaving cashiers stuck on the keyboard with no
+            obvious way back to the Complete Sale button. */}
+        {Platform.OS === 'ios' && (
+          <InputAccessoryView nativeID={CASH_TENDER_ACCESSORY_ID}>
+            <View style={styles.accessoryBar}>
+              <TouchableOpacity
+                style={styles.accessoryDone}
+                onPress={() => Keyboard.dismiss()}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss keyboard">
+                <Text style={styles.accessoryDoneText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </InputAccessoryView>
         )}
 
         {/* Error */}
@@ -596,6 +643,9 @@ const styles = StyleSheet.create({
   cashSection: {
     marginBottom: SPACING.lg,
   },
+  // amountInput retained as a "wide" alias for older call sites. The
+  // checkout cash row now uses amountInputFlex (flex:1) so the
+  // "Exact" quick-fill button can sit alongside without overflowing.
   amountInput: {
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
@@ -609,6 +659,55 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: SPACING.sm,
     fontVariant: ['tabular-nums'],
+  },
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  amountInputFlex: {
+    flex: 1,
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    color: COLORS.text,
+    fontSize: FONT_SIZE.xxl,
+    fontFamily: FONT_FAMILY.bold,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  exactButton: {
+    paddingHorizontal: SPACING.lg,
+    justifyContent: 'center',
+    backgroundColor: COLORS.text,
+    borderRadius: BORDER_RADIUS.lg,
+  },
+  exactButtonText: {
+    color: COLORS.white,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bold,
+  },
+  accessoryBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    backgroundColor: COLORS.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.surfaceBorder,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  accessoryDone: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  accessoryDoneText: {
+    color: COLORS.accent,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bold,
   },
   changeDisplay: {
     flexDirection: 'row',
