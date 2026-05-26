@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useCallback} from 'react';
-import {View, StyleSheet, BackHandler, Alert, Platform} from 'react-native';
+import {View, StyleSheet, BackHandler, Platform} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {WebViewNavigation} from 'react-native-webview';
 import Toolbar from '../components/Toolbar';
@@ -25,6 +25,12 @@ const ERPScreen: React.FC = () => {
 
   const [backPressCount, setBackPressCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  // Latched on WebViewContainer onError so direct-mode users (the only
+  // path here — relay mode short-circuits to EmptyState above) see a
+  // retryable fallback instead of a dead-white WebView under a dismissed
+  // alert. Cleared on a manual retry which forces the WebView to remount.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [webViewKey, setWebViewKey] = useState(0);
   const isRelayMode = connectionMode === 'relay';
 
   // Hardware back button (Android)
@@ -105,9 +111,26 @@ const ERPScreen: React.FC = () => {
           title="ERP web view unavailable"
           description="The full ERP shell is only available in direct (LAN) mode. While you are connected through the Aeris relay, please use the POS, Scanner, and Transactions tabs for day-to-day work."
         />
+      ) : loadFailed ? (
+        // Direct-mode load failure (e.g. aeris.local unreachable on this
+        // network). Surface a native fallback with a retry CTA rather
+        // than leaving the broken WebView mounted under a dismissed alert.
+        <EmptyState
+          icon="cloud-offline-outline"
+          title="Couldn't reach the AERIS server"
+          description={`We weren't able to load ${baseUrl}. Check that you're on the same network as the AERIS deployment, then try again.`}
+          action={{
+            label: 'Retry',
+            onPress: () => {
+              setLoadFailed(false);
+              setWebViewKey(k => k + 1);
+            },
+          }}
+        />
       ) : (
         <View style={styles.webviewContainer}>
           <WebViewContainer
+            key={webViewKey}
             url={baseUrl}
             webViewRef={webView.webViewRef}
             onNavigationStateChange={handleNavChange}
@@ -118,10 +141,7 @@ const ERPScreen: React.FC = () => {
             }}
             onError={() => {
               webView.setIsLoading(false);
-              Alert.alert(
-                'Error',
-                'Failed to load page. Check your connection.',
-              );
+              setLoadFailed(true);
             }}
           />
           <LoadingOverlay visible={webView.isLoading} />

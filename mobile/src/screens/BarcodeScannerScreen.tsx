@@ -965,14 +965,13 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.medium,
   },
-  // Outline-on-cream so the button reads as a button against the cream
-  // result card (the previous near-white surfaceHover bg was effectively
-  // invisible, ~1.05 contrast on cream).
+  // White-filled secondaries sit on the cream result card. Border stays
+  // navy so the button outline is still legible.
   secondaryActionButton: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: BORDER_RADIUS.md,
-    backgroundColor: 'transparent',
+    backgroundColor: COLORS.white,
     borderWidth: 1,
     borderColor: COLORS.text, // navy outline
     alignItems: 'center',
