@@ -16,6 +16,8 @@ import {
   isRetryable,
   sleep,
   withReadRetry,
+  RefundError,
+  classifyRefundError,
 } from '@aeris/shared';
 import type {
   AuthResponse,
@@ -32,6 +34,9 @@ import type {
   ProductDetail,
   ProductUpdateInput,
   ReceiptData,
+  Refund,
+  RefundParams,
+  RefundResponse,
   Sale,
   SaleDetail,
   StockAdjustment,
@@ -488,6 +493,103 @@ export class DirectClient {
     );
   }
 
+  // Direct (LAN) mode counterpart of RelayClient.refundSale. Hits the
+  // deployment directly at POST /api/v1/sales/{sale_id}/refund — no relay
+  // envelope, the controller's {success, message, data} comes back at the
+  // top level. HTTP status carries the rejection reason (403/409/422/429);
+  // we translate into RefundError for parity with the relay path so UI
+  // code can branch on `err.kind` regardless of transport.
+  async refundSale(params: RefundParams): Promise<RefundResponse> {
+    const {sale_id, idempotency_key, ...rest} = params;
+    const body: Record<string, unknown> = {
+      ...rest,
+      // Server's contract field — keep it in the body even though we also
+      // send it as a header so dedupe collapses at every layer.
+      idempotency_key,
+    };
+    try {
+      const raw = await this.post<unknown>(
+        `${API_ENDPOINTS.SALES_LIST}/${sale_id}/refund`,
+        body,
+        {idempotencyKey: idempotency_key},
+      );
+      if (!raw || typeof raw !== 'object') {
+        throw new RefundError(
+          'Refund could not be processed.',
+          'unknown',
+          null,
+          null,
+        );
+      }
+      const parsed = raw as {
+        success?: boolean;
+        message?: string;
+        data?: {
+          refund?: Refund;
+          sale?: unknown;
+          idempotent_replay?: boolean;
+        };
+      };
+      // Defensive: direct mode normally returns HTTP 4xx for rejections
+      // (handled in catch below), but a controller could in theory return
+      // 200 with success:false; honour the inner flag either way.
+      if (parsed.success === false) {
+        const msg = parsed.message || 'Refund could not be processed.';
+        throw new RefundError(msg, classifyRefundError(msg), null, null);
+      }
+      if (!parsed.data || !parsed.data.refund || !parsed.data.sale) {
+        throw new RefundError(
+          'Refund could not be processed.',
+          'unknown',
+          null,
+          null,
+        );
+      }
+      return {
+        success: true,
+        message: parsed.message || 'Refund processed successfully',
+        data: {
+          refund: parsed.data.refund,
+          sale: normalizeSaleDetail(unwrapResource(parsed.data.sale)),
+          idempotent_replay: parsed.data.idempotent_replay === true,
+        },
+      };
+    } catch (e) {
+      if (e instanceof RefundError) throw e;
+      // Translate HTTP 4xx from this.request() into RefundError. The
+      // request helper attaches `.status` (and `.correlationId` when the
+      // server emits X-Request-Id / X-Correlation-Id) and the original
+      // body sits at the tail of the error message (after `: `).
+      const err = e as Error & {status?: number; correlationId?: string};
+      const status = typeof err.status === 'number' ? err.status : null;
+      const correlationId = err.correlationId || null;
+      if (status === 403 || status === 409 || status === 422 || status === 429) {
+        let message = 'Refund could not be processed.';
+        // Try to extract the server's message from the formatted Error.
+        // request() throws "Request failed (${status}): ${body}".
+        const colonIdx = (err.message || '').indexOf(': ');
+        if (colonIdx >= 0) {
+          const tail = err.message.slice(colonIdx + 2);
+          try {
+            const parsed = JSON.parse(tail) as {message?: string};
+            if (parsed && typeof parsed.message === 'string') {
+              message = parsed.message;
+            }
+          } catch {
+            // Non-JSON body — keep the generic message.
+          }
+        }
+        throw new RefundError(
+          message,
+          classifyRefundError(message, status),
+          status,
+          correlationId,
+        );
+      }
+      throw e;
+    }
+  }
+
   // --- Customers ---
   async searchCustomers(
     query: string,
@@ -751,6 +853,19 @@ export class DirectClient {
           `Request failed (${response.status}): ${errorBody}`,
         );
         (err as Error & {status?: number}).status = response.status;
+        // Forward any request-trace header if the deployment emits one.
+        // Aeris2 doesn't ship a RequestId middleware today, so this is
+        // forward-compatible: when/if the server starts emitting an
+        // X-Correlation-Id or X-Request-Id, RefundError.correlationId
+        // will populate automatically and ops can pivot from a mobile
+        // bug report into the audit_logs row (see MOBILE_SALES_REFUND.md
+        // §audit log). Until then, direct-mode cid stays null.
+        const cid =
+          response.headers.get('x-correlation-id') ||
+          response.headers.get('x-request-id');
+        if (cid) {
+          (err as Error & {correlationId?: string}).correlationId = cid;
+        }
         throw err;
       }
 

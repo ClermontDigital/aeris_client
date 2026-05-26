@@ -16,6 +16,9 @@ import type {
   ProductDetail,
   ProductUpdateInput,
   ReceiptData,
+  Refund,
+  RefundParams,
+  RefundResponse,
   RelayEnvelope,
   Sale,
   SaleDetail,
@@ -37,6 +40,7 @@ import {
   unwrapResource,
 } from '../normalizers';
 import {RelayError} from './RelayError';
+import {RefundError, classifyRefundError} from './RefundError';
 import {
   SALE_RETRY,
   backoffDelay,
@@ -581,6 +585,85 @@ export class RelayClient {
     );
   }
 
+  // Process a refund against a completed sale. The marketplace dispatcher
+  // wraps SalesAPIController::refund's response inside the relay envelope's
+  // `data` field — see MOBILE_SALES_REFUND.md "Relay envelope wrapper" for
+  // the exact double-nesting. The controller's 4xx responses (403 access,
+  // 409 idempotency conflict, 422 validation rejection) come back as
+  // envelope.status: "success" with `success: false` nested inside, so
+  // this method MUST inspect the inner `success` flag and translate
+  // failures into a typed RefundError for UI branching.
+  //
+  // `idempotency_key` is required — caller mints a UUID per refund attempt
+  // (via expo-crypto.randomUUID on the mobile UI layer) and reuses it on
+  // retry. A same-key + different-body retry returns HTTP 409 (kind:
+  // 'conflict'); the UI should not auto-mint a new key and retry, instead
+  // require the user to re-open the sheet which will produce a fresh UUID.
+  async refundSale(params: RefundParams): Promise<RefundResponse> {
+    // Send Idempotency-Key both in the body (server's contract field) and
+    // in the header (marketplace gateway dedupe). Same string for both so
+    // a retry collapses cleanly at both layers.
+    //
+    // Use relayRpcEnvelope (not relayRpc) so we can pass the envelope's
+    // correlation_id into any RefundError we throw — ops pivots from the
+    // cid into the audit_logs row for the refund attempt (HIGH-severity,
+    // one row per try). See MOBILE_SALES_REFUND.md §audit log.
+    const {data: result, correlationId} = await this.relayRpcEnvelope<unknown>(
+      RELAY_ACTIONS.SALES_REFUND,
+      // Spread params so optional fields only land on the wire when set.
+      // sale_id is the dispatcher alias for the {sale_id} route placeholder.
+      {...params},
+      {idempotencyKey: params.idempotency_key},
+    );
+
+    // result IS the controller's response body
+    // ({success, message, data: {refund, sale, idempotent_replay}}).
+    if (!result || typeof result !== 'object') {
+      throw new RefundError(
+        'Refund could not be processed.',
+        'unknown',
+        null,
+        correlationId,
+      );
+    }
+    const body = result as {
+      success?: boolean;
+      message?: string;
+      data?: {
+        refund?: Refund;
+        sale?: unknown;
+        idempotent_replay?: boolean;
+      };
+    };
+
+    if (body.success === false) {
+      const msg = body.message || 'Refund could not be processed.';
+      throw new RefundError(msg, classifyRefundError(msg), null, correlationId);
+    }
+
+    // Defensive: dispatcher returned success but no payload (shouldn't
+    // happen given the contract, but other actions have surfaced this
+    // failure mode before).
+    if (!body.data || !body.data.refund || !body.data.sale) {
+      throw new RefundError(
+        'Refund could not be processed.',
+        'unknown',
+        null,
+        correlationId,
+      );
+    }
+
+    return {
+      success: true,
+      message: body.message || 'Refund processed successfully',
+      data: {
+        refund: body.data.refund,
+        sale: normalizeSaleDetail(unwrapResource(body.data.sale)),
+        idempotent_replay: body.data.idempotent_replay === true,
+      },
+    };
+  }
+
   // --- Customers ---
   async searchCustomers(
     query: string,
@@ -791,11 +874,28 @@ export class RelayClient {
   // --- Relay RPC ---
   // Server-side timeout is sent in seconds. Client fetch waits a small buffer
   // longer so we aren't aborting before the relay has a chance to respond.
+  //
+  // Thin shim over relayRpcEnvelope — most callers only need the action's
+  // data payload, not the envelope metadata. Callers that DO need the
+  // correlation_id (e.g. refundSale, for audit-log pivoting) should call
+  // relayRpcEnvelope directly.
   private async relayRpc<T>(
     action: string,
     params: unknown,
     options?: RequestOptions,
   ): Promise<T> {
+    const {data} = await this.relayRpcEnvelope<T>(action, params, options);
+    return data;
+  }
+
+  // Envelope-aware variant. Returns the action's data plus the
+  // correlation_id so callers that throw typed errors can attach the cid
+  // for ops to pivot on (see MOBILE_SALES_REFUND.md §audit log).
+  private async relayRpcEnvelope<T>(
+    action: string,
+    params: unknown,
+    options?: RequestOptions,
+  ): Promise<{data: T; correlationId: string}> {
     const url = `${this.relayUrl}/api/relay/rpc`;
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -867,7 +967,7 @@ export class RelayClient {
             // Retry the original call with the freshly-set bearer. The
             // __retried flag prevents infinite recursion if the new token
             // is also rejected.
-            return this.relayRpc<T>(action, params, {
+            return this.relayRpcEnvelope<T>(action, params, {
               ...options,
               __retried: true,
             });
@@ -943,7 +1043,10 @@ export class RelayClient {
         );
       }
       // 'success' (canonical) or 'ok' (defensive — see SITREP)
-      return envelope.data as T;
+      return {
+        data: envelope.data as T,
+        correlationId: envelope.correlation_id,
+      };
     } finally {
       clearTimeout(timer);
     }
