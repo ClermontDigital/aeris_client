@@ -85,7 +85,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshInFlight: null,
 
   login: async (email: string, password: string) => {
-    set({isLoading: true, error: null, errorKind: null});
+    // Reset just the banner state — DO NOT set `isLoading: true` here.
+    // The global isLoading flag is gated by RootNavigator (returns null
+    // → blank screen while true). It's intended for the cold-start
+    // restoreSession path only. Setting it during an active login
+    // attempt blanks the entire app for the network round-trip; on a
+    // 401 the user sees a white screen instead of the error banner
+    // they're owed. LoginScreen tracks its own local `isSigningIn`
+    // state for button + input disabled UX.
+    set({error: null, errorKind: null});
     try {
       // Reactive ApiClient.configure in App.tsx lags one render behind a
       // just-saved workspaceCode/baseUrl — call configure synchronously
@@ -145,7 +153,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         token: access_token,
         expiresAt: expires_at ?? null,
         isAuthenticated: true,
-        isLoading: false,
         error: null,
         errorKind: null,
       });
@@ -182,7 +189,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // No status set → transport failure (timeout, abort, DNS).
         errorKind = 'network';
       }
-      set({error: message, errorKind, isLoading: false});
+      set({error: message, errorKind});
       throw e;
     }
   },
