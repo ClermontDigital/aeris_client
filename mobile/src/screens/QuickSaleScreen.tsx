@@ -23,6 +23,7 @@ import {
   ICON_SIZE,
 } from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
+import {useNavHistoryStore} from '../stores/navHistoryStore';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
@@ -221,6 +222,30 @@ export default function QuickSaleScreen() {
       <TouchableOpacity
         style={styles.productTile}
         onPress={() => handleAddToCart(item)}
+        onLongPress={() => {
+          haptics.medium();
+          // Drop a breadcrumb so Back from ProductDetail returns the user
+          // to the QuickSale grid rather than the Items list. Cross-tab
+          // navigate to Items → ProductDetail using `initial: false` so
+          // ProductDetail appends onto the Items stack (a later Items-tab
+          // tap then pops cleanly back to ItemsList).
+          useNavHistoryStore.getState().push({
+            tab: 'QuickSale',
+            screen: 'ProductGrid',
+            params: {},
+          });
+          const parent = navigation.getParent?.();
+          if (!parent) return;
+          (
+            parent as unknown as {
+              navigate: (tab: string, params: object) => void;
+            }
+          ).navigate('Items', {
+            initial: false,
+            screen: 'ProductDetail',
+            params: {productId: item.id},
+          });
+        }}
         activeOpacity={0.7}>
         <Text style={styles.productName} numberOfLines={2}>
           {item.name}

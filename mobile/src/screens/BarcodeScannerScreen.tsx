@@ -298,10 +298,10 @@ const BarcodeScannerScreen: React.FC = () => {
     navigation.goBack();
   }, [scannedProduct, addItem, haptics, navigation]);
 
-  // "Scan Again" on a found-product card — adds the scanned product to
-  // the cart and clears the result state so the camera is ready for the
-  // next scan. Continuous-scanning flow for stocktake / multi-item carts.
-  const handleScanAgain = useCallback(() => {
+  // "Add to Cart and Scan Again" — adds the scanned product and clears
+  // the result state so the camera is ready for the next scan. Stays on
+  // the scanner. Continuous-scanning flow for multi-item carts / stocktake.
+  const handleAddAndScanAgain = useCallback(() => {
     if (!scannedProduct) return;
     addItem(scannedProduct as Product);
     haptics.success();
@@ -310,8 +310,9 @@ const BarcodeScannerScreen: React.FC = () => {
     scanLockRef.current = false;
   }, [scannedProduct, addItem, haptics]);
 
-  // Dismiss-only path, used by the not-found card where there's nothing
-  // to add to the cart. Just clears state and re-arms the scanner.
+  // "Scan Again" — discard the current scan without adding to the cart,
+  // re-arm for the next scan. Also reused by the not-found card where
+  // there's nothing to add anyway.
   const handleDismiss = useCallback(() => {
     setScannedProduct(null);
     setNotFound(false);
@@ -604,8 +605,13 @@ const BarcodeScannerScreen: React.FC = () => {
                 <Text style={styles.addToCartText}>Add to Cart</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.dismissButton}
-                onPress={handleScanAgain}>
+                style={styles.secondaryActionButton}
+                onPress={handleAddAndScanAgain}>
+                <Text style={styles.dismissText}>Add to Cart and Scan Again</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.secondaryActionButton}
+                onPress={handleDismiss}>
                 <Text style={styles.dismissText}>Scan Again</Text>
               </TouchableOpacity>
             </View>
@@ -897,12 +903,16 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.md,
     alignSelf: 'center',
   },
+  // Three actions on the found-product card stack vertically:
+  // (1) Add to Cart — primary red, goes back to POS
+  // (2) Add to Cart and Scan Again — secondary outline, stays on scanner
+  // (3) Scan Again — secondary outline, discards scan without adding
+  // The middle label is too long to share a row, so column it is.
   resultActions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: SPACING.sm,
   },
   addToCartButton: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -919,13 +929,24 @@ const styles = StyleSheet.create({
   // Outline-on-cream so the button reads as a button against the cream
   // result card (the previous near-white surfaceHover bg was effectively
   // invisible, ~1.05 contrast on cream).
-  dismissButton: {
+  secondaryActionButton: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: BORDER_RADIUS.md,
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: COLORS.text, // navy outline
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Kept for the not-found card which still uses the original ref.
+  dismissButton: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: COLORS.text,
     alignItems: 'center',
     justifyContent: 'center',
   },
