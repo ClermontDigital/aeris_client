@@ -566,6 +566,21 @@ export class RelayClient {
     });
   }
 
+  // Marketplace mints a short-lived signed URL the mobile client can use
+  // to download the rendered invoice PDF directly from the tenant's
+  // deployment (which may be acme.aeris.team, demo.aeris.team, aeris.local,
+  // etc — treat `url` as opaque). The signature IS the auth; the
+  // subsequent PDF fetch must NOT carry an Authorization header.
+  // TTL is enforced server-side at 2 minutes.
+  async getInvoicePdfUrl(
+    saleId: number,
+  ): Promise<{url: string; expires_at: string}> {
+    return this.relayRpc<{url: string; expires_at: string}>(
+      RELAY_ACTIONS.SALES_INVOICE_PDF_URL,
+      {sale_id: saleId},
+    );
+  }
+
   // --- Customers ---
   async searchCustomers(
     query: string,

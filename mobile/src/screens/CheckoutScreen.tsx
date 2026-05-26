@@ -25,10 +25,13 @@ import {
   ICON_SIZE,
 } from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
+import {useSettingsStore} from '../stores/settingsStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
+import {PDF_PRINT_ENABLED, isSignedUrlSafe} from '../constants/config';
+import {PdfUrlExpiredError} from '../services/PrintService';
 import ErrorBanner from '../components/ErrorBanner';
 import EyebrowLabel from '../components/EyebrowLabel';
 import type {PaymentMethod} from '../types/api.types';
@@ -222,20 +225,75 @@ export default function CheckoutScreen() {
     }
   }, [selectedMethod, items, totalCents, customerId, discountCents, notes, haptics, markSaleCompleted]);
 
+  // Settings store may surface `connectionMode` as undefined during a
+  // partial-hydration window (cold-start race with persisted state).
+  // Fall back to the safer 'relay' so the HTTPS guard treats undecided
+  // sessions strictly — never allow a plain-HTTP signed URL while we
+  // don't yet know we're on a LAN deployment.
+  const connectionMode: 'relay' | 'direct' =
+    useSettingsStore(s => s.settings.connectionMode) ?? 'relay';
+
+  // Ref-based lock for double-tap protection. The button is also
+  // visually disabled via `isPrinting`, but the ref flips synchronously
+  // before React commits the state, so a fast double-tap can't slip past.
+  const printLockRef = useRef(false);
+
   const handlePrintReceipt = useCallback(async () => {
     if (!saleResult) return;
+    if (printLockRef.current) return;
+    printLockRef.current = true;
     setIsPrinting(true);
     try {
-      const receipt = await ApiClient.getReceipt(saleResult.sale_id);
-      const html = buildReceiptHtml(receipt);
-      await PrintService.printHtml(html);
-    } catch {
+      if (PDF_PRINT_ENABLED) {
+        // Helper: mint URL → run guard → download → print. Returned as
+        // a closure so we can call it twice on PdfUrlExpiredError without
+        // duplicating the guard + dispatch.
+        const mintAndPrint = async () => {
+          const {url} = await ApiClient.getInvoicePdfUrl(saleResult.sale_id);
+          if (!isSignedUrlSafe(url, connectionMode)) {
+            throw new Error('Refusing to follow insecure signed PDF URL');
+          }
+          await PrintService.printInvoicePdf(url, saleResult.sale_id);
+        };
+
+        try {
+          await mintAndPrint();
+        } catch (e) {
+          if (e instanceof PdfUrlExpiredError) {
+            // 2-min TTL elapsed before the cashier got the PDF to the
+            // printer (background, slow network, etc). Mint a fresh URL
+            // and retry once silently — best UX vs surfacing "expired".
+            console.info('[print] signed URL expired, re-minting once', {
+              saleId: saleResult.sale_id,
+            });
+            await mintAndPrint();
+          } else {
+            throw e;
+          }
+        }
+      } else {
+        // Legacy path: phone-rendered HTML receipt. Kept while the
+        // PDF_PRINT_ENABLED flag is OFF so we can flip back without a
+        // TestFlight push if the new flow misbehaves.
+        const receipt = await ApiClient.getReceipt(saleResult.sale_id);
+        const html = buildReceiptHtml(receipt);
+        await PrintService.printHtml(html);
+      }
+    } catch (err: unknown) {
       haptics.error();
+      // Single-message anti-enumeration: forbidden/not_found/etc all
+      // surface the same "Failed to print receipt". Specific log line
+      // remains for ops.
+      console.warn('[print] receipt failed', {
+        saleId: saleResult.sale_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
       setError('Failed to print receipt');
     } finally {
+      printLockRef.current = false;
       setIsPrinting(false);
     }
-  }, [saleResult, haptics]);
+  }, [saleResult, haptics, connectionMode]);
 
   // Reset the QuickSale stack back to ProductGrid. Used by both success
   // actions AND by the focus-loss effect below so any path away from a
