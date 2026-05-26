@@ -134,13 +134,40 @@ class PrintService {
     const filename = `invoice-${saleId}-${Date.now()}.pdf`;
     const localPath = `${FileSystem.cacheDirectory}${filename}`;
     const breadcrumb = redactUrlForLog(signedUrl);
+    const startedAt = Date.now();
     console.info('[print] invoice fetch start', {saleId, url: breadcrumb});
 
+    // expo-file-system/legacy doesn't enforce a default network timeout,
+    // so a hung server / slow LTE connection would otherwise leave the
+    // calling screen spinning forever. 15s is plenty for a 100-300 KB
+    // PDF mint+stream and short enough that the user gets surfaced
+    // feedback rather than an indefinite spinner.
+    const downloadTimeout = 15_000;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      const result = await FileSystem.downloadAsync(signedUrl, localPath);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`PDF download timed out after ${downloadTimeout}ms`)),
+          downloadTimeout,
+        );
+      });
+      const result = await Promise.race([
+        FileSystem.downloadAsync(signedUrl, localPath),
+        timeoutPromise,
+      ]);
+      // Race won by download — clear the pending timer so it doesn't
+      // fire later (Jest also wedges on leaked timers, but the real
+      // benefit is not leaking a setTimeout per print).
+      if (timeoutId) clearTimeout(timeoutId);
+      const downloadMs = Date.now() - startedAt;
+      console.info('[print] invoice fetched', {
+        saleId,
+        ms: downloadMs,
+        status: result.status,
+      });
       // 403 specifically means the signed URL has expired or been tampered
       // with (Laravel's `signed` middleware response). Surface a typed
-      // error so CheckoutScreen can re-mint and retry once silently.
+      // error so the caller can re-mint and retry once silently.
       if (result.status === 403) {
         throw new PdfUrlExpiredError();
       }
@@ -157,14 +184,19 @@ class PrintService {
       }
 
       if (Platform.OS === 'ios') {
+        console.info('[print] opening AirPrint dialog', {saleId});
         try {
           await Print.printAsync({uri: result.uri});
-          console.info('[print] invoice success (AirPrint)', {saleId});
+          console.info('[print] AirPrint dialog dismissed', {
+            saleId,
+            totalMs: Date.now() - startedAt,
+          });
         } catch (printErr: unknown) {
           const msg =
             printErr instanceof Error ? printErr.message : String(printErr);
           if (msg.toLowerCase().includes('cancel')) {
             // User cancelled the AirPrint sheet — not an error.
+            console.info('[print] AirPrint cancelled by user', {saleId});
             return;
           }
           // Most common cause: no AirPrint printer on the network. Fall
@@ -181,6 +213,7 @@ class PrintService {
           });
         }
       } else {
+        console.info('[print] opening share sheet (android)', {saleId});
         await this.maybeShowAndroidPrintHint();
         await Sharing.shareAsync(result.uri, {
           mimeType: 'application/pdf',
@@ -207,6 +240,11 @@ class PrintService {
         'We could not download or print the invoice. Please try again.',
       );
     } finally {
+      // Clear the download-timeout timer if it's still pending — both
+      // on success (race won by download) and on the timeout/error path
+      // (clear is a no-op if the timer already fired). Belt-and-braces
+      // against a Jest open-handle warning + a runtime per-print leak.
+      if (timeoutId) clearTimeout(timeoutId);
       await FileSystem.deleteAsync(localPath, {idempotent: true});
     }
   }
