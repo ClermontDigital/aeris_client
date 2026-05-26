@@ -9,7 +9,8 @@ import {
   RefreshControl,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
+import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
 import {
@@ -31,6 +32,10 @@ import type {TransactionsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 
 type NavigationProp = NativeStackNavigationProp<TransactionsStackParamList>;
+type TransactionListRouteProp = RouteProp<
+  TransactionsStackParamList,
+  'TransactionList'
+>;
 
 type DateFilter = 'today' | 'week' | 'all';
 
@@ -80,6 +85,8 @@ function getStatusColor(status: Sale['status']): string {
 
 export default function TransactionListScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<TransactionListRouteProp>();
+  const routeProductId = route.params?.productId;
   const haptics = useHaptics();
   const {isTablet} = useResponsiveLayout();
   const tabletColumnCap = isTablet
@@ -92,12 +99,47 @@ export default function TransactionListScreen() {
   // 'today' default landed the user on an empty list whenever they hadn't
   // sold anything that day, which read as "the app is broken".
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  // Seeded from the route param; tapping the ✕ on the filter chip clears
+  // it without leaving the screen. Re-entering the screen with a fresh
+  // productId param re-seeds via the effect below.
+  const [productId, setProductId] = useState<number | undefined>(routeProductId);
+  const [productName, setProductName] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Re-seed the filter when a fresh navigation lands here with a new
+  // productId param (e.g. tapping "View all" on a different ProductDetail).
+  useEffect(() => {
+    setProductId(routeProductId);
+  }, [routeProductId]);
+
+  // Best-effort name lookup so the chip can show the product's display
+  // name. Falls back to "this product" on failure; the section is
+  // non-essential and must never break the list.
+  useEffect(() => {
+    if (productId == null) {
+      setProductName(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const detail = await ApiClient.getProductDetail(productId);
+        if (!cancelled) {
+          setProductName(detail?.name ?? 'this product');
+        }
+      } catch {
+        if (!cancelled) setProductName('this product');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [productId]);
 
   const fetchTransactions = useCallback(
     async (pageNum: number, append: boolean = false) => {
@@ -114,6 +156,7 @@ export default function TransactionListScreen() {
           page: pageNum,
           per_page: 20,
           ...dateRange,
+          ...(productId != null ? {product_id: productId} : {}),
         });
 
         if (append) {
@@ -134,12 +177,18 @@ export default function TransactionListScreen() {
         setIsLoadingMore(false);
       }
     },
-    [dateFilter, haptics],
+    [dateFilter, productId, haptics],
   );
 
   useEffect(() => {
     fetchTransactions(1);
   }, [fetchTransactions]);
+
+  const handleClearProductFilter = useCallback(() => {
+    haptics.selection();
+    setProductId(undefined);
+    setPage(1);
+  }, [haptics]);
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
@@ -265,6 +314,38 @@ export default function TransactionListScreen() {
           tiles duplicated information already on the Dashboard. The list
           + date filters carry the page on their own. */}
 
+      {/* Product filter chip — present only when a productId is set
+          (typically deep-linked from ProductDetail's "View all sales"
+          affordance). Tapping the ✕ clears the filter in-place; we
+          don't pop the screen because the user explicitly chose
+          Transactions and may still want to use the date filter row. */}
+      {productId != null && (
+        <View style={[styles.productFilterRow, tabletColumnCap]}>
+          <TouchableOpacity
+            style={styles.productFilterChip}
+            onPress={handleClearProductFilter}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`Filtered by ${productName ?? 'this product'}. Tap to clear.`}>
+            <Icon
+              name="filter"
+              size={ICON_SIZE.action}
+              color={COLORS.white}
+              style={styles.productFilterIcon}
+            />
+            <Text style={styles.productFilterText} numberOfLines={1}>
+              Filtered by: {productName ?? 'this product'}
+            </Text>
+            <Icon
+              name="close-circle"
+              size={ICON_SIZE.action}
+              color={COLORS.white}
+              style={styles.productFilterClose}
+            />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Date Filter — pill style mirroring desktop's .aeris-nav-active */}
       <View style={[styles.filterRow, tabletColumnCap]}>
         {FILTERS.map(f => {
@@ -363,6 +444,32 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     gap: SPACING.sm,
   },
+  productFilterRow: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
+  },
+  // Visually loud — solid crimson pill so it reads as an active filter
+  // the user is responsible for clearing. Sits above the date row and
+  // spans the full content width so the product name has room.
+  productFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.crimson,
+    borderRadius: BORDER_RADIUS.full,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    minHeight: 44,
+    ...SHADOW.card,
+  },
+  productFilterIcon: {marginRight: SPACING.xs},
+  productFilterText: {
+    flex: 1,
+    color: COLORS.white,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.semibold,
+    letterSpacing: 0.2,
+  },
+  productFilterClose: {marginLeft: SPACING.sm},
   // Pill: inactive = white surface with a navy outline + navy text so it
   // reads clearly against the cream body bg; active = solid Red Dirt Red
   // pill with white text. Pre-v1.3.22 the inactive state was a

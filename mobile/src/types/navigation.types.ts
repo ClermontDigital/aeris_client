@@ -52,7 +52,10 @@ export type QuickSaleStackParamList = {
 };
 
 export type TransactionsStackParamList = {
-  TransactionList: undefined;
+  // productId filters the list to transactions that touched a given
+  // product. Optional so existing call sites (no params) still compile;
+  // the screen treats `undefined` / missing param as "no filter".
+  TransactionList: {productId?: number} | undefined;
   SaleDetail: {saleId: number};
   Receipt: {saleId: number};
 };
@@ -71,6 +74,13 @@ export type ItemsStackParamList = {
   // back; ProductEdit picks it up, hydrates the field, and clears the
   // param so a re-render doesn't keep re-applying it.
   ProductEdit: {productId?: number; scannedBarcode?: string} | undefined;
+  // Transaction screens duplicated into the Items stack so the
+  // ProductDetail → "View all transactions" hand-off stays within the
+  // Items tab (back-gesture returns to the product). Shapes mirror
+  // TransactionsStackParamList — productId pre-filters the list.
+  TransactionList: {productId?: number} | undefined;
+  SaleDetail: {saleId: number};
+  Receipt: {saleId: number};
 };
 
 export type CustomersStackParamList = {

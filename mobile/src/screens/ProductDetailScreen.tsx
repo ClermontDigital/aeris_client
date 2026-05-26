@@ -412,33 +412,16 @@ export default function ProductDetailScreen() {
                     hour: '2-digit',
                     minute: '2-digit',
                   });
-              const last = idx === recentSales.length - 1;
               return (
                 <TouchableOpacity
                   key={s.id}
-                  style={[styles.saleRow, last && styles.saleRowLast]}
+                  style={styles.saleRow}
                   onPress={() => {
                     haptics.light();
-                    // Drop a breadcrumb so SaleDetail's Back returns here.
-                    useNavHistoryStore.getState().push({
-                      tab: 'Items',
-                      screen: 'ProductDetail',
-                      params: {productId},
-                    });
-                    const parent = navigation.getParent?.();
-                    if (!parent) return;
-                    (parent as unknown as {
-                      navigate: (tab: string, params: object) => void;
-                    }).navigate('Transactions', {
-                      // initial: false APPENDS SaleDetail onto the
-                      // Transactions stack with TransactionList beneath, so
-                      // a later Transactions-tab tap pops back to the list.
-                      // The default `initial: true` REPLACES the stack with
-                      // just SaleDetail — counter-intuitive RN7 semantic.
-                      initial: false,
-                      screen: 'SaleDetail',
-                      params: {saleId: s.id},
-                    });
+                    // SaleDetail now lives inside the Items stack, so we
+                    // just push it locally — swipe-back returns to this
+                    // product page. No cross-tab dance / breadcrumb needed.
+                    navigation.navigate('SaleDetail', {saleId: s.id});
                   }}
                   accessibilityRole="link"
                   accessibilityLabel={`Sale ${s.sale_number}, ${dateStr}, ${formatCurrency(s.total_cents)}. Tap to view.`}>
@@ -462,6 +445,25 @@ export default function ProductDetailScreen() {
                 </TouchableOpacity>
               );
             })}
+            {/* View-all CTA sits at the bottom of the same card so it
+                reads as a natural extension of the list (the last sale
+                row's bottom border becomes the divider). Tapping pushes
+                TransactionList inside this stack — back returns here. */}
+            <TouchableOpacity
+              style={[styles.saleRow, styles.saleRowLast, styles.viewAllRow]}
+              onPress={() => {
+                haptics.light();
+                navigation.navigate('TransactionList', {productId});
+              }}
+              accessibilityRole="link"
+              accessibilityLabel="View all transactions for this item">
+              <Text style={styles.viewAllText}>View all transactions</Text>
+              <Icon
+                name="chevron-forward"
+                size={16}
+                color={COLORS.accent}
+              />
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -751,6 +753,15 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.surfaceBorder,
   },
   saleRowLast: {borderBottomWidth: 0, paddingBottom: 0},
+  // View-all affordance shares saleRow's geometry so it visually
+  // belongs to the list, but the label centres + recolours to read as
+  // a navigation link rather than yet another sale row.
+  viewAllRow: {justifyContent: 'center', gap: SPACING.xs},
+  viewAllText: {
+    color: COLORS.accent,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+  },
   saleLeft: {flex: 1, marginRight: SPACING.md},
   saleRight: {flexDirection: 'row', alignItems: 'center', gap: 4},
   saleNumber: {
