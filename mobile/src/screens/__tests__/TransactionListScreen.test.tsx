@@ -42,6 +42,10 @@ jest.mock('../../hooks/useHaptics', () => {
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({navigate: jest.fn()}),
+  // TransactionListScreen reads `route.params?.productId` to seed an
+  // optional product filter; default to an empty params bag here so
+  // the unfiltered baseline still renders.
+  useRoute: () => ({params: {}}),
 }));
 
 import TransactionListScreen from '../TransactionListScreen';
