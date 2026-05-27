@@ -81,6 +81,11 @@ interface ProductCacheState {
   searchLocal: (query: string) => Product[];
   getByBarcode: (barcode: string) => Product | null;
   getByCategory: (categoryId: number) => Product[];
+  // Hard reset — wipes persisted cache + in-memory state. Called from
+  // the Settings "Remove account from this device" flow so a re-login
+  // into a different workspace doesn't leak the previous workspace's
+  // catalog into search/scan results.
+  reset: () => Promise<void>;
 }
 
 export const useProductCacheStore = create<ProductCacheState>((set, get) => ({
@@ -241,5 +246,17 @@ export const useProductCacheStore = create<ProductCacheState>((set, get) => ({
 
   getByCategory: (categoryId: number) => {
     return get().products.filter(p => p?.category_id === categoryId);
+  },
+
+  reset: async () => {
+    await wipeCache();
+    set({
+      products: [],
+      categories: [],
+      lastSynced: null,
+      isSyncing: false,
+      lastSyncError: null,
+      syncInFlight: null,
+    });
   },
 }));
