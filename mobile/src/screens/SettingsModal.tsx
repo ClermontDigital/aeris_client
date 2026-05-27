@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Alert,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   ScrollView,
 } from 'react-native';
@@ -19,7 +18,9 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useSettings} from '../hooks/useSettings';
 import {useAuthStore} from '../stores/authStore';
 import {useAppLockStore} from '../stores/appLockStore';
+import {useProductCacheStore} from '../stores/productCacheStore';
 import {useHaptics} from '../hooks/useHaptics';
+import SessionManager from '../services/SessionManager';
 import EyebrowLabel from '../components/EyebrowLabel';
 import Icon from '../components/Icon';
 import {COLORS, FONT_FAMILY, FONT_SIZE, SPACING} from '../constants/theme';
@@ -82,10 +83,10 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
   const [hapticsEnabled, setHapticsEnabled] = useState(
     settings.hapticsEnabled !== false,
   );
-  // Delete-account confirmation: the user must type a phrase before the
-  // destructive action enables. Resets every time the user re-opens
-  // Settings so it's never primed by a previous session.
-  const [deleteConfirm, setDeleteConfirm] = useState('');
+  // "Remove account from this device" guard: track which clear is in
+  // flight so the button can disable + spinner while we sequence the
+  // logout → PIN/biometric wipe → product-cache wipe.
+  const [isRemoving, setIsRemoving] = useState(false);
 
   useEffect(() => {
     // Sync local form state when the surface opens (modal becomes visible
@@ -98,7 +99,6 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
     setSessionTimeout(settings.sessionTimeout);
     setEnableSessions(settings.enableSessionManagement);
     setHapticsEnabled(settings.hapticsEnabled !== false);
-    setDeleteConfirm('');
   }, [
     settings.baseUrl,
     settings.relayUrl,
@@ -241,11 +241,46 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
     );
   };
 
-  // Delete-account guard: typed confirmation must match (case-insensitive,
-  // trimmed). DELETE is a one-word phrase any English keyboard can type
-  // without autocomplete fights; we trim because mobile keyboards love to
-  // append a trailing space.
-  const deleteConfirmed = deleteConfirm.trim().toLowerCase() === 'delete';
+  // Wires the three resets the "Remove account from this device" flow
+  // needs to run in sequence. Pulled outside the JSX so the handler
+  // stays readable. authStore.logout already clears tokens + cookies +
+  // secure storage; appLockStore.reset clears PIN + biometric pref via
+  // AppLockService; productCacheStore.reset wipes the persisted
+  // workspace catalog so a re-login into a different workspace doesn't
+  // surface the previous workspace's data in search / scan results.
+  const productCacheReset = useProductCacheStore(s => s.reset);
+  const performRemoveFromDevice = useCallback(async () => {
+    setIsRemoving(true);
+    try {
+      await useAuthStore.getState().logout();
+    } catch (e) {
+      // logout() already swallows server failures; only an unexpected
+      // throw in the local-wipe branch would land here.
+      console.warn('Remove-from-device: logout step failed', e);
+    }
+    try {
+      await resetAppLock();
+    } catch (e) {
+      console.warn('Remove-from-device: app-lock reset failed', e);
+    }
+    try {
+      await productCacheReset();
+    } catch (e) {
+      console.warn('Remove-from-device: product cache reset failed', e);
+    }
+    try {
+      // Per-cashier named sessions + their PIN-attempt counters live in
+      // their own AsyncStorage keys via SessionManager. Wipe them too so
+      // a re-provisioned device doesn't surface a previous operator's
+      // cashier name or locked PIN-attempt state.
+      SessionManager.cleanup();
+    } catch (e) {
+      console.warn('Remove-from-device: session manager cleanup failed', e);
+    }
+    setIsRemoving(false);
+    // The auth state flip in logout() drops the user back to LoginScreen
+    // via the RootNavigator gate — no manual navigate needed.
+  }, [resetAppLock, productCacheReset]);
 
   return (
     <KeyboardAvoidingView
@@ -429,65 +464,46 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
               onPress={handleLogout}>
               <Text style={styles.logoutText}>Log out</Text>
             </TouchableOpacity>
-            {/* Apple App Store Review Guideline 5.1.1(v) — apps that
-                create accounts must offer in-app deletion. AERIS accounts
-                are administrator-provisioned (not user-signed-up), so we
-                route the request to the public account-deletion page
-                rather than calling a self-serve delete RPC. The page
-                collects the user's identifier and confirms with the
-                workspace admin; this satisfies the "initiated from
-                inside the app" requirement.
-                Hardening: the button is disabled until the user types
-                "DELETE" into the adjacent field. This stops accidental
-                taps from anyone glancing through Settings — the action
-                requires deliberate keyboard input, then a destructive
-                Alert.alert confirmation, before the browser opens. */}
+            {/* "Remove account from this device" is a device-scoped wipe
+                only — it logs out, clears the PIN + biometric prefs, and
+                drops the workspace catalog cache. It does NOT delete the
+                AERIS account itself; that lives on the workspace
+                deployment and can only be removed by the workspace
+                administrator. Apple App Store Review Guideline 5.1.1(v)
+                requires in-app account deletion only when accounts can
+                be self-registered in-app, which AERIS accounts cannot —
+                they're administrator-provisioned. Reviewer notes in the
+                submission should call this out so the device-scoped
+                copy isn't mistaken for a half-implemented delete. */}
             <Text style={styles.deleteConfirmLabel}>
-              <Text style={styles.deleteConfirmLabelStrong}>Note:</Text> this
-              only removes the account from THIS device — it does not delete
-              your AERIS account on the server. To permanently delete your
-              account, type{' '}
-              <Text style={styles.deleteConfirmLabelStrong}>DELETE</Text>{' '}
-              below; a confirmation page will open in your browser and your
-              workspace administrator will be notified to process the request.
+              Removes your sign-in, PIN, biometric, named cashier
+              sessions, and cached workspace data from this device only.
+              Device settings (connection mode, relay URL) stay so the
+              device can be re-provisioned for the same workspace. Your
+              AERIS account itself stays live — only your workspace
+              administrator can permanently delete it.
             </Text>
-            <TextInput
-              style={styles.deleteConfirmInput}
-              value={deleteConfirm}
-              onChangeText={setDeleteConfirm}
-              placeholder="Type DELETE to enable"
-              placeholderTextColor={COLORS.inputPlaceholder}
-              autoCapitalize="characters"
-              autoCorrect={false}
-            />
             <TouchableOpacity
               style={[
                 styles.deleteAccountBtn,
-                !deleteConfirmed && styles.deleteAccountBtnDisabled,
+                isRemoving && styles.deleteAccountBtnDisabled,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Delete account"
-              accessibilityState={{disabled: !deleteConfirmed}}
-              disabled={!deleteConfirmed}
+              accessibilityLabel="Remove account from this device"
+              accessibilityState={{disabled: isRemoving, busy: isRemoving}}
+              disabled={isRemoving}
               onPress={() => {
                 haptics.light();
                 Alert.alert(
-                  'Delete account',
-                  'AERIS accounts are managed by your workspace administrator. Opening the account deletion page in your browser — your admin will be notified to process the request.',
+                  'Remove account from this device',
+                  'You\'ll be signed out, your PIN and biometric will be cleared, and the workspace catalog cache will be wiped. Your account on the AERIS workspace is unaffected.',
                   [
                     {text: 'Cancel', style: 'cancel'},
                     {
-                      text: 'Continue',
+                      text: 'Remove',
                       style: 'destructive',
                       onPress: () => {
-                        Linking.openURL(
-                          'https://aeris.team/account/delete',
-                        ).catch(() => {
-                          Alert.alert(
-                            'Could not open browser',
-                            "Visit https://aeris.team/account/delete on any device to request account deletion, or contact your workspace administrator.",
-                          );
-                        });
+                        void performRemoveFromDevice();
                       },
                     },
                   ],
@@ -496,9 +512,9 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
               <Text
                 style={[
                   styles.deleteAccountText,
-                  !deleteConfirmed && styles.deleteAccountTextDisabled,
+                  isRemoving && styles.deleteAccountTextDisabled,
                 ]}>
-                Delete account
+                {isRemoving ? 'Removing…' : 'Remove account from this device'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -771,21 +787,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.regular,
     fontSize: FONT_SIZE.sm,
     lineHeight: 18,
-  },
-  deleteConfirmLabelStrong: {
-    color: COLORS.destructive,
-    fontFamily: FONT_FAMILY.semibold,
-  },
-  deleteConfirmInput: {
-    marginTop: SPACING.xs,
-    borderWidth: 1,
-    borderColor: COLORS.inputBorder,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    fontSize: FONT_SIZE.md,
-    color: COLORS.text,
-    backgroundColor: COLORS.inputBg,
   },
   deleteAccountBtn: {
     marginTop: SPACING.sm,
