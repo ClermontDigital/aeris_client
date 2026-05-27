@@ -354,6 +354,22 @@ export default function SaleDetailScreen() {
   //     the button off cashier-level screens.
   const canRefund = sale.status === 'completed' && canUserRefund(userRole);
 
+  // Split mixed payments[] into original payments (positive amounts) and
+  // refund entries (negative amounts written by sales.refund). The server
+  // appends Refund rows to the same payments collection per the spec —
+  // we never modify it, just present the two categories separately so
+  // operators can read multi-refund history at a glance.
+  const originalPayments = sale.payments.filter(p => p.amount_cents >= 0);
+  const refundEntries = sale.payments.filter(p => p.amount_cents < 0);
+  const refundedCents = refundEntries.reduce(
+    (acc, p) => acc + Math.abs(p.amount_cents),
+    0,
+  );
+  // Net total = original sale total minus the refunded amount. The server
+  // preserves sale.total_cents at the original value (audit integrity);
+  // the net is a client-side derivation for display only.
+  const netTotalCents = sale.total_cents - refundedCents;
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView contentContainerStyle={[styles.scroll, tabletColumnCap]}>
@@ -481,10 +497,10 @@ export default function SaleDetailScreen() {
           </View>
         </View>
 
-        {sale.payments.length > 0 ? (
+        {originalPayments.length > 0 ? (
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Payments</Text>
-            {sale.payments.map((p, idx) => (
+            {originalPayments.map((p, idx) => (
               <View key={idx} style={styles.paymentRow}>
                 <Text style={styles.paymentMethod}>{p.method}</Text>
                 <Text style={styles.paymentAmount}>
@@ -492,6 +508,34 @@ export default function SaleDetailScreen() {
                 </Text>
               </View>
             ))}
+          </View>
+        ) : null}
+
+        {refundEntries.length > 0 ? (
+          <View style={[styles.card, styles.refundCard]}>
+            <Text style={styles.sectionTitle}>Refunds</Text>
+            {/* Method + |amount| only for now — the refund token + reason
+                are written server-side to sale_payments.reference, but
+                SaleResource emits only `reference_number` (different
+                column, always null for refund rows). One-line server
+                fix in Aeris2/app/Http/Resources/SaleResource.php is to
+                also emit `'reference' => $payment->reference`; once
+                that lands the mobile normalizer is already wired and
+                we can surface the reason inline here. */}
+            {refundEntries.map((p, idx) => (
+              <View key={idx} style={styles.refundRow}>
+                <Text style={styles.refundMethod}>{p.method || 'Refund'}</Text>
+                <Text style={styles.refundAmount}>
+                  −{formatCurrency(Math.abs(p.amount_cents))}
+                </Text>
+              </View>
+            ))}
+            <View style={[styles.totalRow, styles.netTotalRow]}>
+              <Text style={styles.netTotalLabel}>Net total</Text>
+              <Text style={styles.netTotalValue}>
+                {formatCurrency(netTotalCents)}
+              </Text>
+            </View>
           </View>
         ) : null}
 
@@ -674,6 +718,47 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.medium,
+    fontVariant: ['tabular-nums'],
+  },
+  refundCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.crimson,
+  },
+  refundRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceBorder,
+  },
+  refundMethod: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+    textTransform: 'capitalize',
+  },
+  refundAmount: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bold,
+    fontVariant: ['tabular-nums'],
+  },
+  netTotalRow: {
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.surfaceBorder,
+  },
+  netTotalLabel: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bold,
+  },
+  netTotalValue: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.lg,
+    fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
   emptyText: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm},
