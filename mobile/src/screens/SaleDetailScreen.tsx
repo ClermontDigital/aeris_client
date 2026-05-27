@@ -264,6 +264,30 @@ export default function SaleDetailScreen() {
     navigation.goBack();
   }, [navigation, haptics, popPrev]);
 
+  // MUST live above the early-return guards — see the rules-of-hooks note
+  // around `pushCrumb` above. handleRefunded was declared post-guards in
+  // v1.3.58 and triggered "rendered more hooks than previous render" the
+  // moment a transaction was tapped (first render: 14 hooks before the
+  // isLoading return; second render: 15 hooks once sale loaded).
+  const handleRefunded = useCallback(
+    (response: RefundResponse) => {
+      // Refetch from the source — the response already carries the
+      // updated SaleDetail, but going through `load()` keeps the screen's
+      // loading/error state consistent with the rest of the flow.
+      void load();
+      // Per MOBILE_SALES_REFUND.md, on idempotent replay we should "just
+      // navigate forward as if it succeeded" — no second confirmation,
+      // because nothing actually changed server-side. The refetched
+      // SaleDetail tells the operator everything they need.
+      if (response.data.idempotent_replay) return;
+      Alert.alert(
+        'Refund',
+        `Refund applied · ${response.data.refund.payment_method}`,
+      );
+    },
+    [load],
+  );
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -328,25 +352,6 @@ export default function SaleDetailScreen() {
   //     source of truth (it enforces sales:refund), this gating just keeps
   //     the button off cashier-level screens.
   const canRefund = sale.status === 'completed' && canUserRefund(userRole);
-
-  const handleRefunded = useCallback(
-    (response: RefundResponse) => {
-      // Refetch from the source — the response already carries the
-      // updated SaleDetail, but going through `load()` keeps the screen's
-      // loading/error state consistent with the rest of the flow.
-      void load();
-      // Per MOBILE_SALES_REFUND.md, on idempotent replay we should "just
-      // navigate forward as if it succeeded" — no second confirmation,
-      // because nothing actually changed server-side. The refetched
-      // SaleDetail tells the operator everything they need.
-      if (response.data.idempotent_replay) return;
-      Alert.alert(
-        'Refund',
-        `Refund applied · ${response.data.refund.payment_method}`,
-      );
-    },
-    [load],
-  );
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
