@@ -34,11 +34,12 @@ import {formatCurrency} from '../utils/format';
 import {useNavHistoryStore, type CrumbTab} from '../stores/navHistoryStore';
 
 // Roles permitted to issue a refund. The User shape only exposes `role`
-// (no abilities map), so we whitelist the elevated roles seen on existing
-// Aeris2 deployments. The server still enforces the `sales:refund` ability
-// on the token — UI gating is just a kindness so non-eligible cashiers
-// don't get a 403 banner.
-const REFUND_ROLES = new Set(['manager', 'admin', 'owner']);
+// (no abilities map), so we mirror the server-side allowlist from
+// AuthAbilities::ROLE_ABILITIES — the three roles whose Sanctum tokens
+// carry `sales:refund`. The server still enforces the ability on the
+// token; UI gating is just a kindness so non-eligible cashiers don't
+// see a button they'd 403 on.
+const REFUND_ROLES = new Set(['super_admin', 'admin', 'manager']);
 
 function canUserRefund(role: string | undefined | null): boolean {
   if (!role) return false;
