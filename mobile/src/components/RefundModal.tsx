@@ -236,17 +236,33 @@ const RefundModal: React.FC<RefundModalProps> = ({
     [method, haptics, markDirty],
   );
 
-  // Sale total in dollars; clamp for the 'amount' mode.
-  const saleTotalDollars = sale.total_cents / 100;
+  // Refundable balance = original total minus prior refunds. The server's
+  // sale.payments collection includes negative-amount Refund rows from
+  // previous partial refunds; subtracting them gives the operator the
+  // remaining headroom. Capping the by-amount input on this (not on the
+  // original total) prevents the second partial refund from accidentally
+  // exceeding the server's max-refundable cap and 422-ing.
+  const refundedCents = useMemo(
+    () =>
+      sale.payments.reduce(
+        (acc, p) => (p.amount_cents < 0 ? acc + Math.abs(p.amount_cents) : acc),
+        0,
+      ),
+    [sale.payments],
+  );
+  const refundableBalanceCents = sale.total_cents - refundedCents;
+  const refundableBalanceDollars = refundableBalanceCents / 100;
+  const hasPriorRefunds = refundedCents > 0;
 
-  // Parsed amount + cap check.
+  // Parsed amount + cap check. Cap on remaining refundable balance, not
+  // the original sale total.
   const parsedAmount = useMemo(() => {
     if (mode !== 'amount') return null;
     const n = parseFloat(amountText);
     if (Number.isNaN(n) || n <= 0) return null;
-    if (n > saleTotalDollars) return null;
+    if (n > refundableBalanceDollars) return null;
     return Math.round(n * 100) / 100;
-  }, [mode, amountText, saleTotalDollars]);
+  }, [mode, amountText, refundableBalanceDollars]);
 
   // Items selected for refund — server expects {sale_item_id, quantity}[],
   // qty > 0 only.
@@ -391,6 +407,16 @@ const RefundModal: React.FC<RefundModalProps> = ({
                 {formatCurrency(sale.total_cents)}
               </Text>
             </View>
+            {hasPriorRefunds ? (
+              <View style={styles.balanceRow}>
+                <Text style={styles.balanceLabel}>
+                  Already refunded · {formatCurrency(refundedCents)}
+                </Text>
+                <Text style={styles.balanceValue}>
+                  {formatCurrency(refundableBalanceCents)} left
+                </Text>
+              </View>
+            ) : null}
 
             {error ? (
               <View style={styles.bannerWrap}>
@@ -434,7 +460,7 @@ const RefundModal: React.FC<RefundModalProps> = ({
             {mode === 'amount' ? (
               <View style={styles.field}>
                 <Text style={styles.label}>
-                  Refund amount (max {formatCurrency(sale.total_cents)})
+                  Refund amount (max {formatCurrency(refundableBalanceCents)})
                 </Text>
                 <TextInput
                   style={styles.input}
@@ -451,7 +477,7 @@ const RefundModal: React.FC<RefundModalProps> = ({
                 {amountText.length > 0 && parsedAmount === null ? (
                   <Text style={styles.warning}>
                     Enter an amount between $0.01 and{' '}
-                    {formatCurrency(sale.total_cents)}.
+                    {formatCurrency(refundableBalanceCents)}.
                   </Text>
                 ) : null}
               </View>
@@ -632,12 +658,15 @@ const RefundModal: React.FC<RefundModalProps> = ({
             <TouchableOpacity
               onPress={() => {
                 haptics.light();
-                handleAmountChange(saleTotalDollars.toFixed(2));
+                // Quick-fill uses the refundable balance, not the
+                // original sale total, so partially-refunded sales
+                // populate with the correct remaining cap.
+                handleAmountChange(refundableBalanceDollars.toFixed(2));
               }}
               accessibilityRole="button"
-              accessibilityLabel="Fill in full sale total">
+              accessibilityLabel="Fill in refundable balance">
               <Text style={styles.accessoryLink}>
-                Full ({formatCurrency(sale.total_cents)})
+                Full ({formatCurrency(refundableBalanceCents)})
               </Text>
             </TouchableOpacity>
             <View style={styles.accessorySpacer} />
@@ -693,6 +722,25 @@ const styles = StyleSheet.create({
   totalValue: {
     color: COLORS.text,
     fontSize: FONT_SIZE.lg,
+    fontFamily: FONT_FAMILY.bold,
+    fontVariant: ['tabular-nums'],
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingHorizontal: SPACING.md,
+    marginTop: -SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  balanceLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  balanceValue: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.bold,
     fontVariant: ['tabular-nums'],
   },
