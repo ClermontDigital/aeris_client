@@ -76,7 +76,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
   const [relayUrl, setRelayUrl] = useState(settings.relayUrl ?? '');
   const [mode, setMode] = useState<ConnectionMode>(
-    settings.connectionMode ?? 'direct',
+    settings.connectionMode ?? 'relay',
   );
   const [sessionTimeout, setSessionTimeout] = useState(settings.sessionTimeout);
   const [enableSessions, setEnableSessions] = useState(settings.enableSessionManagement);
@@ -95,7 +95,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
     // re-syncing whenever an unrelated setting is updated elsewhere.
     setBaseUrl(settings.baseUrl);
     setRelayUrl(settings.relayUrl ?? '');
-    setMode(settings.connectionMode ?? 'direct');
+    setMode(settings.connectionMode ?? 'relay');
     setSessionTimeout(settings.sessionTimeout);
     setEnableSessions(settings.enableSessionManagement);
     setHapticsEnabled(settings.hapticsEnabled !== false);
@@ -152,7 +152,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
     // local session before saving so the user must re-login under the new
     // mode. Gate on isAuthenticated to avoid showing "Your session has
     // expired" pre-login when the user is just configuring their setup.
-    const modeChanged = mode !== (settings.connectionMode ?? 'direct');
+    const modeChanged = mode !== (settings.connectionMode ?? 'relay');
     if (modeChanged && isAuthenticated) {
       try {
         await clearLocalSession();
