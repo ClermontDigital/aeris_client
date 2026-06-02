@@ -64,6 +64,15 @@ const BarcodeScannerScreen: React.FC = () => {
       : 'cart';
   const navigation = useNavigation<Nav>();
   const {hasPermission, requestPermission} = useCameraPermission();
+  // Snapshot the OS-level permission status on every render. Used to
+  // distinguish "not-determined" (we haven't asked yet, system dialog
+  // will appear on requestPermission()) from "denied" (system dialog
+  // is suppressed; only Settings can re-enable). Apple Guideline
+  // 5.1.1(iv) rejects flows where a single "Continue" button silently
+  // routes to Settings on denial — the UI must surface the difference.
+  const [permissionStatus, setPermissionStatus] = useState<
+    'granted' | 'denied' | 'restricted' | 'not-determined'
+  >(() => Camera.getCameraPermissionStatus());
   // Back-camera device. vision-camera v4 returns `undefined` while the
   // platform enumerates devices (one-frame splash). The `isActive` gate
   // on <Camera> handles that — we just render the centered spinner.
@@ -423,34 +432,60 @@ const BarcodeScannerScreen: React.FC = () => {
     onCodeScanned: handleCodesScanned,
   });
 
-  // Permission gate. vision-camera v4's hook returns a stable
-  // `hasPermission` boolean once the platform has answered. We render
-  // a spinner while undefined-equivalent (false on first paint) and
-  // route into Grant / Open-Settings paths once we know the state.
-  // The "open Settings" fallback is essential for hard-deny — calling
-  // requestPermission() on a previously-denied state silently no-ops
-  // and the user would otherwise be staring at a dead button (Apple
-  // Review specifically tests this flow).
+  // Permission gate. Two distinct UI paths, branched on the system
+  // permission status, per Apple Guideline 5.1.1(iv):
+  //
+  //   - not-determined: the iOS dialog has not been shown yet. We
+  //     surface a short context paragraph and a neutral "Continue"
+  //     button that triggers requestPermission(); iOS then presents
+  //     its own dialog.
+  //
+  //   - denied / restricted: the iOS dialog is suppressed and
+  //     requestPermission() would silently no-op. We show plain
+  //     informational text and an explicit "Open Settings" button so
+  //     the path to re-enable is obvious and the user is not pushed
+  //     toward a specific outcome.
+  //
+  // Apple rejected a prior submission (v1.0/build 114) for using a
+  // single "Grant Permission" button that silently routed denied
+  // users to Settings — they read it as encouraging a specific
+  // answer. Keeping these as two distinct buttons satisfies that.
   if (!hasPermission) {
+    const isDenied =
+      permissionStatus === 'denied' || permissionStatus === 'restricted';
     return (
       <View style={styles.centered}>
         <Icon name="camera-outline" size={64} color={COLORS.textDim} />
-        <Text style={styles.permissionTitle}>Camera Access Required</Text>
-        <Text style={styles.permissionText}>
-          The barcode scanner needs access to your camera to scan product
-          barcodes. If you previously denied access, open Settings to enable
-          it.
+        <Text style={styles.permissionTitle}>
+          {isDenied ? 'Camera access is off' : 'Camera access'}
         </Text>
-        <TouchableOpacity
-          style={styles.permissionButton}
-          accessibilityRole="button"
-          accessibilityLabel="Grant camera permission"
-          onPress={async () => {
-            const granted = await requestPermission();
-            if (!granted) Linking.openSettings();
-          }}>
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
-        </TouchableOpacity>
+        <Text style={styles.permissionText}>
+          {isDenied
+            ? 'AERIS uses the camera to scan product barcodes during a sale. Camera access is currently off for AERIS in iOS Settings.'
+            : 'AERIS uses the camera to scan product barcodes during a sale. iOS will ask whether to allow access.'}
+        </Text>
+        {isDenied ? (
+          <TouchableOpacity
+            style={styles.permissionButton}
+            accessibilityRole="button"
+            accessibilityLabel="Open Settings"
+            onPress={() => Linking.openSettings()}>
+            <Text style={styles.permissionButtonText}>Open Settings</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.permissionButton}
+            accessibilityRole="button"
+            accessibilityLabel="Continue"
+            onPress={async () => {
+              await requestPermission();
+              // Refresh local status after the OS dialog closes so the
+              // empty-state UI updates correctly if the user denied.
+              setPermissionStatus(Camera.getCameraPermissionStatus());
+            }}>
+            <Text style={styles.permissionButtonText}>Continue</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }

@@ -123,7 +123,19 @@ const AppTabsInner: React.FC = () => {
   const connectionMode = useSettingsStore(s => s.settings.connectionMode);
   const baseUrl = useSettingsStore(s => s.settings.baseUrl);
   const {isServerReachable} = useNetworkStatus(baseUrl);
-  const showErpTab = connectionMode !== 'relay' || isServerReachable;
+  // ERP tab embeds the merchant's own self-hosted admin web UI in a
+  // WebView. Build-time gated by EXPO_PUBLIC_SHOW_ERP_TAB (absent or
+  // "false" hides it). Apple Guideline 2.5.6 / 4.2 flag web-view-heavy
+  // surfaces on App Store builds, so production EAS profiles leave
+  // this unset; on-prem self-hosters and internal dev builds opt in.
+  // When opted-in, we still require Direct mode + a reachable server
+  // before the tab renders, so a stale flag in a relay-only build
+  // can't surface a broken WebView.
+  const erpTabEnabled =
+    process.env.EXPO_PUBLIC_SHOW_ERP_TAB === 'true' ||
+    process.env.EXPO_PUBLIC_SHOW_ERP_TAB === '1';
+  const showErpTab =
+    erpTabEnabled && (connectionMode !== 'relay' || isServerReachable);
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   // Gear icon now navigates to the AppStack's Settings route on the

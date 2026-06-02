@@ -2,7 +2,7 @@
   "expo": {
     "name": "AERIS",
     "slug": "aeris",
-    "version": "1.3.62",
+    "version": "1.3.63",
     "orientation": "default",
     "icon": "./assets/images/app-icon.png",
     "scheme": "aeris",
@@ -34,7 +34,7 @@
         },
         "NSCameraUsageDescription": "AERIS uses the camera to scan product barcodes at the point of sale so you can add items to a transaction without typing.",
         "NSFaceIDUsageDescription": "AERIS uses Face ID to unlock the app between sessions so you don't have to re-enter your PIN every time you switch back.",
-        "NSLocalNetworkUsageDescription": "AERIS connects to your on-premises AERIS server on the local network when Direct connection mode is enabled."
+        "NSLocalNetworkUsageDescription": "AERIS connects to your on-premises AERIS point-of-sale server (aeris.local or a private LAN address) when Direct connection mode is selected. Cloud Relay mode does not use the local network."
       },
       "privacyManifests": {
         "NSPrivacyAccessedAPITypes": [
