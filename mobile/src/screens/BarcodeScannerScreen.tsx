@@ -455,37 +455,39 @@ const BarcodeScannerScreen: React.FC = () => {
       permissionStatus === 'denied' || permissionStatus === 'restricted';
     return (
       <View style={styles.centered}>
-        <Icon name="camera-outline" size={64} color={COLORS.textDim} />
-        <Text style={styles.permissionTitle}>
-          {isDenied ? 'Camera access is off' : 'Camera access'}
-        </Text>
-        <Text style={styles.permissionText}>
-          {isDenied
-            ? 'AERIS uses the camera to scan product barcodes during a sale. Camera access is currently off for AERIS in iOS Settings.'
-            : 'AERIS uses the camera to scan product barcodes during a sale. iOS will ask whether to allow access.'}
-        </Text>
-        {isDenied ? (
-          <TouchableOpacity
-            style={styles.permissionButton}
-            accessibilityRole="button"
-            accessibilityLabel="Open Settings"
-            onPress={() => Linking.openSettings()}>
-            <Text style={styles.permissionButtonText}>Open Settings</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.permissionButton}
-            accessibilityRole="button"
-            accessibilityLabel="Continue"
-            onPress={async () => {
-              await requestPermission();
-              // Refresh local status after the OS dialog closes so the
-              // empty-state UI updates correctly if the user denied.
-              setPermissionStatus(Camera.getCameraPermissionStatus());
-            }}>
-            <Text style={styles.permissionButtonText}>Continue</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.permissionCard}>
+          <Icon name="camera-outline" size={48} color={COLORS.textMuted} />
+          <Text style={styles.permissionTitle}>
+            {isDenied ? 'Camera access is off' : 'Camera access'}
+          </Text>
+          <Text style={styles.permissionText}>
+            {isDenied
+              ? 'AERIS uses the camera to scan product barcodes during a sale. Camera access is currently off for AERIS in iOS Settings.'
+              : 'AERIS uses the camera to scan product barcodes during a sale. iOS will ask whether to allow access.'}
+          </Text>
+          {isDenied ? (
+            <TouchableOpacity
+              style={styles.permissionButton}
+              accessibilityRole="button"
+              accessibilityLabel="Open Settings"
+              onPress={() => Linking.openSettings()}>
+              <Text style={styles.permissionButtonText}>Open Settings</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.permissionButton}
+              accessibilityRole="button"
+              accessibilityLabel="Continue"
+              onPress={async () => {
+                await requestPermission();
+                // Refresh local status after the OS dialog closes so the
+                // empty-state UI updates correctly if the user denied.
+                setPermissionStatus(Camera.getCameraPermissionStatus());
+              }}>
+              <Text style={styles.permissionButtonText}>Continue</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     );
   }
@@ -1063,12 +1065,35 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.medium,
     lineHeight: FONT_SIZE.xl + 4,
   },
+  permissionCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.xl,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.xl,
+    alignItems: 'center',
+    // Constrain width so the card doesn't stretch edge-to-edge on
+    // iPad. Brand cards land at ~480px on tablet contexts elsewhere
+    // in the app; matching that here keeps Items / Sale / Scanner
+    // visually consistent on a Pro Max or larger.
+    maxWidth: 480,
+    width: '100%',
+    // Subtle elevation on cream — matches MotionCard's default shadow
+    // depth so it reads as the same surface family.
+    shadowColor: COLORS.navy,
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
   permissionTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xl,
     fontFamily: FONT_FAMILY.medium,
-    marginTop: SPACING.lg,
+    marginTop: SPACING.md,
     marginBottom: SPACING.sm,
+    textAlign: 'center',
   },
   permissionText: {
     color: COLORS.textMuted,
@@ -1080,8 +1105,10 @@ const styles = StyleSheet.create({
   permissionButton: {
     backgroundColor: COLORS.accent,
     paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.sm + 2,
     borderRadius: BORDER_RADIUS.md,
+    minWidth: 180,
+    alignItems: 'center',
   },
   permissionButtonText: {
     color: COLORS.white,
