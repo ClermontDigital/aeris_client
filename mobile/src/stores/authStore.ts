@@ -189,6 +189,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // No status set → transport failure (timeout, abort, DNS).
         errorKind = 'network';
       }
+      // Replace the raw transport message ("Network request failed",
+      // "Aborted", etc.) with friendlier copy when the failure is a
+      // transport-layer issue. The reviewer-facing surface is the
+      // login screen, so a generic "couldn't reach the server" reads
+      // better than the platform error.
+      if (errorKind === 'network') {
+        message = isRelay
+          ? "Couldn't reach the AERIS cloud. Check your connection and try again."
+          : "Couldn't reach the AERIS server. Check the server URL and your connection.";
+      }
       set({error: message, errorKind});
       throw e;
     }

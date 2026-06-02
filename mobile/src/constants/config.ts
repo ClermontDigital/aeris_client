@@ -5,7 +5,15 @@ export {validateWorkspaceCode} from '@aeris/shared';
 export const DEFAULT_CONFIG = {
   baseUrl: 'http://localhost:8822',
   relayUrl: 'https://api.aeris.team',
-  connectionMode: 'direct' as ConnectionMode,
+  // Default to relay (cloud) so a fresh install reaches a working
+  // endpoint on first launch. Direct mode is the on-premises path —
+  // valid for merchants self-hosting AERIS on their LAN, but the
+  // default localhost:8822 baseUrl above would just produce a network
+  // error for a brand-new user. Direct stays selectable in Settings;
+  // it's just no longer the cold-start default. Changed for the App
+  // Store reviewer flow; an Apple reviewer who skipped the submission
+  // notes was hitting a broken first-launch on Direct mode.
+  connectionMode: 'relay' as ConnectionMode,
   workspaceCode: '',
   sessionTimeout: 30, // minutes
   maxSessions: 5,
