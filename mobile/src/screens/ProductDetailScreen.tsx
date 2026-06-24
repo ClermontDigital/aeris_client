@@ -15,6 +15,7 @@ import Icon from '../components/Icon';
 import PillButton from '../components/PillButton';
 import StockAdjustModal from '../components/StockAdjustModal';
 import Barcode, {canEncodeCode128B} from '../components/Barcode';
+import ProductImagePicker from '../components/ProductImagePicker';
 import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
@@ -316,6 +317,30 @@ export default function ProductDetailScreen() {
               {addedToCartMsg}
             </Text>
           ) : null}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Photo</Text>
+          <ProductImagePicker
+            productId={product.id}
+            type="featured"
+            currentImageUrl={product.featured_image ?? product.image_url}
+            onUploaded={updated => {
+              // Merge the new image URL into the loaded detail so the card
+              // reflects it without a full re-fetch. The focus-effect reload
+              // will reconcile the rest on the next visit.
+              setProduct(prev =>
+                prev
+                  ? {
+                      ...prev,
+                      image_url: updated.image_url ?? prev.image_url,
+                      featured_image:
+                        updated.featured_image ?? prev.featured_image,
+                    }
+                  : prev,
+              );
+            }}
+          />
         </View>
 
         {product.barcode && canEncodeCode128B(product.barcode) ? (

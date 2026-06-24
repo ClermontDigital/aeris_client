@@ -1,7 +1,8 @@
 import * as Crypto from 'expo-crypto';
 import {RelayClient} from '@aeris/shared';
-import type {ConnectionMode} from '../types/api.types';
+import type {ConnectionMode, Product, ProductImageType} from '../types/api.types';
 import {DirectClient} from './DirectClient';
+import {uploadProductImage as uploadProductImageImpl} from './ProductImageClient';
 
 // Polyfill crypto.randomUUID for the shared RelayClient. Hermes does not
 // reliably expose globalThis.crypto.randomUUID across all OS versions, so
@@ -85,6 +86,43 @@ export class ApiClient {
   getWorkspaceCode(): string {
     return this.relay.getWorkspaceCode();
   }
+
+  // The marketplace/relay base URL. Always the relay client's URL regardless
+  // of mode — the product-image upload path is marketplace-owned (R2) and the
+  // dedicated /api/v1/products/image/* routes only live on the gateway.
+  getRelayUrl(): string {
+    return this.relay.getRelayUrl();
+  }
+
+  // True when the photo feature CAN be offered: there's a connected workspace
+  // to mint an upload grant against. Direct-only (unpaired) setups have no
+  // workspace code, so the affordance is hidden. The deployment may still turn
+  // out to not support the actions — that surfaces as a typed `unsupported`
+  // error from uploadProductImage which the picker uses to hide the button.
+  canUploadProductImages(): boolean {
+    return this.relay.getWorkspaceCode().length > 0;
+  }
+
+  // --- Products (image upload) ---
+  // Dedicated HTTPS transport (NOT relayRpc): read bytes + sha256 -> mint
+  // grant -> PUT bytes to R2 -> confirm -> returns the updated Product. Always
+  // targets the relay base + workspace, even in 'direct' mode. The bearer is
+  // read off the relay client (kept in sync with direct via setAuthToken).
+  uploadProductImage = (
+    productId: number,
+    fileUri: string,
+    type?: ProductImageType,
+  ): Promise<Product> =>
+    uploadProductImageImpl(
+      {
+        relayUrl: this.relay.getRelayUrl(),
+        authToken: this.relay.getAuthToken(),
+        workspaceCode: this.relay.getWorkspaceCode(),
+      },
+      productId,
+      fileUri,
+      type,
+    );
 
   private get active(): RelayClient | DirectClient {
     return this.mode === 'relay' ? this.relay : this.direct;

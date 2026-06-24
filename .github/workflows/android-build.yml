@@ -1,0 +1,153 @@
+name: Android build (EAS local)
+
+# On-demand Android builds for the AERIS mobile app (the Expo workspace at
+# mobile/). Runs entirely on the GitHub runner via `eas build --local`, so it
+# consumes NO EAS cloud build credits. The signed .aab is uploaded as a workflow
+# artifact and, only when explicitly requested, submitted to Google Play.
+#
+# RELATIONSHIP to .github/workflows/build-release.yml: that workflow already runs
+# CLOUD EAS builds (build-mobile-ios / build-mobile-android) on pushes to the
+# `release` branch -- it spends EAS credits and auto-submits iOS to TestFlight.
+# THIS workflow is the complementary on-demand, credit-free local Android path
+# (manual workflow_dispatch), mirroring the beats/plot_mobile reference apps. It
+# does NOT replace build-release.yml; the two coexist (build-release.yml = the
+# release pipeline, android-build.yml = ad-hoc local Android .aab + Play submit).
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   EXPO_TOKEN                        Expo personal access token. Authenticates
+#                                     eas and lets the local build pull the remote
+#                                     Android keystore + non-secret env.
+#   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON  base64 of the Play service-account JSON.
+#                                     Only needed when submit == true.
+#
+# One-time prerequisites (done once, outside CI):
+#   - Android upload keystore generated on EAS:
+#       cd mobile && eas credentials   (Android > production > set up a new keystore)
+#   - App created in Google Play Console with package com.aeris.erp, and the first
+#     release set up far enough that API uploads are accepted.
+#   - NOTE: eas.json has NO submit.production.android block yet (no service account
+#     wired). `eas submit` below passes --path + the service-account JSON directly,
+#     so it works without that block; add the block later if you prefer eas.json
+#     to own the track/key config.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        type: string
+        default: production
+      submit:
+        description: Submit to Google Play (internal track) after building
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: Build Android app bundle
+    runs-on: ubuntu-latest
+    # The New Architecture build compiles native C++ for multiple ABIs and runs
+    # ~40 min on a 4-core runner. 65 gives headroom while still capping a hang.
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Expo + EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # MONOREPO: install the whole npm workspace tree from the repo root so
+      # @aeris/shared resolves for the mobile app. legacy-peer-deps mirrors
+      # mobile/.npmrc; --include-workspace-root installs the root package too.
+      - name: Install workspace dependencies
+        run: npm ci --legacy-peer-deps --include-workspace-root
+
+      # Cache the resolved Gradle dependency graph + wrapper across runs. Does NOT
+      # cache the native compile (ccache below does that); it just skips re-
+      # downloading the Android/Gradle deps each run.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json', 'mobile/eas.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # ccache caches the compiled C++/object files of the app-module NDK build
+      # (New Architecture codegen + autolinked native modules) across runs. RN's
+      # ReactNative-application.cmake auto-routes the compile through any ccache on
+      # PATH; the build step also sets CMAKE_<LANG>_COMPILER_LAUNCHER as a fallback.
+      # Expect ~0% hits on the first warm-up run and high hits afterwards.
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ccache-android-${{ runner.os }}
+          max-size: 2G
+
+      - name: Build .aab locally (no EAS credits)
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          # Belt-and-suspenders ccache wiring; RN's CMake already picks ccache off
+          # PATH. CMake also honours these for the compiler launcher, covering any
+          # third-party module CMake that does not include RN's helper.
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          # Marketplace/relay base URL baked into the JS bundle for production.
+          # eas.json's production profile already sets this, but it is also passed
+          # here so a --local build is explicit and self-documenting.
+          EXPO_PUBLIC_API_URL: https://api.aeris.team
+        run: |
+          mkdir -p dist
+          eas build \
+            --platform android \
+            --profile "${{ inputs.profile }}" \
+            --local \
+            --non-interactive \
+            --output dist/aeris.aab
+
+      # Tuning visibility: the hit/miss ratio shows whether ccache is accelerating
+      # the native compile. Low on the first run, climbs on subsequent runs.
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
+      - name: Upload .aab artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aeris-android-aab
+          path: mobile/dist/aeris.aab
+          if-no-files-found: error
+
+      - name: Submit to Google Play (internal)
+        if: ${{ inputs.submit == true }}
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          # trap guarantees the decoded service-account JSON is removed even if
+          # `eas submit` fails. Runners are ephemeral, but explicit cleanup is correct.
+          trap "rm -f google-play-service-account.json" EXIT
+          echo "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" | base64 -d > google-play-service-account.json
+          eas submit \
+            --platform android \
+            --profile "${{ inputs.profile }}" \
+            --path dist/aeris.aab \
+            --non-interactive
