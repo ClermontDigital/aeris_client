@@ -32,6 +32,17 @@ export function normalizeProduct(input: unknown): Product {
   // is_active defaults to true so unknown-shape items remain sellable.
   const isActive =
     raw.is_active === undefined ? true : Boolean(raw.is_active);
+  // Raw image columns from ProductResource. featured_image is a string URL
+  // (or null); gallery_images is an ordered array of URL strings. Both are
+  // optional on the wire — coerce defensively and only include when present
+  // so screens can prefer image_url but fall back / show a gallery later.
+  const featuredImage =
+    typeof raw.featured_image === 'string' ? raw.featured_image : null;
+  const galleryImages = Array.isArray(raw.gallery_images)
+    ? (raw.gallery_images as unknown[]).filter(
+        (v): v is string => typeof v === 'string',
+      )
+    : [];
   return {
     id: asNumber(raw.id),
     name: asString(raw.name),
@@ -45,6 +56,8 @@ export function normalizeProduct(input: unknown): Product {
     category_id: categoryId,
     category_name: categoryName,
     image_url: typeof raw.image_url === 'string' ? raw.image_url : null,
+    featured_image: featuredImage,
+    gallery_images: galleryImages,
     is_active: isActive,
   };
 }

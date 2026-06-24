@@ -32,7 +32,8 @@
             }
           }
         },
-        "NSCameraUsageDescription": "AERIS uses the camera to scan product barcodes at the point of sale so you can add items to a transaction without typing.",
+        "NSCameraUsageDescription": "AERIS uses the camera to scan product barcodes at the point of sale and to photograph products so you can add items to a transaction without typing.",
+        "NSPhotoLibraryUsageDescription": "AERIS needs access to your photos so you can attach a product photo from your library.",
         "NSFaceIDUsageDescription": "AERIS uses Face ID to unlock the app between sessions so you don't have to re-enter your PIN every time you switch back.",
         "NSLocalNetworkUsageDescription": "AERIS connects to your on-premises AERIS point-of-sale server (aeris.local or a private LAN address) when Direct connection mode is selected. Cloud Relay mode does not use the local network."
       },
