@@ -155,6 +155,16 @@ export class RelayClient {
     return this.workspaceCode;
   }
 
+  // The relay/marketplace base URL (e.g. https://api.aeris.team). Exposed so
+  // the mobile-only product-image upload transport can target the dedicated
+  // /api/v1/products/image/* gateway routes — which are NOT /api/relay/rpc
+  // calls and therefore can't go through relayRpc. R2 is marketplace-owned,
+  // so the image upload path always uses THIS base even when the app is in
+  // 'direct' (LAN) mode.
+  getRelayUrl(): string {
+    return this.relayUrl;
+  }
+
   // --- Auth ---
   async login(
     email: string,
