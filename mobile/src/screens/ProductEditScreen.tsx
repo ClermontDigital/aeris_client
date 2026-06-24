@@ -20,6 +20,7 @@ import PillButton from '../components/PillButton';
 import ErrorBanner from '../components/ErrorBanner';
 import Icon from '../components/Icon';
 import Barcode from '../components/Barcode';
+import ProductImagePicker from '../components/ProductImagePicker';
 import {
   COLORS,
   SPACING,
@@ -125,6 +126,10 @@ const ProductEditScreen: React.FC = () => {
     null,
   );
   const [categories, setCategories] = useState<Category[]>([]);
+  // Current product image URL in edit mode. Hydrated from the loaded detail
+  // and updated in place when ProductImagePicker reports a successful upload,
+  // so the card reflects the new photo without waiting for a re-fetch.
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,6 +192,7 @@ const ProductEditScreen: React.FC = () => {
         setCategories(cats);
         if (detail) {
           setOriginalDetail(detail);
+          setCurrentImageUrl(detail.featured_image ?? detail.image_url ?? null);
           setForm({
             name: detail.name ?? '',
             sku: detail.sku ?? '',
@@ -599,6 +605,29 @@ const ProductEditScreen: React.FC = () => {
                 </Text>
               )}
             </View>
+          </View>
+
+          <View style={styles.section}>
+            <EyebrowLabel>Photo</EyebrowLabel>
+            {isEdit && productId !== null ? (
+              <ProductImagePicker
+                productId={productId}
+                type="featured"
+                currentImageUrl={currentImageUrl}
+                onUploaded={product => {
+                  // Reflect the new photo immediately, then refresh the
+                  // catalog cache so QuickSale / Items tiles pick it up.
+                  setCurrentImageUrl(
+                    product.featured_image ?? product.image_url ?? null,
+                  );
+                  void syncProducts();
+                }}
+              />
+            ) : (
+              <Text style={styles.hint}>
+                Save the item first, then re-open it to add a photo.
+              </Text>
+            )}
           </View>
 
           <View style={styles.section}>

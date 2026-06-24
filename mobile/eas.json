@@ -1,24 +1,28 @@
 {
   "cli": {
-    "version": ">= 3.0.0",
+    "version": ">= 18.0.0",
     "appVersionSource": "remote"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "ios": { "simulator": true, "image": "sdk-55" },
+      "ios": { "simulator": true, "resourceClass": "m-medium" },
       "env": { "EXPO_PUBLIC_API_URL": "http://localhost:8822" }
     },
     "preview": {
       "distribution": "internal",
-      "ios": { "simulator": false, "image": "sdk-55" },
+      "ios": { "simulator": false, "resourceClass": "m-medium" },
       "env": { "EXPO_PUBLIC_API_URL": "http://aeris.local:8000" }
     },
     "production": {
+      "channel": "production",
       "autoIncrement": true,
       "ios": {
-        "image": "sdk-55"
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "app-bundle"
       },
       "env": { "EXPO_PUBLIC_API_URL": "https://api.aeris.team" }
     }
