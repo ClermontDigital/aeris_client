@@ -48,7 +48,16 @@ export interface Product {
   stock_on_hand: number;
   category_id: number | null;
   category_name: string | null;
+  // image_url is the deployment-resolved primary image: featured_image, else
+  // the first gallery/images entry, else null (see Aeris2 Product::imageUrl
+  // accessor). It's an opaque images.aeris.team read-proxy URL once the
+  // product-photo feature is live; treat it as an opaque string.
   image_url: string | null;
+  // Raw image columns surfaced by ProductResource. featured_image is the
+  // single primary photo; gallery_images is an ordered list (max ~20). Both
+  // hold opaque proxy URLs. Optional so older/normalized shapes stay valid.
+  featured_image?: string | null;
+  gallery_images?: string[];
   is_active: boolean;
 }
 
@@ -370,6 +379,41 @@ export interface RefundResponse {
 export interface RefundErrorResponse {
   success: false;
   message: string; // human-readable error string from server
+}
+
+// --- Product image upload (dedicated HTTPS transport, NOT relayRpc) ---
+
+// Which slot the image lands in on the deployment. 'featured' replaces the
+// single primary photo; 'gallery' appends. Defaults to 'featured' server-side.
+export type ProductImageType = 'featured' | 'gallery';
+
+// Gateway response to POST /api/v1/products/image/request-upload. The phone
+// then PUTs the JPEG bytes DIRECTLY to `upload_url` with exactly the headers
+// listed in `required_headers` (which pin Content-Length + Content-Type).
+export interface ProductImageUploadGrant {
+  upload_url: string;
+  // Header name → value the phone MUST send verbatim on the R2 PUT. The
+  // presign pins these (notably Content-Length); sending different values
+  // fails the PUT.
+  required_headers: Record<string, string>;
+  grant_id: string;
+  expires_at: string;
+}
+
+// Distinct error code the gateway returns when the resolved deployment does
+// not expose the products.authorize-image / products.set-image relay actions
+// (older Aeris2 without the feature). Mobile uses this to permanently hide the
+// photo affordance for that deployment rather than surfacing a hard error.
+export const PRODUCT_IMAGE_UNSUPPORTED_CODE = 'deployment-unsupported';
+
+// Thrown by the upload transport so the picker UI can branch: `unsupported`
+// hides the button; everything else is a normal retriable failure.
+export interface ProductImageUploadErrorShape {
+  message: string;
+  // 'unsupported' = deployment lacks the actions (hide button);
+  // 'no-workspace' = no workspace code configured (feature unavailable in
+  // direct-only setups); 'too-large' = client size guard; 'failed' = generic.
+  kind: 'unsupported' | 'no-workspace' | 'too-large' | 'failed';
 }
 
 export interface PaginatedResponse<T> {
