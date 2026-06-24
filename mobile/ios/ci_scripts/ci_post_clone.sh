@@ -1,66 +1,104 @@
 #!/bin/sh
-# Xcode Cloud post-clone hook — AERIS Expo app (monorepo: aeris_client, app in mobile/).
+# Xcode Cloud post-clone hook — AERIS (Expo app in the aeris_client MONOREPO).
 #
-# Xcode Cloud runs this immediately after cloning the repo, with the working
-# directory at this script's location (ios/ci_scripts). The managed Expo app
-# does NOT commit the generated native project (ios/ is .gitignored except this
-# ci_scripts dir), so we must: install Node + CocoaPods, install the npm
-# WORKSPACE from the repo ROOT (so `expo` and the hoisted deps resolve), run
-# `expo prebuild` to materialise mobile/ios/AERIS.xcworkspace, then `pod install`.
+# LOCATION: Apple runs ci_scripts that sit beside the Xcode project. Ours is at
+# mobile/ios/ci_scripts/ci_post_clone.sh (committed). ios/ IS committed as a
+# scaffold so Xcode Cloud can resolve the AERIS scheme; this script regenerates
+# the native project with `expo prebuild --clean` at build time, then pod installs.
 #
-# Mirrors the beats / plot_mobile hooks, adapted for the monorepo (install at the
-# repo root, prebuild in the mobile workspace). Signing is App-Store-Connect
-# automatic (Team 6SWY68AFK6) — independent of EAS credentials.
+# MONOREPO: CI_PRIMARY_REPOSITORY_PATH is the repo ROOT (aeris_client). `npm ci`
+# there installs the workspace tree (mobile/ gets expo + the RN stack); prebuild
+# and pod install run in mobile/. Mirrors beats / plot_mobile, adapted for the
+# workspace layout. Signing is App-Store-Connect-managed (Team 6SWY68AFK6).
 set -e
 
-retry() {
-  n=0
-  until [ "$n" -ge 3 ]; do
-    "$@" && return 0
-    n=$((n + 1))
-    echo "↻ retry $n/3: $*"
-    sleep 10
+REPO_ROOT="$CI_PRIMARY_REPOSITORY_PATH"
+[ -n "$REPO_ROOT" ] || REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+MOBILE_DIR="$REPO_ROOT/mobile"
+echo "[ci_post_clone] repo root: $REPO_ROOT ; mobile: $MOBILE_DIR"
+
+export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_ANALYTICS=1
+
+# --- Node 20 (Expo SDK 55 / RN 0.83 need >= 20.19.4) ---
+node_major="$(node --version 2>/dev/null | sed -n 's/^v\([0-9][0-9]*\).*/\1/p')"
+if [ -z "$node_major" ] || [ "$node_major" -lt 20 ]; then
+  brew_ok=0
+  for attempt in 1 2 3; do
+    if brew install node@20; then brew_ok=1; break; fi
+    echo "[ci_post_clone] brew install node@20 attempt $attempt failed; retry in 10s" >&2; sleep 10
   done
-  "$@"
-}
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MOBILE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"   # <root>/mobile
-REPO_ROOT="$(cd "$MOBILE_DIR/.." && pwd)"       # <root>
-echo "▸ repo root: $REPO_ROOT"
-echo "▸ mobile:    $MOBILE_DIR"
-
-export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
-
-# --- Node 20 ---
-if ! command -v node >/dev/null 2>&1; then
-  retry brew install node@20
-  export PATH="$(brew --prefix node@20)/bin:$PATH"
+  if [ "$brew_ok" = 1 ]; then
+    export PATH="$(brew --prefix)/opt/node@20/bin:$PATH"
+  else
+    echo "[ci_post_clone] brew failed 3x; falling back to nodejs.org tarball" >&2
+    NODE_TARBALL_VER=v20.19.4
+    curl -fsSL "https://nodejs.org/dist/${NODE_TARBALL_VER}/node-${NODE_TARBALL_VER}-darwin-arm64.tar.gz" -o /tmp/node20.tar.gz
+    mkdir -p "$HOME/.node20"; tar -xzf /tmp/node20.tar.gz -C "$HOME/.node20" --strip-components=1
+    export PATH="$HOME/.node20/bin:$PATH"
+  fi
 fi
-echo "▸ node $(node -v) / npm $(npm -v)"
+command -v node >/dev/null 2>&1 || { echo "ERROR: Node >= 20 unavailable." >&2; exit 1; }
+command -v pod >/dev/null 2>&1 || brew install cocoapods
+# Hermes-from-source safety net (RN normally uses the prebuilt artifact):
+command -v cmake >/dev/null 2>&1 || brew install cmake
+command -v ninja >/dev/null 2>&1 || brew install ninja
+echo "[ci_post_clone] node $(node --version) / npm $(npm --version)"
 
-# --- CocoaPods (fatal if it cannot be provisioned) ---
-if ! command -v pod >/dev/null 2>&1; then
-  retry brew install cocoapods
-fi
-
-# --- cmake/ninja: only needed if Hermes builds from source; warn, don't fail ---
-command -v cmake >/dev/null 2>&1 || brew install cmake ninja || echo "⚠ cmake/ninja unavailable (ok unless Hermes builds from source)"
-
-# --- Install the npm workspace from the REPO ROOT (hoists expo + RN tree) ---
-export npm_config_fetch_retries=5 npm_config_fetch_retry_factor=2 npm_config_fetch_retry_maxtimeout=120000
+# --- Install the npm WORKSPACE from the repo root ---
 cd "$REPO_ROOT"
-retry npm ci --legacy-peer-deps --include-workspace-root
+npm_ok=0
+for attempt in 1 2 3; do
+  if npm ci --legacy-peer-deps --include-workspace-root \
+        --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-maxtimeout=120000; then npm_ok=1; break; fi
+  echo "[ci_post_clone] npm ci attempt $attempt failed; retry in 10s" >&2; sleep 10
+done
+[ "$npm_ok" = 1 ] || { echo "ERROR: npm ci failed after retries." >&2; exit 1; }
 
-# --- Generate the native iOS project from the Expo config ---
+# --- Regenerate the native iOS project (committed ios/ is just a scaffold) ---
 cd "$MOBILE_DIR"
-CI=1 EXPO_NO_GIT_STATUS=1 retry npx expo prebuild --platform ios --clean
+# Xcode Cloud presets CI=TRUE; Expo rejects uppercase TRUE as a bool, so override.
+CI=1 EXPO_NO_GIT_STATUS=1 ./node_modules/.bin/expo prebuild --platform ios --clean --no-install
 
-# --- Pin the Node binary for the RN "Bundle React Native code and images" phase ---
+# --- Xcode 16 ENABLE_USER_SCRIPT_SANDBOXING is on by default and breaks pods
+# whose prepare_command/script phases write undeclared outputs. Disable it on the
+# regenerated Podfile (applied AFTER prebuild, BEFORE pod install). Non-fatal:
+# if the Expo template marker ever moves, warn instead of aborting the build. ---
+python3 - <<'PYEOF' || echo "[ci_post_clone] WARN: sandbox Podfile patch skipped (marker not found)"
+from pathlib import Path
+p = Path('ios/Podfile'); t = p.read_text()
+hook = """
+    installer.aggregate_targets.each do |aggregate_target|
+      aggregate_target.user_project.native_targets.each do |target|
+        target.build_configurations.each do |config|
+          config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+        end
+      end
+      aggregate_target.user_project.save
+    end
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+      end
+    end
+"""
+marker = ':ccache_enabled => ccache_enabled?(podfile_properties),'
+assert marker in t, 'ccache marker missing'
+needle = ')\n  end\nend\n'
+i = t.rindex(needle)
+p.write_text(t[:i + 1] + '\n' + hook + '  end\nend\n')
+print('[ci_post_clone] Podfile post_install: ENABLE_USER_SCRIPT_SANDBOXING=NO')
+PYEOF
+
+# --- Pin NODE_BINARY for the xcodebuild "Bundle React Native code" phase ---
 echo "export NODE_BINARY=$(command -v node)" > ios/.xcode.env.local
 
-# --- Install pods → produces ios/AERIS.xcworkspace for Xcode Cloud to build ---
+# --- pod install -> produces ios/AERIS.xcworkspace ---
 cd "$MOBILE_DIR/ios"
-retry pod install
+pod_ok=0
+for attempt in 1 2 3; do
+  if pod install; then pod_ok=1; break; fi
+  echo "[ci_post_clone] pod install attempt $attempt failed; retry in 10s" >&2; sleep 10
+done
+[ "$pod_ok" = 1 ] || { echo "ERROR: pod install failed after retries." >&2; exit 1; }
 
-echo "✓ ci_post_clone complete"
+echo "[ci_post_clone] done"
