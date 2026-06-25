@@ -245,13 +245,23 @@ const ProductImagePicker: React.FC<Props> = ({
             resizeMode="cover"
             accessibilityLabel="Current product photo"
           />
-          {/* Always-visible scrim affordance so it's obvious the photo is editable */}
-          <View style={styles.scrim} pointerEvents="none">
+          {/* Always-visible scrim affordance so it's obvious the photo is
+              editable. Decorative — hidden from VoiceOver (the wrapping
+              touchable already announces "Change product photo"). */}
+          <View
+            style={styles.scrim}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants">
             <Icon name="camera" size={16} color={COLORS.white} />
             <Text style={styles.scrimText}>Tap to change photo</Text>
           </View>
           {uploading ? (
-            <View style={styles.busyOverlay} pointerEvents="none">
+            <View
+              style={styles.busyOverlay}
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants">
               <ActivityIndicator color={COLORS.white} size="large" />
             </View>
           ) : null}
