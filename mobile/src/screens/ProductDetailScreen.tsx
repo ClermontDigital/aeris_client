@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {ProductDetail, Sale} from '../types/api.types';
 import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 
@@ -126,6 +127,47 @@ export default function ProductDetailScreen() {
       return undefined;
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [load]),
+  );
+
+  // Single back handler shared by the brand-header Back button and the
+  // in-page Back button. Cross-tab breadcrumb aware: if the user arrived via
+  // a cross-tab jump (e.g. SaleDetail -> ProductDetail), return them to the
+  // originating tab rather than popping inside the Items stack.
+  // One-shot guard: handleBack is reachable from BOTH the header and the
+  // in-page button; popPrev() mutates history, so a fast double-tap could
+  // over-navigate. Reset on each focus.
+  const backFiredRef = useRef(false);
+  const handleBack = useCallback(() => {
+    if (backFiredRef.current) return;
+    backFiredRef.current = true;
+    haptics.light();
+    const prev = useNavHistoryStore.getState().popPrev();
+    if (prev) {
+      const parent = navigation.getParent?.();
+      if (parent) {
+        (parent as unknown as {
+          navigate: (tab: string, params: object) => void;
+        }).navigate(prev.tab, {
+          initial: false,
+          screen: prev.screen,
+          params: prev.params ?? {},
+        });
+        return;
+      }
+    }
+    navigation.goBack();
+  }, [haptics, navigation]);
+
+  // Surface the Back button in the shared brand header while focused.
+  // Identity-aware cleanup so a late blur can't clobber the next screen.
+  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
+  const clearHeaderBack = useHeaderBackStore(s => s.clearIf);
+  useFocusEffect(
+    useCallback(() => {
+      backFiredRef.current = false;
+      setHeaderBack(handleBack);
+      return () => clearHeaderBack(handleBack);
+    }, [setHeaderBack, clearHeaderBack, handleBack]),
   );
 
   if (isLoading) {
@@ -532,30 +574,7 @@ export default function ProductDetailScreen() {
           </View>
         ) : null}
 
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => {
-            haptics.light();
-            // Cross-tab breadcrumb back: if the user reached us via a
-            // cross-tab jump (e.g. SaleDetail → ProductDetail), the parent
-            // tab navigator owns the "back" target — return to where they
-            // came from rather than popping inside the Items stack.
-            const prev = useNavHistoryStore.getState().popPrev();
-            if (prev) {
-              const parent = navigation.getParent?.();
-              if (parent) {
-                (parent as unknown as {
-                  navigate: (tab: string, params: object) => void;
-                }).navigate(prev.tab, {
-                  initial: false,
-                  screen: prev.screen,
-                  params: prev.params ?? {},
-                });
-                return;
-              }
-            }
-            navigation.goBack();
-          }}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
           <Icon
             name="chevron-back"
             size={20}
