@@ -27,6 +27,7 @@ import {
   FONT_SIZE,
   FONT_FAMILY,
   BORDER_RADIUS,
+  ICON_SIZE,
 } from '../constants/theme';
 import * as ExpoCrypto from 'expo-crypto';
 import ApiClient from '../services/ApiClient';
@@ -510,11 +511,27 @@ const ProductEditScreen: React.FC = () => {
         <ScrollView
           contentContainerStyle={[styles.scroll, formCap]}
           keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              {isEdit ? 'Edit item' : 'New item'}
-            </Text>
+          <View style={styles.headerRow}>
+            <TouchableOpacity
+              onPress={() => {
+                haptics.light();
+                navigation.goBack();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel and go back"
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+              style={styles.backTap}>
+              <Icon
+                name="chevron-back"
+                size={ICON_SIZE.hero}
+                color={COLORS.navy}
+              />
+              <Text style={styles.backText}>Back</Text>
+            </TouchableOpacity>
           </View>
+          <Text style={styles.title}>
+            {isEdit ? 'Edit item' : 'New item'}
+          </Text>
 
           {error ? (
             <View style={styles.bannerWrap}>
@@ -610,19 +627,26 @@ const ProductEditScreen: React.FC = () => {
           <View style={styles.section}>
             <EyebrowLabel>Photo</EyebrowLabel>
             {isEdit && productId !== null ? (
-              <ProductImagePicker
-                productId={productId}
-                type="featured"
-                currentImageUrl={currentImageUrl}
-                onUploaded={product => {
-                  // Reflect the new photo immediately, then refresh the
-                  // catalog cache so QuickSale / Items tiles pick it up.
-                  setCurrentImageUrl(
-                    product.featured_image ?? product.image_url ?? null,
-                  );
-                  void syncProducts();
-                }}
-              />
+              <>
+                <ProductImagePicker
+                  productId={productId}
+                  type="featured"
+                  currentImageUrl={currentImageUrl}
+                  onUploaded={product => {
+                    // Reflect the new photo immediately, then refresh the
+                    // catalog cache so QuickSale / Items tiles pick it up.
+                    setCurrentImageUrl(
+                      product.featured_image ?? product.image_url ?? null,
+                    );
+                    void syncProducts();
+                  }}
+                />
+                {/* App-Review consent: disclose that the photo can be public. */}
+                <Text style={styles.hint}>
+                  This photo may be shown publicly — for example on printed
+                  receipts or a connected website.
+                </Text>
+              </>
             ) : (
               <Text style={styles.hint}>
                 Save the item first, then re-open it to add a photo.
@@ -860,12 +884,30 @@ const styles = StyleSheet.create({
   flex: {flex: 1},
   scroll: {padding: SPACING.md, paddingBottom: SPACING.xxl},
   center: {flex: 1, alignItems: 'center', justifyContent: 'center'},
-  header: {marginBottom: SPACING.md},
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  backTap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+    paddingVertical: SPACING.xs,
+    paddingRight: SPACING.sm,
+  },
+  backText: {
+    color: COLORS.navy,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+    marginLeft: SPACING.xs,
+  },
   title: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
     fontFamily: FONT_FAMILY.bold,
     letterSpacing: -0.3,
+    marginBottom: SPACING.md,
   },
   bannerWrap: {marginBottom: SPACING.md},
   section: {
