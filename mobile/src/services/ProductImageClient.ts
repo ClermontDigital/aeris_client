@@ -1,4 +1,5 @@
 import * as Crypto from 'expo-crypto';
+import NetInfo from '@react-native-community/netinfo';
 import {File} from 'expo-file-system';
 // uploadAsync + the BINARY_CONTENT upload type moved to the /legacy entrypoint
 // in Expo SDK 54+. The new top-level expo-file-system module no longer exports
@@ -196,6 +197,17 @@ export async function uploadProductImage(
     throw new ProductImageUploadError(
       'Photos require a connected workspace.',
       'no-workspace',
+    );
+  }
+
+  // Fail fast when offline instead of resizing + holding a 30s request-upload
+  // timeout open for a failure that's knowable instantly (App Review tests on
+  // poor networks / airplane mode — Guideline 2.1).
+  const net = await NetInfo.fetch();
+  if (net.isConnected === false) {
+    throw new ProductImageUploadError(
+      "You're offline — reconnect to add a photo.",
+      'failed',
     );
   }
 
