@@ -1,6 +1,6 @@
 {
   "name": "aeris-mobile",
-  "version": "1.3.67",
+  "version": "1.3.68",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -96,7 +96,7 @@
         "jest-expo"
       ]
     },
-    "version": "1.3.67"
+    "version": "1.3.68"
   },
   "overrides": {
     "@xmldom/xmldom": "^0.8.13",
