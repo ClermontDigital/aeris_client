@@ -12,8 +12,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import EyebrowLabel from '../components/EyebrowLabel';
 import PillButton from '../components/PillButton';
@@ -27,7 +28,6 @@ import {
   FONT_SIZE,
   FONT_FAMILY,
   BORDER_RADIUS,
-  ICON_SIZE,
 } from '../constants/theme';
 import * as ExpoCrypto from 'expo-crypto';
 import ApiClient from '../services/ApiClient';
@@ -107,6 +107,22 @@ const ProductEditScreen: React.FC = () => {
   const route = useRoute<Route>();
   const haptics = useHaptics();
   const {isTablet} = useResponsiveLayout();
+
+  // Surface a Back button in the shared brand header while focused (mirrors
+  // the gear on the right). Identity-aware cleanup so it never clobbers the
+  // next screen's handler nor lingers elsewhere.
+  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
+  const clearHeaderBack = useHeaderBackStore(s => s.clearIf);
+  const handleHeaderBack = useCallback(() => {
+    haptics.light();
+    navigation.goBack();
+  }, [haptics, navigation]);
+  useFocusEffect(
+    useCallback(() => {
+      setHeaderBack(handleHeaderBack);
+      return () => clearHeaderBack(handleHeaderBack);
+    }, [setHeaderBack, clearHeaderBack, handleHeaderBack]),
+  );
   const formCap = isTablet
     ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
     : null;
@@ -511,27 +527,11 @@ const ProductEditScreen: React.FC = () => {
         <ScrollView
           contentContainerStyle={[styles.scroll, formCap]}
           keyboardShouldPersistTaps="handled">
-          <View style={styles.headerRow}>
-            <TouchableOpacity
-              onPress={() => {
-                haptics.light();
-                navigation.goBack();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel and go back"
-              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
-              style={styles.backTap}>
-              <Icon
-                name="chevron-back"
-                size={ICON_SIZE.hero}
-                color={COLORS.navy}
-              />
-              <Text style={styles.backText}>Back</Text>
-            </TouchableOpacity>
+          <View style={styles.header}>
+            <Text style={styles.title}>
+              {isEdit ? 'Edit item' : 'New item'}
+            </Text>
           </View>
-          <Text style={styles.title}>
-            {isEdit ? 'Edit item' : 'New item'}
-          </Text>
 
           {error ? (
             <View style={styles.bannerWrap}>
@@ -884,30 +884,12 @@ const styles = StyleSheet.create({
   flex: {flex: 1},
   scroll: {padding: SPACING.md, paddingBottom: SPACING.xxl},
   center: {flex: 1, alignItems: 'center', justifyContent: 'center'},
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  backTap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 44,
-    paddingVertical: SPACING.xs,
-    paddingRight: SPACING.sm,
-  },
-  backText: {
-    color: COLORS.navy,
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.medium,
-    marginLeft: SPACING.xs,
-  },
+  header: {marginBottom: SPACING.md},
   title: {
     color: COLORS.text,
     fontSize: FONT_SIZE.xxl,
     fontFamily: FONT_FAMILY.bold,
     letterSpacing: -0.3,
-    marginBottom: SPACING.md,
   },
   bannerWrap: {marginBottom: SPACING.md},
   section: {

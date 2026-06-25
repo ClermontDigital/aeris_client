@@ -1,6 +1,7 @@
 import React, {useMemo} from 'react';
 import {
   View,
+  Text,
   Image,
   Pressable,
   StyleSheet,
@@ -29,6 +30,7 @@ import {useHaptics} from '../hooks/useHaptics';
 import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
 import {useScannerVisibilityStore} from '../stores/scannerVisibilityStore';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import {getItemCount} from '@aeris/shared';
 import {COLORS, FONT_SIZE, FONT_FAMILY} from '../constants/theme';
 import type {AppTabParamList, AppStackParamList} from '../types/navigation.types';
@@ -152,6 +154,10 @@ const AppTabsInner: React.FC = () => {
   // see the Scanner route nested inside Items/QuickSale stacks. The
   // Scanner screen itself flips this store on focus/blur via useFocusEffect.
   const isOnScanner = useScannerVisibilityStore(s => s.isScannerVisible);
+  // Optional left-side back affordance: a drill-down screen (e.g. item
+  // detail/edit) registers its own goBack handler on focus; we render the
+  // button only when one is set so it never appears on tab roots.
+  const headerOnBack = useHeaderBackStore(s => s.onBack);
 
   // Chrome layout:
   //   y = 0          → screen top (behind status bar)
@@ -234,6 +240,24 @@ const AppTabsInner: React.FC = () => {
             />
           </View>
         </SafeAreaView>
+      )}
+      {isOnScanner || !headerOnBack ? null : (
+        <TouchableOpacity
+          onPress={() => {
+            haptics.light();
+            // Re-read at press time so a stale closure can't fire the wrong
+            // screen's handler if the store changed between render and tap.
+            useHeaderBackStore.getState().onBack?.();
+          }}
+          style={[styles.backBtnHeader, {top: insets.top + 36}]}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+          <Icon name="chevron-back" size={22} color={COLORS.navy} />
+          <Text style={styles.backBtnHeaderText} numberOfLines={1}>
+            Back
+          </Text>
+        </TouchableOpacity>
       )}
       {isOnScanner ? null : (
         <TouchableOpacity
@@ -405,6 +429,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 3,
+  },
+  // Mirror of gearBtn on the left. A row (chevron + "Back") rather than a
+  // 44-square so the label reads clearly; left-anchored and absolutely
+  // positioned so it never disturbs the centred wordmark.
+  backBtnHeader: {
+    position: 'absolute',
+    left: 8,
+    height: 44,
+    maxWidth: 96, // cap so a large Dynamic-Type label can't reach the wordmark
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    zIndex: 3,
+  },
+  backBtnHeaderText: {
+    color: COLORS.navy,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+    marginLeft: 2,
+    flexShrink: 1,
   },
   tabBar: {
     backgroundColor: COLORS.primary,
