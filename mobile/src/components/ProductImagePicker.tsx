@@ -1,4 +1,4 @@
-import React, {useCallback, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -25,10 +25,7 @@ import {
 } from '../constants/theme';
 import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
-import {
-  ProductImageUploadError,
-  PRODUCT_IMAGE_MAX_BYTES,
-} from '../services/ProductImageClient';
+import {ProductImageUploadError} from '../services/ProductImageClient';
 import type {Product, ProductImageType} from '../types/api.types';
 
 interface Props {
@@ -67,10 +64,29 @@ const ProductImagePicker: React.FC<Props> = ({
   // independent of the parent re-fetch. Falls back to currentImageUrl.
   const [localUrl, setLocalUrl] = useState<string | null>(null);
 
+  // Guards (M1/M3): the upload is a multi-step async chain (normalize ->
+  // request-upload -> R2 PUT -> confirm). mountedRef stops setState after the
+  // screen is popped mid-upload; uploadingRef is a synchronous re-entrancy
+  // lock so a fast double-tap can't start two uploads before `uploading`
+  // state has flushed (same pattern as submitLockRef in ProductEditScreen).
+  const mountedRef = useRef(true);
+  const uploadingRef = useRef(false);
+  // Which sheet action to run once the modal has FULLY dismissed. A ref (not
+  // state) so onModalHide reads the latest value without a stale closure.
+  const pendingActionRef = useRef<null | 'camera' | 'library'>(null);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const shownUrl = localUrl ?? currentImageUrl ?? null;
 
   const doUpload = useCallback(
     async (fileUri: string) => {
+      if (uploadingRef.current) return; // re-entrancy lock (M3)
+      uploadingRef.current = true;
       setUploading(true);
       setError(null);
       try {
@@ -80,13 +96,13 @@ const ProductImagePicker: React.FC<Props> = ({
           normalizedUri,
           type,
         );
+        if (!mountedRef.current) return; // unmounted mid-upload (M1)
         haptics.success();
         // Prefer the server-resolved URL; fall back to the resolved primary.
-        setLocalUrl(
-          product.featured_image ?? product.image_url ?? null,
-        );
+        setLocalUrl(product.featured_image ?? product.image_url ?? null);
         onUploaded(product);
       } catch (e) {
+        if (!mountedRef.current) return;
         haptics.error();
         if (e instanceof ProductImageUploadError) {
           if (e.kind === 'unsupported' || e.kind === 'no-workspace') {
@@ -101,7 +117,8 @@ const ProductImagePicker: React.FC<Props> = ({
           );
         }
       } finally {
-        setUploading(false);
+        uploadingRef.current = false;
+        if (mountedRef.current) setUploading(false);
       }
     },
     [productId, type, haptics, onUploaded],
@@ -148,42 +165,57 @@ const ProductImagePicker: React.FC<Props> = ({
     return false;
   }, []);
 
-  const handleTakePhoto = useCallback(async () => {
-    setSheetOpen(false);
+  // The actual native-picker launchers. These run from onModalHide AFTER the
+  // bottom sheet's dismiss animation completes — presenting the camera/library
+  // UIViewController while react-native-modal is still mid-dismiss wedges
+  // UIKit's presenter (the "opens then freezes" bug). allowsEditing is
+  // intentionally OFF (its legacy UIKit cropper is a second present step and a
+  // known crash source); quality 0.7 keeps peak capture memory down since
+  // normalizeForUpload re-encodes anyway.
+  const launchCamera = useCallback(async () => {
     const ok = await ensureCameraPermission();
     if (!ok) return;
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 1,
+      quality: 0.7,
     });
     if (result.canceled || !result.assets?.[0]?.uri) return;
-    // Early client size guard on the original capture; the post-resize file is
-    // re-checked in the transport against PRODUCT_IMAGE_MAX_BYTES.
-    const asset = result.assets[0];
-    if (
-      typeof asset.fileSize === 'number' &&
-      asset.fileSize > PRODUCT_IMAGE_MAX_BYTES * 4
-    ) {
-      setError('That photo is very large; trying to compress it.');
-    }
-    void doUpload(asset.uri);
+    void doUpload(result.assets[0].uri);
   }, [ensureCameraPermission, doUpload]);
 
-  const handleChooseLibrary = useCallback(async () => {
-    setSheetOpen(false);
+  const launchLibrary = useCallback(async () => {
     const ok = await ensureLibraryPermission();
     if (!ok) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 1,
+      quality: 0.7,
     });
     if (result.canceled || !result.assets?.[0]?.uri) return;
     void doUpload(result.assets[0].uri);
   }, [ensureLibraryPermission, doUpload]);
 
+  // Sheet rows only record intent + close the sheet. The launch is deferred to
+  // onModalHide. Backdrop/back/Cancel dismissals leave pendingActionRef null,
+  // so nothing launches on those paths.
+  const handleTakePhoto = useCallback(() => {
+    pendingActionRef.current = 'camera';
+    setSheetOpen(false);
+  }, []);
+
+  const handleChooseLibrary = useCallback(() => {
+    pendingActionRef.current = 'library';
+    setSheetOpen(false);
+  }, []);
+
+  const handleModalHide = useCallback(() => {
+    const action = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (action === 'camera') void launchCamera();
+    else if (action === 'library') void launchLibrary();
+  }, [launchCamera, launchLibrary]);
+
   const openSheet = useCallback(() => {
+    if (uploadingRef.current) return; // don't re-open while a photo is uploading
     haptics.light();
     setError(null);
     setSheetOpen(true);
@@ -199,45 +231,50 @@ const ProductImagePicker: React.FC<Props> = ({
   return (
     <View>
       {shownUrl ? (
-        // Current photo with a Change affordance overlaid.
-        <View style={styles.previewWrap}>
+        // Whole image is the tap target — opens the action sheet.
+        <TouchableOpacity
+          style={styles.card}
+          onPress={openSheet}
+          disabled={uploading}
+          activeOpacity={0.9}
+          accessibilityRole="button"
+          accessibilityLabel="Change product photo">
           <Image
             source={{uri: shownUrl}}
             style={styles.preview}
             resizeMode="cover"
             accessibilityLabel="Current product photo"
           />
+          {/* Always-visible scrim affordance so it's obvious the photo is editable */}
+          <View style={styles.scrim} pointerEvents="none">
+            <Icon name="camera" size={16} color={COLORS.white} />
+            <Text style={styles.scrimText}>Tap to change photo</Text>
+          </View>
           {uploading ? (
-            <View style={styles.previewBusyOverlay}>
+            <View style={styles.busyOverlay} pointerEvents="none">
               <ActivityIndicator color={COLORS.white} size="large" />
             </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.changeBadge}
-              onPress={openSheet}
-              accessibilityRole="button"
-              accessibilityLabel="Change product photo">
-              <Icon name="refresh-cw" size={14} color={COLORS.white} />
-              <Text style={styles.changeBadgeText}>Change</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+          ) : null}
+        </TouchableOpacity>
       ) : (
-        // No photo yet — the Add affordance.
+        // No photo yet — same size/shape so the layout doesn't shift on upload.
         <TouchableOpacity
-          style={styles.addCard}
+          style={[styles.card, styles.addCard]}
           onPress={openSheet}
           disabled={uploading}
+          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Add a product photo">
           {uploading ? (
             <ActivityIndicator color={COLORS.accent} size="large" />
           ) : (
             <>
-              <Icon name="image" size={32} color={COLORS.textMuted} />
+              <View style={styles.addIconCircle}>
+                <Icon name="camera" size={26} color={COLORS.accent} />
+              </View>
               <Text style={styles.addCardTitle}>Add photo</Text>
               <Text style={styles.addCardHint}>
-                Take a photo or choose one from your library.
+                Tap to take a photo or choose one from your library.
               </Text>
             </>
           )}
@@ -248,6 +285,7 @@ const ProductImagePicker: React.FC<Props> = ({
 
       <Modal
         isVisible={sheetOpen}
+        onModalHide={handleModalHide}
         onBackdropPress={() => setSheetOpen(false)}
         onBackButtonPress={() => setSheetOpen(false)}
         style={styles.modal}
@@ -285,10 +323,11 @@ const ProductImagePicker: React.FC<Props> = ({
 };
 
 const styles = StyleSheet.create({
-  previewWrap: {
+  // Shared frame for both states so swapping empty<->filled never shifts layout.
+  card: {
     width: '100%',
     aspectRatio: 16 / 10,
-    borderRadius: BORDER_RADIUS.md,
+    borderRadius: BORDER_RADIUS.lg,
     overflow: 'hidden',
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
@@ -298,52 +337,58 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  previewBusyOverlay: {
+  // Full-width bottom strip — the persistent "editable" affordance.
+  scrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    // Navy @ 78% — matches the app's existing scrims; no gradient dep needed.
+    backgroundColor: 'rgba(0, 48, 73, 0.78)',
+  },
+  scrimText: {
+    color: COLORS.white,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  busyOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 48, 73, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  changeBadge: {
-    position: 'absolute',
-    right: SPACING.sm,
-    bottom: SPACING.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    backgroundColor: 'rgba(0, 48, 73, 0.85)',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: BORDER_RADIUS.full,
-  },
-  changeBadgeText: {
-    color: COLORS.white,
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.medium,
-  },
+  // Empty state — same `card` frame + dashed border + centred prompt.
   addCard: {
-    width: '100%',
-    aspectRatio: 16 / 10,
-    borderRadius: BORDER_RADIUS.md,
-    borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: COLORS.inputBorder,
-    backgroundColor: COLORS.inputBg,
     alignItems: 'center',
     justifyContent: 'center',
     padding: SPACING.md,
     gap: SPACING.xs,
   },
+  addIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: BORDER_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(193, 18, 31, 0.08)', // accent (crimson) @ 8%
+    marginBottom: SPACING.xs,
+  },
   addCardTitle: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.medium,
-    marginTop: SPACING.xs,
   },
   addCardHint: {
     color: COLORS.textDim,
     fontSize: FONT_SIZE.xs,
     textAlign: 'center',
+    maxWidth: '80%',
   },
   errorText: {
     color: COLORS.danger,
