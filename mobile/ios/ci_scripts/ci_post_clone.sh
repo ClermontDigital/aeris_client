@@ -92,6 +92,20 @@ PYEOF
 # --- Pin NODE_BINARY for the xcodebuild "Bundle React Native code" phase ---
 echo "export NODE_BINARY=$(command -v node)" > ios/.xcode.env.local
 
+# --- Stamp CFBundleVersion from the Xcode Cloud build number. `expo prebuild
+# --clean` rewrites Info.plist from app.json's static ios.buildNumber every run,
+# so without this every TestFlight upload would carry the SAME build number and
+# App Store Connect would reject the duplicate. CI_BUILD_NUMBER is monotonic per
+# workflow run; CFBundleShortVersionString (the marketing version) stays as
+# app.json sets it. Non-fatal so a local prebuild isn't blocked. ---
+if [ -n "$CI_BUILD_NUMBER" ]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $CI_BUILD_NUMBER" ios/AERIS/Info.plist \
+    && echo "[ci_post_clone] CFBundleVersion set to $CI_BUILD_NUMBER" \
+    || echo "[ci_post_clone] WARN: could not set CFBundleVersion (Info.plist layout changed?)"
+else
+  echo "[ci_post_clone] CI_BUILD_NUMBER unset (local run); leaving CFBundleVersion as-is"
+fi
+
 # --- pod install -> produces ios/AERIS.xcworkspace ---
 cd "$MOBILE_DIR/ios"
 pod_ok=0
