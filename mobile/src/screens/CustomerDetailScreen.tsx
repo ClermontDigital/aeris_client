@@ -296,6 +296,21 @@ export default function CustomerDetailScreen() {
               customer.phone ? () => openTel(customer.phone as string) : undefined
             }
           />
+          {customer.mobile ? (
+            <ContactRow
+              icon="phone"
+              label="Mobile"
+              value={customer.mobile}
+              onPress={() => openTel(customer.mobile as string)}
+            />
+          ) : null}
+          {customer.company ? (
+            <ContactRow
+              icon="tag"
+              label="Company"
+              value={customer.company}
+            />
+          ) : null}
         </View>
 
         {showBalance ? (
@@ -312,10 +327,73 @@ export default function CustomerDetailScreen() {
           </>
         ) : null}
 
-        {/* Account terms section (payment terms / credit limit / loyalty
-            points / total orders / lifetime value) hidden for now per
-            product decision — wire it back via Customer + shared/customer
-            normalizer when the back-end fields are confirmed surfaced. */}
+        {/* Account terms / lifetime stats. Each row gates on a truthy field
+            so empty data doesn't read as "no purchases" (null vs zero are
+            different stories). Section hides entirely when nothing is set. */}
+        {(() => {
+          const termRows: Array<{label: string; value: string}> = [];
+          if (customer.customer_number) {
+            termRows.push({label: 'Customer #', value: customer.customer_number});
+          }
+          if (customer.payment_terms) {
+            termRows.push({label: 'Payment terms', value: customer.payment_terms});
+          }
+          if (customer.credit_limit_cents != null && customer.credit_limit_cents > 0) {
+            termRows.push({
+              label: 'Credit limit',
+              value: formatCurrency(customer.credit_limit_cents),
+            });
+          }
+          if (customer.loyalty_points != null && customer.loyalty_points > 0) {
+            termRows.push({
+              label: 'Loyalty points',
+              value: `${customer.loyalty_points} pts`,
+            });
+          }
+          if (customer.total_orders != null && customer.total_orders > 0) {
+            termRows.push({
+              label: 'Lifetime orders',
+              value: String(customer.total_orders),
+            });
+          }
+          if (customer.total_spent_cents != null && customer.total_spent_cents > 0) {
+            termRows.push({
+              label: 'Lifetime spend',
+              value: formatCurrency(customer.total_spent_cents),
+            });
+          }
+          if (customer.last_purchase_date) {
+            const formatted = formatShortDate(customer.last_purchase_date);
+            if (formatted !== '—') {
+              termRows.push({label: 'Last purchase', value: formatted});
+            }
+          }
+          if (termRows.length === 0) return null;
+          return (
+            <>
+              <Text style={styles.sectionLabel}>Account terms</Text>
+              <View style={styles.card}>
+                {termRows.map((row, idx) => (
+                  <TermsRow
+                    key={row.label}
+                    label={row.label}
+                    value={row.value}
+                    isFirst={idx === 0}
+                  />
+                ))}
+              </View>
+            </>
+          );
+        })()}
+
+        {customer.notes?.trim() ? (
+          <>
+            <Text style={styles.sectionLabel}>Notes</Text>
+            <View style={styles.card}>
+              <Text style={styles.notesBody}>{customer.notes.trim()}</Text>
+            </View>
+          </>
+        ) : null}
 
         <Text style={styles.sectionLabel}>Activity</Text>
         {customer.recent_sales.length > 0 ? (
@@ -594,6 +672,13 @@ const styles = StyleSheet.create({
   card: {
     ...cardBase,
     paddingHorizontal: SPACING.md,
+  },
+  notesBody: {
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.regular,
+    color: COLORS.text,
+    lineHeight: 22,
+    paddingVertical: SPACING.md,
   },
   contactRow: {
     flexDirection: 'row',

@@ -49,9 +49,16 @@ cd mobile && npx tsc --noEmit
 
 - `npx expo start` — Expo dev server.
 - `npm test` — Jest.
-- `eas build --platform ios --profile production --auto-submit` —
-  TestFlight upload. EAS Build must use `"image": "sdk-55"` in
-  `eas.json` (Xcode 26.2 / Swift 6.2).
+- **iOS production builds** run on Xcode Cloud (configured at
+  `mobile/ios/ci_scripts/ci_post_clone.sh`). Triggered on push to the
+  `release` branch; auto-submits to TestFlight. CFBundleVersion is
+  stamped from `CI_BUILD_NUMBER`.
+- **Android production builds** run in GitHub Actions
+  (`.github/workflows/android-build.yml`, native Gradle, no EAS).
+  Triggered by `workflow_dispatch` or a `mobile-v*` tag push. Outputs
+  signed APK + AAB as workflow artifacts; optional Play submission
+  via `fastlane supply` when `submit=true`. `versionCode` is stamped
+  from `GITHUB_RUN_NUMBER`.
 
 ## CI/CD
 
@@ -61,7 +68,7 @@ cd mobile && npx tsc --noEmit
 |----------------------------------------|-------------------------------------|
 | `shared/**`                            | shared-test                         |
 | `client/**` or `shared/**`             | client-test, client-build-{mac,win,linux} |
-| `mobile/**` or `shared/**`             | mobile-typecheck, test-mobile, build-mobile-ios, build-mobile-android |
+| `mobile/**` or `shared/**`             | mobile-typecheck, test-mobile (Jest + typecheck only; iOS production builds run on Xcode Cloud, Android on `android-build.yml`) |
 | `archive/desktop-v1/**` + dispatch     | archive-build-v1                    |
 
 Per-app release tagging:
@@ -69,12 +76,15 @@ Per-app release tagging:
 | Tag prefix             | Effect                                            |
 |------------------------|---------------------------------------------------|
 | `client-vX.Y.Z`        | Cut Aeris v2 GitHub Release (dmg/zip/exe/AppImage/deb + electron-updater channel manifests) |
-| `mobile-vX.Y.Z`        | Mobile EAS production build + TestFlight auto-submit |
+| `mobile-vX.Y.Z`        | Triggers `android-build.yml` (signed APK + AAB artifacts). iOS uses its own Xcode Cloud trigger on `release` branch push. |
 | `desktop-v1-vX.Y.Z`    | Archived v1 security-patch GitHub Release        |
 
-Required secrets: `EXPO_TOKEN`, `CSC_LINK`, `CSC_KEY_PASSWORD`,
-`APPLE_ID`, `APPLE_ID_PASS`, `APPLE_TEAM_ID`. Optional
-`WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`.
+Required secrets: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
+`APPLE_ID_PASS`, `APPLE_TEAM_ID` (desktop signing/notarization);
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` (Android signing);
+`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (only when submitting to Play).
+Optional `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`.
 
 Branch strategy:
 
@@ -125,8 +135,8 @@ mobile/src/
 
 Mobile uses the same `@aeris/shared` RelayClient as the v2 desktop,
 so a contract change in `shared/` may affect both. The mobile
-typecheck CI job (`mobile-typecheck`) catches type drift before EAS
-builds run.
+typecheck CI job (`mobile-typecheck`) catches type drift before
+Xcode Cloud / Gradle builds run.
 
 ## Documentation
 

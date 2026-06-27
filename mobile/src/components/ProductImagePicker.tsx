@@ -138,7 +138,7 @@ const ProductImagePicker: React.FC<Props> = ({
     }
     Alert.alert(
       'Camera access is off',
-      'AERIS uses the camera to photograph products. Turn on camera access for AERIS in iOS Settings.',
+      'AERIS uses the camera to photograph products. Turn on camera access for AERIS in device Settings.',
       [
         {text: 'Cancel', style: 'cancel'},
         {text: 'Open Settings', onPress: () => Linking.openSettings()},
@@ -156,7 +156,7 @@ const ProductImagePicker: React.FC<Props> = ({
     }
     Alert.alert(
       'Photo access is off',
-      'AERIS needs access to your photos to add a product image. Turn on photo access for AERIS in iOS Settings.',
+      'AERIS needs access to your photos to add a product image. Turn on photo access for AERIS in device Settings.',
       [
         {text: 'Cancel', style: 'cancel'},
         {text: 'Open Settings', onPress: () => Linking.openSettings()},

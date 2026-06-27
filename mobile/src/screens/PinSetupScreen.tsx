@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   BackHandler,
   Platform,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import PinPad from '../components/PinPad';
@@ -142,6 +144,12 @@ const PinSetupScreen: React.FC = () => {
 
   const padTitle = stage === 'enter' ? 'Choose a PIN' : 'Re-enter to confirm';
   const stepLabel = stage === 'enter' ? 'Step 1 of 2' : 'Step 2 of 2';
+  // PinSetupScreen has more vertical content than AppLockScreen
+  // (subheading + step eyebrow on top of the keypad), so it clips first
+  // on short viewports. ScrollView is the safety net; compact tightens
+  // the brand margin.
+  const {height: viewportHeight} = useWindowDimensions();
+  const compact = viewportHeight < 700;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -153,54 +161,60 @@ const PinSetupScreen: React.FC = () => {
         <Text style={styles.signOutText}>Sign out</Text>
       </TouchableOpacity>
 
-      <View style={styles.brand}>
-        <Image
-          source={require('../../assets/images/app-icon.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        <Text
-          style={styles.heading}
-          accessibilityRole="header">
-          Create your app PIN
-        </Text>
-        <Text style={styles.subheading}>
-          A 4-digit PIN locks the app between sessions so customer and
-          business info stays protected.
-        </Text>
-      </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        bounces={false}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <View style={[styles.brand, compact && styles.brandCompact]}>
+          <Image
+            source={require('../../assets/images/app-icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text
+            style={styles.heading}
+            accessibilityRole="header">
+            Create your app PIN
+          </Text>
+          <Text style={styles.subheading}>
+            A 4-digit PIN locks the app between sessions so customer and
+            business info stays protected.
+          </Text>
+        </View>
 
-      <View style={styles.pinWrap}>
-        {/* Step indicator as eyebrow per Brand Guidelines §06 — short tag
-            that signals where the user is in the setup flow. Rendered in
-            Clermont Cream on the navy backdrop (`tone="dark"`). */}
-        <EyebrowLabel
-          tone="dark"
-          style={styles.stepEyebrow}
-          textStyle={styles.stepEyebrowText}>
-          {stepLabel}
-        </EyebrowLabel>
-        <PinPad title={padTitle} onSubmit={handleSubmit} error={error} />
-      </View>
+        <View style={styles.pinWrap}>
+          {/* Step indicator as eyebrow per Brand Guidelines §06 — short tag
+              that signals where the user is in the setup flow. Rendered in
+              Clermont Cream on the navy backdrop (`tone="dark"`). */}
+          <EyebrowLabel
+            tone="dark"
+            style={styles.stepEyebrow}
+            textStyle={styles.stepEyebrowText}>
+            {stepLabel}
+          </EyebrowLabel>
+          <PinPad title={padTitle} onSubmit={handleSubmit} error={error} />
+        </View>
 
-      {stage === 'confirm' ? (
-        <TouchableOpacity
-          style={styles.startOverBtn}
-          onPress={() => {
-            haptics.light();
-            setStage('enter');
-            setFirstPin('');
-            setError(undefined);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Start over">
-          <Text style={styles.startOverText}>Start over</Text>
-        </TouchableOpacity>
-      ) : (
-        // Reserve the same vertical space when on stage 'enter' so the
-        // layout doesn't jump when the user advances to confirm.
-        <View style={styles.startOverPlaceholder} />
-      )}
+        {stage === 'confirm' ? (
+          <TouchableOpacity
+            style={styles.startOverBtn}
+            onPress={() => {
+              haptics.light();
+              setStage('enter');
+              setFirstPin('');
+              setError(undefined);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Start over">
+            <Text style={styles.startOverText}>Start over</Text>
+          </TouchableOpacity>
+        ) : (
+          // Reserve the same vertical space when on stage 'enter' so the
+          // layout doesn't jump when the user advances to confirm.
+          <View style={styles.startOverPlaceholder} />
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -209,8 +223,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.navy,
+  },
+  scrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingBottom: SPACING.lg,
   },
   signOutBtn: {
     position: 'absolute',
@@ -231,6 +249,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xl + SPACING.md,
     paddingHorizontal: SPACING.lg,
   },
+  brandCompact: {marginTop: SPACING.lg},
   logo: {
     width: 64,
     height: 64,
