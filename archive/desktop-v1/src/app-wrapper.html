@@ -957,16 +957,21 @@
                 
                 <!-- Right side - Title, user info, status, and settings -->
                 <div class="toolbar-right">
-                    <!-- User info -->
+                    <!-- User info (name/role/admin-panel reveal once the embedded
+                         web UI scraper detects a logged-in user). -->
                     <div class="user-info" id="user-info" style="display: none;">
                         <div>
                             <div id="user-name" class="user-name"></div>
                             <div id="user-role" class="user-role"></div>
                         </div>
                         <button class="admin-panel-btn" id="admin-panel-btn" style="display: none;">Admin Panel</button>
-                        <button class="logout-btn" id="logout-btn">Logout</button>
                     </div>
-                    
+
+                    <!-- Logout lives outside #user-info so it stays reachable even
+                         when the embedded-page DOM scraper fails to detect a
+                         username (e.g. Aeris2 web UI selectors drift). -->
+                    <button class="logout-btn" id="logout-btn" style="margin-right: 10px;">Logout</button>
+
                     <!-- Connection status -->
                     <div class="connection-status" id="connection-status"></div>
                     
