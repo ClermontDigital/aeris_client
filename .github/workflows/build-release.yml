@@ -5,8 +5,9 @@ on:
     branches: [ release ]
     tags:
       - 'client-v*'
-      - 'mobile-v*'
       - 'desktop-v1-v*'
+      # mobile-v* is handled by .github/workflows/android-build.yml (Android)
+      # and Xcode Cloud (iOS), not this workflow.
   pull_request:
     branches: [ release ]
   workflow_dispatch:
@@ -25,7 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       shared_changed: ${{ steps.filter.outputs.shared }}
-      # mobile-only paths fire test-mobile + EAS build jobs
+      # mobile-only paths fire test-mobile (typecheck + jest only;
+      # production builds run on Xcode Cloud + android-build.yml)
       mobile_changed: ${{ steps.filter.outputs.mobile }}
       # mobile + shared fires the cheap mobile-typecheck (type-drift catcher)
       mobile_or_shared_changed: ${{ steps.filter.outputs.mobile_or_shared }}
@@ -229,7 +231,9 @@ jobs:
         retention-days: 30
 
   # ------------------------------------------------------------------
-  # Mobile — Expo / EAS. Triggers on mobile/** OR shared/** changes.
+  # Mobile — Jest + typecheck only. iOS production builds run on Xcode
+  # Cloud (mobile/ios/ci_scripts/ci_post_clone.sh); Android production
+  # builds run via .github/workflows/android-build.yml (native Gradle).
   # ------------------------------------------------------------------
   test-mobile:
     needs: detect-changes
@@ -258,8 +262,7 @@ jobs:
   # Mobile typecheck — root tsc --build does not include mobile (it's
   # not a composite project), so a shared/** change can break mobile
   # types and slip past CI. This job runs `tsc --noEmit` against
-  # mobile/ directly. Gates the EAS build so a typecheck failure short-
-  # circuits the cloud build.
+  # mobile/ directly.
   # ------------------------------------------------------------------
   mobile-typecheck:
     needs: detect-changes
@@ -274,52 +277,6 @@ jobs:
     - run: npm ci --workspaces --include-workspace-root
     - run: npx tsc --noEmit
       working-directory: mobile
-
-  build-mobile-ios:
-    needs: [detect-changes, test-mobile, mobile-typecheck]
-    if: needs.detect-changes.outputs.mobile_changed == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mobile
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: mobile/package-lock.json
-    - name: Setup EAS
-      uses: expo/expo-github-action@v8
-      with:
-        eas-version: latest
-        token: ${{ secrets.EXPO_TOKEN }}
-    - run: npm ci
-    - name: Build iOS and submit to TestFlight
-      run: eas build --platform ios --profile production --non-interactive --auto-submit
-
-  build-mobile-android:
-    needs: [detect-changes, test-mobile, mobile-typecheck]
-    if: needs.detect-changes.outputs.mobile_changed == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: mobile
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-        cache-dependency-path: mobile/package-lock.json
-    - name: Setup EAS
-      uses: expo/expo-github-action@v8
-      with:
-        eas-version: latest
-        token: ${{ secrets.EXPO_TOKEN }}
-    - run: npm ci
-    - name: Build Android
-      run: eas build --platform android --profile production --non-interactive
 
   # ------------------------------------------------------------------
   # Archive (desktop-v1) — manual security-patch builds only. Gated on
@@ -405,12 +362,9 @@ jobs:
   # Release — per-app tag-pattern routing. Each app reads its own version
   # and tags with its own prefix:
   #   client-vX.Y.Z       -> Aeris v2 client release
-  #   mobile-vX.Y.Z       -> mobile EAS production submit (handled by
-  #                          build-mobile-ios above; nothing to publish here)
+  #   mobile-vX.Y.Z       -> handled by android-build.yml (Android) +
+  #                          Xcode Cloud (iOS); nothing to do here
   #   desktop-v1-vX.Y.Z   -> archived v1 security-patch release
-  #
-  # NOTE: full per-app tagging refactor is intentionally minimal in
-  # Phase 0 — see "Open questions" at the top of the Phase 0 report.
   # ------------------------------------------------------------------
   release-client:
     needs: [client-build-mac, client-build-win, client-build-linux]
@@ -492,20 +446,16 @@ jobs:
           ./release-assets/*
 
   notify:
-    needs: [detect-changes, client-build-mac, client-build-win, client-build-linux, build-mobile-ios, build-mobile-android]
+    needs: [detect-changes, client-build-mac, client-build-win, client-build-linux]
     runs-on: ubuntu-latest
     if: always() && github.ref == 'refs/heads/release' && github.event_name == 'push'
     steps:
     - name: Notify Client Success
       if: needs.detect-changes.outputs.client_changed == 'true' && needs.client-build-mac.result == 'success'
       run: echo "Client (Aeris v2) release built successfully for all platforms!"
-    - name: Notify Mobile Success
-      if: needs.detect-changes.outputs.mobile_changed == 'true' && needs.build-mobile-ios.result == 'success'
-      run: echo "Mobile build submitted to TestFlight and Play Store!"
     - name: Notify Failure
       if: |
-        (needs.detect-changes.outputs.client_changed == 'true' && (needs.client-build-mac.result == 'failure' || needs.client-build-win.result == 'failure' || needs.client-build-linux.result == 'failure')) ||
-        (needs.detect-changes.outputs.mobile_changed == 'true' && (needs.build-mobile-ios.result == 'failure' || needs.build-mobile-android.result == 'failure'))
+        needs.detect-changes.outputs.client_changed == 'true' && (needs.client-build-mac.result == 'failure' || needs.client-build-win.result == 'failure' || needs.client-build-linux.result == 'failure')
       run: |
         echo "Build failed! Check workflow logs."
         exit 1

@@ -8,6 +8,8 @@ import {
   Alert,
   BackHandler,
   Platform,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Animated, {
@@ -35,6 +37,12 @@ const AppLockScreen: React.FC = () => {
   const biometricEnabled = useAppLockStore(s => s.biometricEnabled);
   const failedAttempts = useAppLockStore(s => s.failedAttempts);
   const reset = useAppLockStore(s => s.reset);
+  // Compact = iPhone SE 3rd gen / 13 mini class viewport. The keypad
+  // shrinks via PinPad's own breakpoint; here we tighten the brand
+  // margin so the lock layout still reads as space-between on tall
+  // phones without forcing the keypad / sign-out off the safe area.
+  const {height: viewportHeight} = useWindowDimensions();
+  const compact = viewportHeight < 700;
 
   const [error, setError] = useState<string | undefined>(undefined);
   const [biometricLabel, setBiometricLabel] = useState('Use Biometrics');
@@ -141,46 +149,65 @@ const AppLockScreen: React.FC = () => {
     ]);
   }, [reset]);
 
+  const remainingAttempts =
+    failedAttempts > 0 ? MAX_ATTEMPTS - failedAttempts : 0;
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
         <Text style={styles.signOutText}>Sign out</Text>
       </TouchableOpacity>
 
-      <Animated.View
-        entering={FadeIn.duration(220)}
-        style={[styles.brand, brandStyle]}>
-        <Image
-          source={require('../../assets/images/app-icon.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        <Text style={styles.appName}>Aeris</Text>
-        <Text style={styles.tagline}>Locked</Text>
-      </Animated.View>
-
-      <View style={styles.pinWrap}>
-        <PinPad title="Enter PIN" onSubmit={handleSubmit} error={error} />
-      </View>
-
-      {biometricEnabled && (
-        <TouchableOpacity
-          style={styles.bioBtn}
-          onPress={tryBiometric}
-          disabled={attempting}>
-          <Icon
-            name="finger-print"
-            size={20}
-            color={COLORS.cream}
-            style={styles.bioIcon}
+      {/* ScrollView is the safety net for short viewports — on a tall
+          phone it doesn't scroll because contentContainerStyle's flexGrow:1
+          + space-between keeps everything centered. On SE-class it lets
+          the keypad and sign-out cleanly absorb without clipping. */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        bounces={false}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <Animated.View
+          entering={FadeIn.duration(220)}
+          style={[
+            styles.brand,
+            compact && styles.brandCompact,
+            brandStyle,
+          ]}>
+          <Image
+            source={require('../../assets/images/app-icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
           />
-          <Text style={styles.bioText}>{biometricLabel}</Text>
-        </TouchableOpacity>
-      )}
+          <Text style={styles.appName}>Aeris</Text>
+          <Text style={styles.tagline}>Locked</Text>
+        </Animated.View>
 
-      <Text style={styles.attemptsHint}>
-        {failedAttempts > 0 ? `${MAX_ATTEMPTS - failedAttempts} attempts remaining` : ''}
-      </Text>
+        <View style={styles.pinWrap}>
+          <PinPad title="Enter PIN" onSubmit={handleSubmit} error={error} />
+        </View>
+
+        {biometricEnabled && (
+          <TouchableOpacity
+            style={styles.bioBtn}
+            onPress={tryBiometric}
+            disabled={attempting}>
+            <Icon
+              name="finger-print"
+              size={20}
+              color={COLORS.cream}
+              style={styles.bioIcon}
+            />
+            <Text style={styles.bioText}>{biometricLabel}</Text>
+          </TouchableOpacity>
+        )}
+
+        {remainingAttempts > 0 && (
+          <Text style={styles.attemptsHint}>
+            {`${remainingAttempts} attempts remaining`}
+          </Text>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -189,8 +216,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.navy,
+  },
+  scrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingBottom: SPACING.lg,
   },
   signOutBtn: {
     position: 'absolute',
@@ -202,6 +233,7 @@ const styles = StyleSheet.create({
   },
   signOutText: {color: COLORS.cream, fontSize: FONT_SIZE.md, opacity: 0.85},
   brand: {alignItems: 'center', marginTop: SPACING.xl + SPACING.lg},
+  brandCompact: {marginTop: SPACING.lg},
   logo: {width: 72, height: 72, marginBottom: SPACING.sm},
   appName: {color: COLORS.cream, fontSize: FONT_SIZE.title, fontFamily: FONT_FAMILY.bold},
   tagline: {color: COLORS.cream, fontSize: FONT_SIZE.md, opacity: 0.7, marginTop: 2},
@@ -223,8 +255,7 @@ const styles = StyleSheet.create({
     color: COLORS.cream,
     opacity: 0.6,
     fontSize: FONT_SIZE.sm,
-    marginBottom: SPACING.lg,
-    height: FONT_SIZE.sm + 4,
+    marginTop: SPACING.sm,
   },
 });
 

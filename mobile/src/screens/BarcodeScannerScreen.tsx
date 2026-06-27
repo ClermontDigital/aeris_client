@@ -462,8 +462,8 @@ const BarcodeScannerScreen: React.FC = () => {
           </Text>
           <Text style={styles.permissionText}>
             {isDenied
-              ? 'AERIS uses the camera to scan product barcodes during a sale. Camera access is currently off for AERIS in iOS Settings.'
-              : 'AERIS uses the camera to scan product barcodes during a sale. iOS will ask whether to allow access.'}
+              ? 'AERIS uses the camera to scan product barcodes during a sale. Camera access is currently off for AERIS in device Settings.'
+              : 'AERIS uses the camera to scan product barcodes during a sale. Your device will ask whether to allow access.'}
           </Text>
           {isDenied ? (
             <TouchableOpacity
