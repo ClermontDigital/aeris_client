@@ -35,10 +35,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   openReleasePage: (url) => ipcRenderer.invoke('open-release-page', url),
 
-  // Aeris v2 upgrade banner (one-shot dismissal)
-  getV2BannerDismissed: () => ipcRenderer.invoke('get-v2-banner-dismissed'),
-  setV2BannerDismissed: (dismissed) => ipcRenderer.invoke('set-v2-banner-dismissed', dismissed),
-  
   // Session management functions
   getSessions: () => ipcRenderer.invoke('get-sessions'),
   createSession: (name, pin) => ipcRenderer.invoke('create-session', name, pin),
