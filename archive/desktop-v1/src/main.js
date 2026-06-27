@@ -680,34 +680,6 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
-ipcMain.handle('open-release-page', async (event, url) => {
-  try {
-    if (!url || typeof url !== 'string') {
-      throw new Error('Invalid URL provided');
-    }
-
-    // Validate URL scheme for security
-    if (!url.startsWith('https://') && !url.startsWith('http://')) {
-      throw new Error('Only http/https URLs are allowed');
-    }
-
-    await shell.openExternal(url);
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// Aeris v2 upgrade banner — one-shot dismissal flag persisted in electron-store.
-ipcMain.handle('get-v2-banner-dismissed', () => {
-  return store.get('v2UpgradeBannerDismissed', false) === true;
-});
-
-ipcMain.handle('set-v2-banner-dismissed', (event, dismissed) => {
-  store.set('v2UpgradeBannerDismissed', dismissed === true);
-  return { success: true };
-});
-
 // Session Management Functions
 function createSessionSwitcher() {
   // Instead of creating a separate window, send event to main window to show overlay
