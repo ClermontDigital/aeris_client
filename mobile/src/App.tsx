@@ -31,7 +31,6 @@ import {BackHandler, StatusBar, Platform, View, Text, StyleSheet, TouchableOpaci
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {NavigationContainer} from '@react-navigation/native';
 import {activateKeepAwakeAsync} from 'expo-keep-awake';
-import * as NavigationBar from 'expo-navigation-bar';
 import {useFonts} from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import {useSettingsStore} from './stores/settingsStore';
@@ -227,10 +226,10 @@ const App: React.FC = () => {
         if (cancelled) return;
         await Promise.all([restoreCache(), initAppLock()]);
         if (cancelled) return;
-        if (Platform.OS === 'android') {
-          StatusBar.setHidden(true);
-          NavigationBar.setVisibilityAsync('hidden');
-        }
+        // No Android immersive — counter cashiers need the clock + battery
+        // visible at a glance, and a single swipe down briefly overlays the
+        // system bars over the toolbar, which reads worse than just leaving
+        // them up. iOS already keeps the bars by default.
       } catch (e) {
         // Async init failures shouldn't reach the ErrorBoundary
         // (it's render-only). Log + continue with whatever state landed.
@@ -385,14 +384,16 @@ const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        {/* StatusBar is hidden globally, but `barStyle="dark-content"` is
-            set defensively: if a future modal or OS-specific case ever
-            surfaces the status bar, the clock/battery text needs to be
-            DARK because the safe-area sides on the home chrome are now
-            cream (per the v1.3.45 self-contained pendant SVG). White
-            text on cream would be unreadable. Cost of being defensive
-            is zero — the prop is ignored while `hidden` is true. */}
-        <StatusBar hidden barStyle="dark-content" />
+        {/* iOS: status bar hidden globally to give the navy pendant + cream
+            safe-area sides a clean top edge. Android: keep the status bar
+            visible — counter cashiers need to see clock/battery, and the
+            immersive-then-swipe-down overlay reads worse than just leaving
+            it up.
+            `barStyle="dark-content"` is defensive (ignored while hidden,
+            but if any future modal flips visibility, the dark text reads
+            on the cream safe-area sides; white on cream would be unreadable
+            per the v1.3.45 pendant SVG redesign). */}
+        <StatusBar hidden={Platform.OS === 'ios'} barStyle="dark-content" />
         <NavigationContainer
           theme={{
             dark: true,

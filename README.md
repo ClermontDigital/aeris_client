@@ -46,7 +46,9 @@ npm run package:linux
 cd mobile
 npx expo start                                                 # dev server
 npm test                                                       # Jest
-eas build --platform ios --profile production --auto-submit    # TestFlight
+# iOS production builds run on Xcode Cloud (push to `release`).
+# Android production builds run in GitHub Actions
+# (.github/workflows/android-build.yml, workflow_dispatch or `mobile-v*` tag).
 
 # Archived v1 (security patches only)
 cd archive/desktop-v1
@@ -54,35 +56,35 @@ npm install
 npm run build:mac
 ```
 
-EAS Build for mobile must use `"image": "sdk-55"` in `eas.json`
-(Xcode 26.2 / Swift 6.2). Other Xcode versions fail.
-
 ## Release tagging
 
-CI is path-filtered and gated on tag prefixes. Tagging from `release`
-cuts a release for one app:
+CI is path-filtered and gated on tag prefixes:
 
 | Tag prefix             | Builds + ships                                    |
 |------------------------|---------------------------------------------------|
 | `client-vX.Y.Z`        | Aeris v2 desktop -> GitHub Releases (signed +    |
 |                        | notarised dmg/zip + nsis + AppImage/deb +        |
 |                        | electron-updater channel manifests)              |
-| `mobile-vX.Y.Z`        | mobile EAS build -> TestFlight (auto-submit) +   |
-|                        | Android EAS production build                     |
+| `mobile-vX.Y.Z`        | `android-build.yml` -> signed APK + AAB artifacts |
+|                        | (iOS uses its own Xcode Cloud trigger on the     |
+|                        | `release` branch push)                           |
 | `desktop-v1-vX.Y.Z`    | manual security-patch on archived v1             |
 
-Path-filtered jobs in `.github/workflows/build-release.yml` use
-`dorny/paths-filter` to scope work:
+Path-filtered jobs in `.github/workflows/build-release.yml`:
 
 - `client/**` or `shared/**` -> client tests + builds
-- `mobile/**` or `shared/**` -> mobile typecheck + tests + EAS builds
+- `mobile/**` or `shared/**` -> mobile typecheck + Jest (production
+  builds run on Xcode Cloud / `android-build.yml`, not here)
 - `archive/desktop-v1/**` -> v1 archive build (workflow_dispatch only)
 
 ## Required GitHub secrets
 
-`EXPO_TOKEN`, `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
-`APPLE_ID_PASS`, `APPLE_TEAM_ID`. Optional `WIN_CSC_LINK` /
-`WIN_CSC_KEY_PASSWORD` for Windows code-sign.
+Desktop: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASS`,
+`APPLE_TEAM_ID`. Optional `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`.
+
+Android: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Optional
+`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` for Play submission.
 
 ## Documentation
 

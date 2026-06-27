@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, useWindowDimensions} from 'react-native';
 import {COLORS, FONT_SIZE, FONT_FAMILY, SPACING, BORDER_RADIUS} from '../constants/theme';
 import {useHaptics} from '../hooks/useHaptics';
 
@@ -13,6 +13,11 @@ interface PinPadProps {
 const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
   const [pin, setPin] = useState('');
   const haptics = useHaptics();
+  // Shrink the keypad on short viewports (iPhone SE 3rd gen 667pt, 13 mini
+  // 812pt with biometric button) so the bottom row + Cancel never clip
+  // below the safe area. Tall phones / iPad keep the original 72×56 keys.
+  const {height: viewportHeight} = useWindowDimensions();
+  const compact = viewportHeight < 700;
 
   // Light haptic on every digit press — matches the system PIN UX on iOS
   // Settings and most banking apps. selection() is the lightest tick we
@@ -69,28 +74,33 @@ const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
           {error}
         </Text>
       )}
-      <View style={styles.grid}>
+      <View
+        style={[styles.grid, compact && styles.gridCompact]}>
         {digits.map((d, i) =>
           d === '' ? (
-            <View key={i} style={styles.emptyKey} importantForAccessibility="no" />
+            <View
+              key={i}
+              style={[styles.emptyKey, compact && styles.keyCompact]}
+              importantForAccessibility="no"
+            />
           ) : d === 'DEL' ? (
             <TouchableOpacity
               key={i}
-              style={styles.key}
+              style={[styles.key, compact && styles.keyCompact]}
               onPress={handleDelete}
               onLongPress={handleClear}
               accessibilityRole="button"
               accessibilityLabel="Delete last digit. Long press to clear PIN.">
-              <Text style={styles.keyText}>DEL</Text>
+              <Text style={[styles.keyText, compact && styles.keyTextCompact]}>DEL</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
               key={i}
-              style={styles.key}
+              style={[styles.key, compact && styles.keyCompact]}
               onPress={() => handleDigit(d)}
               accessibilityRole="button"
               accessibilityLabel={`Digit ${d}`}>
-              <Text style={styles.keyText}>{d}</Text>
+              <Text style={[styles.keyText, compact && styles.keyTextCompact]}>{d}</Text>
             </TouchableOpacity>
           ),
         )}
@@ -130,6 +140,7 @@ const styles = StyleSheet.create({
   dotFilled: {backgroundColor: COLORS.textOnDark},
   error: {color: COLORS.danger, fontSize: FONT_SIZE.md, marginBottom: SPACING.sm + 4},
   grid: {flexDirection: 'row', flexWrap: 'wrap', width: 240, justifyContent: 'center'},
+  gridCompact: {width: 216},
   key: {
     width: 72,
     height: 56,
@@ -141,8 +152,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
+  keyCompact: {width: 64, height: 48},
   emptyKey: {width: 72, height: 56, margin: 4},
   keyText: {fontSize: 22, fontFamily: FONT_FAMILY.medium, color: COLORS.textOnDark},
+  keyTextCompact: {fontSize: 20},
   cancelBtn: {marginTop: SPACING.md},
   cancelText: {color: COLORS.textOnDark, fontSize: FONT_SIZE.lg, textDecorationLine: 'underline'},
 });

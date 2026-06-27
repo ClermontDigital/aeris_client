@@ -159,15 +159,19 @@ export default function ProductDetailScreen() {
   }, [haptics, navigation]);
 
   // Surface the Back button in the shared brand header while focused.
-  // Identity-aware cleanup so a late blur can't clobber the next screen.
+  // NOTE: no cleanup. With react-native-screens v4 + native-stack the
+  // popped screen's blur fires BEFORE the revealed screen's focus on
+  // goBack(), so identity-matched cleanup races ahead and wipes the
+  // slot just as the next screen is about to install its own handler.
+  // The next focused screen always overwrites this slot anyway, and
+  // tab-root focus handlers null it when we return to a list.
   const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
-  const clearHeaderBack = useHeaderBackStore(s => s.clearIf);
   useFocusEffect(
     useCallback(() => {
       backFiredRef.current = false;
       setHeaderBack(handleBack);
-      return () => clearHeaderBack(handleBack);
-    }, [setHeaderBack, clearHeaderBack, handleBack]),
+      return undefined;
+    }, [setHeaderBack, handleBack]),
   );
 
   if (isLoading) {
