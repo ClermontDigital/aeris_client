@@ -26,6 +26,14 @@ function withFollyCoroutinesFix(config) {
   return withDangerousMod(config, [
     "ios",
     async (config) => {
+      // Defensive guard for Android-only prebuilds: even though the mod
+      // is registered for the "ios" slot, some @expo/config-plugins
+      // versions still walk the chain on Android prebuild and the
+      // Podfile path doesn't exist there. Bail early on non-iOS so
+      // `expo prebuild --platform android` doesn't crash on readFileSync.
+      if (config.modRequest.platform !== "ios") {
+        return config;
+      }
       const podfilePath = path.join(
         config.modRequest.platformProjectRoot,
         "Podfile"
