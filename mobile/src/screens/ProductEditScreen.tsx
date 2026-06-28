@@ -221,10 +221,16 @@ const ProductEditScreen: React.FC = () => {
             basePriceDollars: centsToDollarsString(detail.price_cents),
             costPriceDollars: centsToDollarsString(detail.cost_cents),
             taxRate: String(detail.tax_rate ?? 10),
-            // The Product type doesn't expose track_stock — infer from
-            // category presence + stock > 0 (a sensible default for edit).
-            // Server retains the original flag if we omit it from patch.
-            trackStock: detail.stock_on_hand > 0 || detail.stock_levels.length > 0,
+            // Prefer the server's own track_stock flag when present
+            // (ProductResource exposes it as a boolean). Fall back to a
+            // stock-derived heuristic on older deployments that omit the
+            // field. The old "infer from stock" branch was incorrectly
+            // turning the toggle OFF for products where tracking was on
+            // but stock currently sat at zero (e.g. all sold through).
+            trackStock:
+              typeof detail.track_stock === 'boolean'
+                ? detail.track_stock
+                : detail.stock_on_hand > 0 || detail.stock_levels.length > 0,
             stockOnHand: String(detail.stock_on_hand ?? 0),
             categoryId: detail.category_id,
           });
