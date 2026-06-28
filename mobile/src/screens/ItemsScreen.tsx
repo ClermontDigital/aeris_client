@@ -89,18 +89,9 @@ const ItemsScreen: React.FC = () => {
       scanNoticeTimerRef.current = null;
     }, 2500);
   }, []);
-  // Debounced auto-lookup: some BT HID scanners (Nexa portable, etc)
-  // don't send Enter as a terminator — they just type the barcode and
-  // stop. We detect the natural pause after typing finishes and try a
-  // barcode lookup automatically. Silent on miss (the live text search
-  // keeps showing results); only the explicit Enter/onSubmitEditing
-  // path surfaces a "Barcode X not found" banner.
-  const autoLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastAutoLookupRef = useRef<string>('');
   useEffect(
     () => () => {
       if (scanNoticeTimerRef.current) clearTimeout(scanNoticeTimerRef.current);
-      if (autoLookupTimerRef.current) clearTimeout(autoLookupTimerRef.current);
     },
     [],
   );
@@ -492,42 +483,7 @@ const ItemsScreen: React.FC = () => {
           ref={searchInputRef}
           style={styles.searchInput}
           value={search}
-          onChangeText={value => {
-            setSearch(value);
-            // Schedule a debounced silent lookup for buffers that look
-            // like a barcode. Catches BT scanners without an Enter
-            // terminator (Nexa portable etc).
-            if (autoLookupTimerRef.current) {
-              clearTimeout(autoLookupTimerRef.current);
-            }
-            const trimmed = value.trim();
-            if (
-              !isLikelyBarcode(trimmed) ||
-              trimmed === lastAutoLookupRef.current
-            ) {
-              return;
-            }
-            autoLookupTimerRef.current = setTimeout(async () => {
-              if (isBtScanning) return;
-              lastAutoLookupRef.current = trimmed;
-              setIsBtScanning(true);
-              try {
-                const product = await ApiClient.getProductByBarcode(trimmed);
-                if (product) {
-                  haptics.success();
-                  setSearch('');
-                  navigation.navigate('ProductDetail', {productId: product.id});
-                }
-                // Miss: silent. Live text search keeps its results in
-                // the list; user sees no banner unless they explicitly
-                // hit Enter (handled below).
-              } catch {
-                // Ignore — auto-lookups are best-effort.
-              } finally {
-                setIsBtScanning(false);
-              }
-            }, 250);
-          }}
+          onChangeText={setSearch}
           placeholder="Search items by name or SKU"
           placeholderTextColor={COLORS.inputPlaceholder}
           autoCapitalize="none"
@@ -535,10 +491,12 @@ const ItemsScreen: React.FC = () => {
           returnKeyType="search"
           onSubmitEditing={async () => {
             // Manual Enter from the on-screen keyboard OR end-of-scan
-            // CR from BT scanners that DO send a terminator.
-            if (autoLookupTimerRef.current) {
-              clearTimeout(autoLookupTimerRef.current);
-            }
+            // CR from BT scanners that DO send a terminator. We don't
+            // run a debounced auto-lookup on Items — the live text
+            // search already shows the matching item, the cashier
+            // taps it to navigate. Auto-navigating on every barcode-
+            // shape input made the screen feel like it was bouncing
+            // out from under the cashier.
             const trimmed = search.trim();
             if (!isLikelyBarcode(trimmed) || isBtScanning) return;
             setIsBtScanning(true);
