@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {
   COLORS,
@@ -162,49 +162,100 @@ export default function QuickSaleScreen() {
   // and if the buffer looks like a barcode, try a direct product lookup +
   // add-to-cart. Cache-first (instant), then fall back to the relay.
   const [isBtScanning, setIsBtScanning] = useState(false);
-  const handleSearchSubmit = useCallback(async () => {
-    const trimmed = searchQuery.trim();
-    if (!isLikelyBarcode(trimmed) || isBtScanning) return;
-    setIsBtScanning(true);
-    try {
-      let found: Product | null = null;
-      // Cache hit first — cheaper + instant for stocked SKUs the cashier
-      // sees most often.
-      const cacheHit = cachedProducts.find(
-        p => typeof p.barcode === 'string' && p.barcode === trimmed,
-      );
-      if (cacheHit) {
-        found = cacheHit;
-      } else {
-        const detail = await ApiClient.getProductByBarcode(trimmed);
-        if (detail) found = detail;
-      }
-      if (found) {
-        handleAddToCart(found);
-        setSearchQuery('');
-      } else {
-        haptics.error();
-        // Clear the buffer + reuse the stockNotice banner. Without this
-        // the screen would hold the scanned barcode in the search box
-        // and slide into the "No products match your search" empty
-        // state, which reads like the app is asking the cashier to
-        // create a new item.
-        setSearchQuery('');
-        if (stockNoticeTimerRef.current) {
-          clearTimeout(stockNoticeTimerRef.current);
+  // Lock the search bar's focus while the Sale screen is active so BT
+  // scanner keystrokes always land here. Without this, a TAB-terminated
+  // scan can drift focus elsewhere on the screen and the Enter that
+  // follows triggers the wrong action.
+  const searchInputRef = useRef<TextInput>(null);
+  useFocusEffect(
+    useCallback(() => {
+      const t = setTimeout(() => searchInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }, []),
+  );
+  // Debounced silent lookup for BT scanners that DON'T send Enter.
+  // Same pattern as Items: 250ms after the last keystroke, if the
+  // buffer is barcode-shape and we haven't already looked it up,
+  // try add-to-cart. Silent on miss; manual Enter still surfaces the
+  // "not found" banner.
+  const autoLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoLookupRef = useRef<string>('');
+  useEffect(
+    () => () => {
+      if (autoLookupTimerRef.current) clearTimeout(autoLookupTimerRef.current);
+    },
+    [],
+  );
+  const tryBarcodeLookup = useCallback(
+    async (
+      trimmed: string,
+      mode: 'auto' | 'manual',
+    ): Promise<void> => {
+      if (isBtScanning) return;
+      setIsBtScanning(true);
+      try {
+        let found: Product | null = null;
+        const cacheHit = cachedProducts.find(
+          p => typeof p.barcode === 'string' && p.barcode === trimmed,
+        );
+        if (cacheHit) {
+          found = cacheHit;
+        } else {
+          const detail = await ApiClient.getProductByBarcode(trimmed);
+          if (detail) found = detail;
         }
-        setStockNotice(`Barcode ${trimmed} not found.`);
-        stockNoticeTimerRef.current = setTimeout(() => {
-          setStockNotice(null);
-          stockNoticeTimerRef.current = null;
-        }, 2500);
+        if (found) {
+          handleAddToCart(found);
+          setSearchQuery('');
+        } else if (mode === 'manual') {
+          haptics.error();
+          setSearchQuery('');
+          if (stockNoticeTimerRef.current) {
+            clearTimeout(stockNoticeTimerRef.current);
+          }
+          setStockNotice(`Barcode ${trimmed} not found.`);
+          stockNoticeTimerRef.current = setTimeout(() => {
+            setStockNotice(null);
+            stockNoticeTimerRef.current = null;
+          }, 2500);
+        }
+        // Auto-mode miss is silent — live text search is already
+        // showing whatever cached match the cashier might want to
+        // tap manually.
+      } catch {
+        if (mode === 'manual') haptics.error();
+      } finally {
+        setIsBtScanning(false);
       }
-    } catch {
-      haptics.error();
-    } finally {
-      setIsBtScanning(false);
-    }
-  }, [searchQuery, isBtScanning, cachedProducts, handleAddToCart, haptics]);
+    },
+    [isBtScanning, cachedProducts, handleAddToCart, haptics],
+  );
+  const handleSearchSubmit = useCallback(async () => {
+    if (autoLookupTimerRef.current) clearTimeout(autoLookupTimerRef.current);
+    const trimmed = searchQuery.trim();
+    if (!isLikelyBarcode(trimmed)) return;
+    await tryBarcodeLookup(trimmed, 'manual');
+  }, [searchQuery, tryBarcodeLookup]);
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearchQuery(value);
+      if (autoLookupTimerRef.current) {
+        clearTimeout(autoLookupTimerRef.current);
+      }
+      const trimmed = value.trim();
+      if (
+        !isLikelyBarcode(trimmed) ||
+        trimmed === lastAutoLookupRef.current
+      ) {
+        return;
+      }
+      autoLookupTimerRef.current = setTimeout(() => {
+        lastAutoLookupRef.current = trimmed;
+        tryBarcodeLookup(trimmed, 'auto');
+      }, 250);
+    },
+    [tryBarcodeLookup],
+  );
 
   // Clean up the auto-dismiss timer on unmount so a tap-then-leave doesn't
   // setState on an unmounted component.
@@ -359,11 +410,12 @@ export default function QuickSaleScreen() {
           style={styles.searchIcon}
         />
         <TextInput
+          ref={searchInputRef}
           style={styles.searchInput}
           placeholder="Search products..."
           placeholderTextColor={COLORS.inputPlaceholder}
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={handleSearchChange}
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="search"

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {
   COLORS,
@@ -89,9 +89,18 @@ const ItemsScreen: React.FC = () => {
       scanNoticeTimerRef.current = null;
     }, 2500);
   }, []);
+  // Debounced auto-lookup: some BT HID scanners (Nexa portable, etc)
+  // don't send Enter as a terminator — they just type the barcode and
+  // stop. We detect the natural pause after typing finishes and try a
+  // barcode lookup automatically. Silent on miss (the live text search
+  // keeps showing results); only the explicit Enter/onSubmitEditing
+  // path surfaces a "Barcode X not found" banner.
+  const autoLookupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoLookupRef = useRef<string>('');
   useEffect(
     () => () => {
       if (scanNoticeTimerRef.current) clearTimeout(scanNoticeTimerRef.current);
+      if (autoLookupTimerRef.current) clearTimeout(autoLookupTimerRef.current);
     },
     [],
   );
@@ -109,6 +118,19 @@ const ItemsScreen: React.FC = () => {
   // Tracks the latest in-flight request key so out-of-order responses
   // (e.g. user types fast) don't clobber a newer query with stale data.
   const requestSeq = useRef(0);
+  // Lock the search bar's focus while the screen is active so BT-scanner
+  // HID keystrokes (which the OS routes to the focused TextInput) always
+  // land in the search box rather than drifting to whichever Touchable
+  // last received focus. Without this, a TAB-terminated scan from a
+  // Nexa-class scanner can shift focus to the "New item" pill in the
+  // header and the trailing Enter triggers the wrong navigation.
+  const searchInputRef = useRef<TextInput>(null);
+  useFocusEffect(
+    useCallback(() => {
+      const t = setTimeout(() => searchInputRef.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }, []),
+  );
 
   const fetchPage = useCallback(
     async (pageNum: number, append: boolean, searchQuery: string) => {
@@ -187,22 +209,33 @@ const ItemsScreen: React.FC = () => {
     // coalesced at the selector boundary, but the for-of loop below
     // would throw "undefined is not iterable" if either source were
     // ever falsy — keeping the screen render-safe is cheap insurance.
-    const source = cacheReady
-      ? (Array.isArray(cachedProducts) ? cachedProducts : [])
-      : (Array.isArray(items) ? items : []);
-    let lowStock = 0;
-    let outOfStock = 0;
-    for (const it of source) {
-      if (it.stock_on_hand === 0) outOfStock += 1;
-      else if (it.stock_on_hand < LOW_STOCK_THRESHOLD) lowStock += 1;
+    let lowStock: number | null = null;
+    let outOfStock: number | null = null;
+    if (cacheReady) {
+      const source = Array.isArray(cachedProducts) ? cachedProducts : [];
+      let low = 0;
+      let out = 0;
+      for (const it of source) {
+        if (it.stock_on_hand === 0) out += 1;
+        else if (it.stock_on_hand < LOW_STOCK_THRESHOLD) low += 1;
+      }
+      lowStock = low;
+      outOfStock = out;
     }
+    // When the catalog cache hasn't synced yet (large workspace, slow
+    // network, or sync still in flight) we DON'T fall back to counting
+    // the loaded paginated pages — a 43k-product catalog with only the
+    // first page loaded would surface low/out stats based on ~50 items
+    // and read as totally wrong (e.g. "Low 4 / Out 12" instead of the
+    // real four-figure counts). Returning null surfaces an em-dash so
+    // the operator knows the number is pending rather than authoritative.
     // Prefer the server-side meta.total over the cache length for "Total"
     // unless we have a fresher cache (e.g. user added items elsewhere and
     // the cache caught it but the relay paginator is still serving stale).
     const total =
       totalCount > 0 ? totalCount : cacheReady ? cachedProducts.length : 0;
     return {total, lowStock, outOfStock};
-  }, [cacheReady, cachedProducts, items, totalCount]);
+  }, [cacheReady, cachedProducts, totalCount]);
 
   // Kick off a catalog sync on first mount if the cache is empty. This
   // populates the tile counts within a few seconds of the screen
@@ -397,8 +430,9 @@ const ItemsScreen: React.FC = () => {
 
       {(() => {
         const totalStr = String(stats.total);
-        const lowStr = String(stats.lowStock);
-        const outStr = String(stats.outOfStock);
+        const lowStr = stats.lowStock === null ? '—' : String(stats.lowStock);
+        const outStr =
+          stats.outOfStock === null ? '—' : String(stats.outOfStock);
         const fs = pickStatRowFontSize([totalStr, lowStr, outStr]);
         return (
           <View style={[styles.statsStrip, tabletColumnCap]}>
@@ -424,7 +458,7 @@ const ItemsScreen: React.FC = () => {
                 label="Low stock"
                 value={lowStr}
                 icon="alert-circle-outline"
-                tone={stats.lowStock > 0 ? 'warning' : 'default'}
+                tone={(stats.lowStock ?? 0) > 0 ? 'warning' : 'default'}
                 valueFontSize={fs}
                 onPress={() => toggleFilter('low')}
               />
@@ -438,7 +472,7 @@ const ItemsScreen: React.FC = () => {
                 label="Out"
                 value={outStr}
                 icon="close-circle-outline"
-                tone={stats.outOfStock > 0 ? 'danger' : 'default'}
+                tone={(stats.outOfStock ?? 0) > 0 ? 'danger' : 'default'}
                 valueFontSize={fs}
                 onPress={() => toggleFilter('out')}
               />
@@ -455,18 +489,56 @@ const ItemsScreen: React.FC = () => {
           style={styles.searchIcon}
         />
         <TextInput
+          ref={searchInputRef}
           style={styles.searchInput}
           value={search}
-          onChangeText={setSearch}
+          onChangeText={value => {
+            setSearch(value);
+            // Schedule a debounced silent lookup for buffers that look
+            // like a barcode. Catches BT scanners without an Enter
+            // terminator (Nexa portable etc).
+            if (autoLookupTimerRef.current) {
+              clearTimeout(autoLookupTimerRef.current);
+            }
+            const trimmed = value.trim();
+            if (
+              !isLikelyBarcode(trimmed) ||
+              trimmed === lastAutoLookupRef.current
+            ) {
+              return;
+            }
+            autoLookupTimerRef.current = setTimeout(async () => {
+              if (isBtScanning) return;
+              lastAutoLookupRef.current = trimmed;
+              setIsBtScanning(true);
+              try {
+                const product = await ApiClient.getProductByBarcode(trimmed);
+                if (product) {
+                  haptics.success();
+                  setSearch('');
+                  navigation.navigate('ProductDetail', {productId: product.id});
+                }
+                // Miss: silent. Live text search keeps its results in
+                // the list; user sees no banner unless they explicitly
+                // hit Enter (handled below).
+              } catch {
+                // Ignore — auto-lookups are best-effort.
+              } finally {
+                setIsBtScanning(false);
+              }
+            }, 250);
+          }}
           placeholder="Search items by name or SKU"
           placeholderTextColor={COLORS.inputPlaceholder}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
           onSubmitEditing={async () => {
-            // BT scanner end-of-scan: a CR/Enter delivered after a fast
-            // burst of characters. Same handler also fires when the user
-            // hits the on-screen Return key.
+            // Manual Enter from the on-screen keyboard OR end-of-scan
+            // CR from BT scanners that DO send a terminator.
+            if (autoLookupTimerRef.current) {
+              clearTimeout(autoLookupTimerRef.current);
+            }
             const trimmed = search.trim();
             if (!isLikelyBarcode(trimmed) || isBtScanning) return;
             setIsBtScanning(true);
@@ -477,12 +549,8 @@ const ItemsScreen: React.FC = () => {
                 setSearch('');
                 navigation.navigate('ProductDetail', {productId: product.id});
               } else {
-                // Clear the buffer + flash a transient notice so the
-                // previous list stays visible. Without this the screen
-                // would hold the scanned barcode in the search box and
-                // surface the "No items match your search" empty state,
-                // which reads like the app is prompting the cashier to
-                // add a new item.
+                // Explicit submit miss — clear + warn so the cashier
+                // knows the scan landed but produced no match.
                 haptics.error();
                 setSearch('');
                 flashScanNotice(`Barcode ${trimmed} not found`);
