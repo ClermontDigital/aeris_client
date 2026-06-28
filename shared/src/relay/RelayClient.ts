@@ -541,15 +541,26 @@ export class RelayClient {
     // server filter ships, with no mobile push needed.
     product_id?: number;
   }): Promise<PaginatedResponse<Sale>> {
+    const page = params?.page ?? 1;
+    const perPage = params?.per_page ?? 20;
     return withReadRetry(async () => {
-      const raw = await this.relayRpc<PaginatedResponse<unknown>>(
-        RELAY_ACTIONS.TRANSACTIONS_LIST,
-        params || {},
-      );
-      return {
-        ...raw,
-        data: (raw.data || []).map(normalizeSale),
-      };
+      try {
+        const raw = await this.relayRpc<PaginatedResponse<unknown>>(
+          RELAY_ACTIONS.TRANSACTIONS_LIST,
+          params || {},
+        );
+        return {
+          ...raw,
+          data: (raw.data || []).map(normalizeSale),
+        };
+      } catch (e) {
+        // Server returns NOT_FOUND when there are no transactions matching
+        // the filter (rather than `{data: [], meta: {total: 0}}`). Treat
+        // it as an empty page so a fresh install / unfiltered "no sales
+        // yet" surfaces the empty-state UI instead of a server error.
+        if (isNotFound(e, 'relay')) return emptyPage<Sale>(page, perPage);
+        throw e;
+      }
     });
   }
 

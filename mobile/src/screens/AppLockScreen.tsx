@@ -25,6 +25,7 @@ import {useAppLockStore} from '../stores/appLockStore';
 import {useAuthStore} from '../stores/authStore';
 import AppLockService from '../services/AppLockService';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 
 const MAX_ATTEMPTS = 5;
@@ -41,8 +42,12 @@ const AppLockScreen: React.FC = () => {
   // shrinks via PinPad's own breakpoint; here we tighten the brand
   // margin so the lock layout still reads as space-between on tall
   // phones without forcing the keypad / sign-out off the safe area.
+  // Tablet: center the stack vertically (brand → keypad → bio →
+  // attempts) rather than space-between, otherwise on a tall portrait
+  // the keypad anchors near the bottom edge.
   const {height: viewportHeight} = useWindowDimensions();
-  const compact = viewportHeight < 700;
+  const {isTablet} = useResponsiveLayout();
+  const compact = !isTablet && viewportHeight < 700;
 
   const [error, setError] = useState<string | undefined>(undefined);
   const [biometricLabel, setBiometricLabel] = useState('Use Biometrics');
@@ -163,7 +168,10 @@ const AppLockScreen: React.FC = () => {
           + space-between keeps everything centered. On SE-class it lets
           the keypad and sign-out cleanly absorb without clipping. */}
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && styles.scrollContentTablet,
+        ]}
         bounces={false}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
@@ -222,6 +230,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: SPACING.lg,
+  },
+  scrollContentTablet: {
+    justifyContent: 'center',
+    paddingTop: SPACING.xl,
+    gap: SPACING.xl,
   },
   signOutBtn: {
     position: 'absolute',
