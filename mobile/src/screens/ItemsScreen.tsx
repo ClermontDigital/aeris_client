@@ -74,9 +74,27 @@ const ItemsScreen: React.FC = () => {
   // Bluetooth HID barcode scanners type their scan into whatever
   // TextInput is focused, then send Enter. We intercept onSubmitEditing
   // and if the buffer looks like a barcode, try a direct product
-  // lookup → ProductDetail. If it's not a barcode (or no match) we
-  // leave it to fall through to the live text search.
+  // lookup → ProductDetail. On miss we clear the buffer + flash a
+  // dismissable "Barcode X not found" notice so the previous list
+  // stays visible instead of the screen sliding into an empty-state
+  // that looks like a prompt to create a new item.
   const [isBtScanning, setIsBtScanning] = useState(false);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const scanNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashScanNotice = useCallback((msg: string) => {
+    if (scanNoticeTimerRef.current) clearTimeout(scanNoticeTimerRef.current);
+    setScanNotice(msg);
+    scanNoticeTimerRef.current = setTimeout(() => {
+      setScanNotice(null);
+      scanNoticeTimerRef.current = null;
+    }, 2500);
+  }, []);
+  useEffect(
+    () => () => {
+      if (scanNoticeTimerRef.current) clearTimeout(scanNoticeTimerRef.current);
+    },
+    [],
+  );
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [items, setItems] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
@@ -459,9 +477,15 @@ const ItemsScreen: React.FC = () => {
                 setSearch('');
                 navigation.navigate('ProductDetail', {productId: product.id});
               } else {
-                // No barcode match — leave the buffer as-is so the
-                // already-running live text search keeps its results.
+                // Clear the buffer + flash a transient notice so the
+                // previous list stays visible. Without this the screen
+                // would hold the scanned barcode in the search box and
+                // surface the "No items match your search" empty state,
+                // which reads like the app is prompting the cashier to
+                // add a new item.
                 haptics.error();
+                setSearch('');
+                flashScanNotice(`Barcode ${trimmed} not found`);
               }
             } catch {
               haptics.error();
@@ -502,6 +526,16 @@ const ItemsScreen: React.FC = () => {
             message={error}
             onRetry={() => fetchPage(1, false, search)}
             onDismiss={() => setError(null)}
+          />
+        </View>
+      ) : null}
+
+      {scanNotice ? (
+        <View style={[styles.bannerWrap, tabletColumnCap]}>
+          <ErrorBanner
+            message={scanNotice}
+            tone="warning"
+            onDismiss={() => setScanNotice(null)}
           />
         </View>
       ) : null}
