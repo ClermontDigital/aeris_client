@@ -74,11 +74,24 @@ export function normalizeProductDetail(input: unknown): ProductDetail {
   const stockLevels = Array.isArray(raw.stock_levels)
     ? (raw.stock_levels as ProductDetail['stock_levels'])
     : [];
+  // Pull track_stock from the server when it's actually included on the
+  // wire (Aeris2 ProductResource exposes it as a boolean). Server may
+  // also send numeric 1/0 (older deployments / direct DB pass-through) —
+  // coerce via Boolean() so both shapes land as a real bool. Leave
+  // undefined when the server omits it so ProductEdit's stock-heuristic
+  // fallback can run instead of mis-claiming `false`.
+  const trackStock =
+    typeof raw.track_stock === 'boolean'
+      ? raw.track_stock
+      : typeof raw.track_stock === 'number'
+        ? Boolean(raw.track_stock)
+        : undefined;
   return {
     ...base,
     description: typeof raw.description === 'string' ? raw.description : null,
     cost_cents: pickCentsOrNull(raw, 'cost_cents', 'cost_price'),
     stock_levels: stockLevels,
     variants,
+    ...(trackStock !== undefined ? {track_stock: trackStock} : {}),
   };
 }

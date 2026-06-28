@@ -66,6 +66,11 @@ export interface ProductDetail extends Product {
   cost_cents: number | null;
   stock_levels: StockLevel[];
   variants: ProductVariant[];
+  // Server-side track_stock flag (Aeris2 Product::track_stock column).
+  // Optional because older server versions may not surface it on the read
+  // payload; ProductEdit falls back to a stock-derived heuristic when
+  // undefined. When present, this is the source of truth.
+  track_stock?: boolean;
 }
 
 export interface StockLevel {
