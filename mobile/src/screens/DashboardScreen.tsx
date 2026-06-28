@@ -13,6 +13,7 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import Icon from '../components/Icon';
 import ApiClient from '../services/ApiClient';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import type {DailySummary, Sale} from '../types/api.types';
 import type {AppTabParamList} from '../types/navigation.types';
 import {
@@ -217,6 +218,16 @@ const DashboardScreen: React.FC = () => {
     fetchSummary();
   }, [fetchSummary]);
 
+  // Tab root: null the shared brand-header back slot on focus so a stale
+  // handler left over by ProductDetail / ProductEdit doesn't bleed through
+  // onto Dashboard. Detail/Edit deliberately don't clean up their slot
+  // install (v1.3.70 race fix); each tab root owns its own clear.
+  useFocusEffect(
+    useCallback(() => {
+      useHeaderBackStore.getState().clearOnBack();
+      return undefined;
+    }, []),
+  );
   // Refetch when the Dashboard tab regains focus — covers the case where the
   // user just completed a sale on QuickSale/Checkout and tabs back here. The
   // first focus right after mount overlaps with the initial fetch above; the

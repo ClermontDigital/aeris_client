@@ -25,6 +25,7 @@ import {
 import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
 import {useProductCacheStore} from '../stores/productCacheStore';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import ApiClient from '../services/ApiClient';
@@ -162,15 +163,19 @@ export default function QuickSaleScreen() {
   // and if the buffer looks like a barcode, try a direct product lookup +
   // add-to-cart. Cache-first (instant), then fall back to the relay.
   const [isBtScanning, setIsBtScanning] = useState(false);
-  // Lock the search bar's focus while the Sale screen is active so BT
-  // scanner keystrokes always land here. Without this, a TAB-terminated
-  // scan can drift focus elsewhere on the screen and the Enter that
-  // follows triggers the wrong action.
+  // Search input ref — focused on demand (cashier taps once per
+  // session), NOT auto-focused on every screen focus. Auto-focus
+  // raised the soft keyboard on every tab switch / return from Cart
+  // / return from Scanner, which was a worse UX than the BT-scanner
+  // focus drift it was solving.
   const searchInputRef = useRef<TextInput>(null);
+  // Tab root: null the shared brand-header back slot on focus so a
+  // stale handler left over by ProductDetail / ProductEdit doesn't
+  // bleed through onto the Sale grid.
   useFocusEffect(
     useCallback(() => {
-      const t = setTimeout(() => searchInputRef.current?.focus(), 120);
-      return () => clearTimeout(t);
+      useHeaderBackStore.getState().clearOnBack();
+      return undefined;
     }, []),
   );
   // Debounced silent lookup for BT scanners that DON'T send Enter.
