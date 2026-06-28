@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, useWindowDimensions} from 'react-native';
 import {COLORS, FONT_SIZE, FONT_FAMILY, SPACING, BORDER_RADIUS} from '../constants/theme';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 
 interface PinPadProps {
   title: string;
@@ -13,11 +14,14 @@ interface PinPadProps {
 const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
   const [pin, setPin] = useState('');
   const haptics = useHaptics();
-  // Shrink the keypad on short viewports (iPhone SE 3rd gen 667pt, 13 mini
-  // 812pt with biometric button) so the bottom row + Cancel never clip
-  // below the safe area. Tall phones / iPad keep the original 72×56 keys.
+  // Three size buckets:
+  //   compact — short viewports (iPhone SE 667pt, 13 mini 812pt with bio)
+  //   tablet  — width >= 600 (Galaxy Tab, iPad portrait/landscape)
+  //   regular — everything else (default phone)
+  // Tablet wins over compact (tablets are never < 700pt tall).
   const {height: viewportHeight} = useWindowDimensions();
-  const compact = viewportHeight < 700;
+  const {isTablet} = useResponsiveLayout();
+  const compact = !isTablet && viewportHeight < 700;
 
   // Light haptic on every digit press — matches the system PIN UX on iOS
   // Settings and most banking apps. selection() is the lightest tick we
@@ -54,53 +58,72 @@ const PinPad: React.FC<PinPadProps> = ({title, onSubmit, onCancel, error}) => {
 
   const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'DEL'];
 
+  const keyStyle = isTablet
+    ? styles.keyTablet
+    : compact
+      ? styles.keyCompact
+      : null;
+  const keyTextStyle = isTablet
+    ? styles.keyTextTablet
+    : compact
+      ? styles.keyTextCompact
+      : null;
+  const gridStyle = isTablet
+    ? styles.gridTablet
+    : compact
+      ? styles.gridCompact
+      : null;
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
+      style={[styles.container, isTablet && styles.containerTablet]}>
+      <Text style={[styles.title, isTablet && styles.titleTablet]}>{title}</Text>
       {/* Dots indicator is a status, not a button — give VoiceOver a
           meaningful read-out of progress instead of letting it read each
           dot individually as "empty view". */}
       <View
-        style={styles.dotsRow}
+        style={[styles.dotsRow, isTablet && styles.dotsRowTablet]}
         accessible
         accessibilityRole="text"
         accessibilityLabel={`PIN entry, ${pin.length} of 4 digits entered`}>
-        {dots}
+        {dots.map((dot, i) =>
+          React.cloneElement(dot, {
+            style: [styles.dot, isTablet && styles.dotTablet, i < pin.length && styles.dotFilled],
+          }),
+        )}
       </View>
       {error && (
         <Text style={styles.error} accessibilityLiveRegion="polite">
           {error}
         </Text>
       )}
-      <View
-        style={[styles.grid, compact && styles.gridCompact]}>
+      <View style={[styles.grid, gridStyle]}>
         {digits.map((d, i) =>
           d === '' ? (
             <View
               key={i}
-              style={[styles.emptyKey, compact && styles.keyCompact]}
+              style={[styles.emptyKey, keyStyle]}
               importantForAccessibility="no"
             />
           ) : d === 'DEL' ? (
             <TouchableOpacity
               key={i}
-              style={[styles.key, compact && styles.keyCompact]}
+              style={[styles.key, keyStyle]}
               onPress={handleDelete}
               onLongPress={handleClear}
               accessibilityRole="button"
               accessibilityLabel="Delete last digit. Long press to clear PIN.">
-              <Text style={[styles.keyText, compact && styles.keyTextCompact]}>DEL</Text>
+              <Text style={[styles.keyText, keyTextStyle]}>DEL</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
               key={i}
-              style={[styles.key, compact && styles.keyCompact]}
+              style={[styles.key, keyStyle]}
               onPress={() => handleDigit(d)}
               accessibilityRole="button"
               accessibilityLabel={`Digit ${d}`}>
-              <Text style={[styles.keyText, compact && styles.keyTextCompact]}>{d}</Text>
+              <Text style={[styles.keyText, keyTextStyle]}>{d}</Text>
             </TouchableOpacity>
           ),
         )}
@@ -128,8 +151,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.navy,
     borderRadius: BORDER_RADIUS.xl,
   },
+  containerTablet: {padding: SPACING.xl},
   title: {fontSize: FONT_SIZE.xl, fontFamily: FONT_FAMILY.medium, color: COLORS.textOnDark, marginBottom: SPACING.lg},
+  titleTablet: {fontSize: FONT_SIZE.display, marginBottom: SPACING.xl},
   dotsRow: {flexDirection: 'row', gap: SPACING.md, marginBottom: SPACING.sm + 4},
+  dotsRowTablet: {gap: SPACING.lg, marginBottom: SPACING.lg},
   dot: {
     width: 18,
     height: 18,
@@ -137,10 +163,12 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.textOnDark,
   },
+  dotTablet: {width: 24, height: 24, borderRadius: 12, borderWidth: 2},
   dotFilled: {backgroundColor: COLORS.textOnDark},
   error: {color: COLORS.danger, fontSize: FONT_SIZE.md, marginBottom: SPACING.sm + 4},
   grid: {flexDirection: 'row', flexWrap: 'wrap', width: 240, justifyContent: 'center'},
   gridCompact: {width: 216},
+  gridTablet: {width: 360},
   key: {
     width: 72,
     height: 56,
@@ -153,9 +181,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   keyCompact: {width: 64, height: 48},
+  keyTablet: {width: 108, height: 84, margin: 6, borderRadius: BORDER_RADIUS.lg},
   emptyKey: {width: 72, height: 56, margin: 4},
   keyText: {fontSize: 22, fontFamily: FONT_FAMILY.medium, color: COLORS.textOnDark},
   keyTextCompact: {fontSize: 20},
+  keyTextTablet: {fontSize: 32},
   cancelBtn: {marginTop: SPACING.md},
   cancelText: {color: COLORS.textOnDark, fontSize: FONT_SIZE.lg, textDecorationLine: 'underline'},
 });
