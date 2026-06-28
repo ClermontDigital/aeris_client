@@ -11,21 +11,32 @@ import {create} from 'zustand';
 // can't see routes nested inside the tab stacks. The focused screen knows its
 // own state and pushes the handler here; the chrome reads from it.
 //
-// Ownership discipline: cleanup is identity-aware (`clearIf`). When two
-// registering screens are adjacent in a stack (detail -> edit), React
-// Navigation's blur(old)/focus(new) ordering means the new screen may register
-// before the old one's cleanup runs; an unconditional clear would then wipe the
-// freshly-registered handler. clearIf only nulls the slot if it still holds the
-// caller's own handler, so a late blur-cleanup can't clobber the active screen.
+// Ownership discipline:
+//   - setOnBack: drill-down screen (ProductDetail, ProductEdit) registers
+//     on focus. NO cleanup on blur (the v1.3.70 fix), because with
+//     react-native-screens v4 the popped screen's blur fires BEFORE the
+//     revealed screen's focus on goBack(), so an unconditional cleanup
+//     wipes the slot just as Detail re-installs its own handler.
+//   - clearIf: identity-matched conditional clear. Kept for completeness
+//     but no longer called from anywhere — left in case a future screen
+//     wants the old "clear if it's still mine" semantic.
+//   - clearOnBack: unconditional null. Called by tab roots from their
+//     own useFocusEffect so that navigating back to a tab root (Items,
+//     QuickSale, Customers, Transactions, Dashboard, ERP) wipes any
+//     handler a detail screen left behind. Without this, the slot leaks
+//     forever the first time a user enters Detail/Edit and a stale Back
+//     button shows on every subsequent screen.
 interface HeaderBackState {
   onBack: (() => void) | null;
   setOnBack: (fn: () => void) => void;
+  clearOnBack: () => void;
   clearIf: (fn: () => void) => void;
 }
 
 export const useHeaderBackStore = create<HeaderBackState>((set, get) => ({
   onBack: null,
   setOnBack: (fn: () => void) => set({onBack: fn}),
+  clearOnBack: () => set({onBack: null}),
   clearIf: (fn: () => void) => {
     if (get().onBack === fn) set({onBack: null});
   },

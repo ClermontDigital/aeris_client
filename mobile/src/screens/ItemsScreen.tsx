@@ -25,6 +25,7 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useProductCacheStore} from '../stores/productCacheStore';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import type {Product} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
@@ -109,17 +110,20 @@ const ItemsScreen: React.FC = () => {
   // Tracks the latest in-flight request key so out-of-order responses
   // (e.g. user types fast) don't clobber a newer query with stale data.
   const requestSeq = useRef(0);
-  // Lock the search bar's focus while the screen is active so BT-scanner
-  // HID keystrokes (which the OS routes to the focused TextInput) always
-  // land in the search box rather than drifting to whichever Touchable
-  // last received focus. Without this, a TAB-terminated scan from a
-  // Nexa-class scanner can shift focus to the "New item" pill in the
-  // header and the trailing Enter triggers the wrong navigation.
+  // Search input ref — used to focus on demand (e.g. via the inline
+  // scan button), NOT auto-focused on every screen focus. Auto-focusing
+  // pops the on-screen keyboard every time the user lands on this tab
+  // (incl. returning from ProductDetail / Sale → Cart) which is a
+  // worse UX than the BT-scanner-loses-focus edge case it was solving.
+  // For BT scanners the cashier taps the search bar once per session.
   const searchInputRef = useRef<TextInput>(null);
+  // Tab root: null the shared brand-header back slot on focus so a
+  // stale handler left over by ProductDetail / ProductEdit doesn't
+  // bleed through onto the Items list.
   useFocusEffect(
     useCallback(() => {
-      const t = setTimeout(() => searchInputRef.current?.focus(), 120);
-      return () => clearTimeout(t);
+      useHeaderBackStore.getState().clearOnBack();
+      return undefined;
     }, []),
   );
 

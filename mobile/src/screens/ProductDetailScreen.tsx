@@ -159,13 +159,17 @@ export default function ProductDetailScreen() {
   }, [haptics, navigation]);
 
   // Surface the Back button in the shared brand header while focused.
-  // NOTE: no cleanup. With react-native-screens v4 + native-stack the
-  // popped screen's blur fires BEFORE the revealed screen's focus on
-  // goBack(), so identity-matched cleanup races ahead and wipes the
-  // slot just as the next screen is about to install its own handler.
-  // The next focused screen always overwrites this slot anyway, and
-  // tab-root focus handlers null it when we return to a list.
+  // NO cleanup on useFocusEffect — with react-native-screens v4 + native-
+  // stack the popped screen's blur fires BEFORE the revealed screen's
+  // focus on goBack(), so identity-matched cleanup races ahead and wipes
+  // the slot just as the next screen is about to install its own
+  // handler. Instead, beforeRemove (below) handles the slot cleanup
+  // when this screen is actually being removed from the stack, which
+  // fires after the transition has settled and after the next screen's
+  // focus has installed its own handler. clearIf is identity-matched so
+  // we never accidentally wipe the next screen's handler.
   const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
+  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
   useFocusEffect(
     useCallback(() => {
       backFiredRef.current = false;
@@ -173,6 +177,12 @@ export default function ProductDetailScreen() {
       return undefined;
     }, [setHeaderBack, handleBack]),
   );
+  useEffect(() => {
+    const sub = navigation.addListener('beforeRemove', () => {
+      clearHeaderBackIf(handleBack);
+    });
+    return sub;
+  }, [navigation, clearHeaderBackIf, handleBack]);
 
   if (isLoading) {
     return (

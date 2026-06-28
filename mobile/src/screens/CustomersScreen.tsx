@@ -23,6 +23,7 @@ import {
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {Customer} from '../types/api.types';
 import type {CustomersStackParamList} from '../types/navigation.types';
@@ -101,6 +102,15 @@ const CustomersScreen: React.FC = () => {
     fetchPage(1, false);
   }, [fetchPage]);
 
+  // Tab root: null the shared brand-header back slot on focus so a
+  // stale handler left over by ProductDetail / ProductEdit doesn't
+  // bleed through onto Customers.
+  useFocusEffect(
+    useCallback(() => {
+      useHeaderBackStore.getState().clearOnBack();
+      return undefined;
+    }, []),
+  );
   // Refresh on focus so the list re-pulls after CustomerEdit (create or
   // delete). The empty-deps Effect above covers the initial mount; this
   // useFocusEffect kicks in on every subsequent return-to-list. We don't

@@ -108,15 +108,17 @@ const ProductEditScreen: React.FC = () => {
   const haptics = useHaptics();
   const {isTablet} = useResponsiveLayout();
 
-  // Surface a Back button in the shared brand header while focused. NOTE:
-  // no cleanup. With react-native-screens v4 + native-stack, the popped
-  // screen's blur fires BEFORE the revealed screen's focus on goBack(),
-  // so an identity-matched cleanup here wipes the slot just as
-  // ProductDetail is about to re-install its own handler — chrome's
-  // first paint after goBack() then shows no Back button (the v1.3.69
-  // regression). The next focused screen always overwrites the slot;
-  // tab-root focus handlers null it when returning to a list.
+  // Surface a Back button in the shared brand header while focused. NO
+  // cleanup on useFocusEffect — with react-native-screens v4 + native-
+  // stack, the popped screen's blur fires BEFORE the revealed screen's
+  // focus on goBack(), so identity-matched cleanup wipes the slot just
+  // as ProductDetail is about to re-install its own handler (the v1.3.69
+  // regression). Instead, beforeRemove (below) cleans up after the
+  // transition has settled and the next screen has installed its own
+  // handler. clearIf is identity-matched so we never accidentally wipe
+  // ProductDetail's freshly-installed handler.
   const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
+  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
   const handleHeaderBack = useCallback(() => {
     haptics.light();
     navigation.goBack();
@@ -127,6 +129,12 @@ const ProductEditScreen: React.FC = () => {
       return undefined;
     }, [setHeaderBack, handleHeaderBack]),
   );
+  useEffect(() => {
+    const sub = navigation.addListener('beforeRemove', () => {
+      clearHeaderBackIf(handleHeaderBack);
+    });
+    return sub;
+  }, [navigation, clearHeaderBackIf, handleHeaderBack]);
   const formCap = isTablet
     ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
     : null;

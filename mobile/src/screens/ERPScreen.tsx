@@ -1,6 +1,7 @@
 import React, {useState, useEffect, useCallback} from 'react';
 import {View, StyleSheet, BackHandler, Platform} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
 import type {WebViewNavigation} from 'react-native-webview';
 import Toolbar from '../components/Toolbar';
 import WebViewContainer from '../components/WebViewContainer';
@@ -9,6 +10,7 @@ import OfflineBanner from '../components/OfflineBanner';
 import EmptyState from '../components/EmptyState';
 import SettingsModal from './SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useAuthStore} from '../stores/authStore';
 import {useWebView} from '../hooks/useWebView';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
@@ -22,6 +24,16 @@ const ERPScreen: React.FC = () => {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const webView = useWebView();
   const networkStatus = useNetworkStatus(baseUrl);
+
+  // Tab root: null the shared brand-header back slot on focus so a
+  // stale handler left over by ProductDetail / ProductEdit doesn't
+  // bleed through onto the ERP webview.
+  useFocusEffect(
+    useCallback(() => {
+      useHeaderBackStore.getState().clearOnBack();
+      return undefined;
+    }, []),
+  );
 
   const [backPressCount, setBackPressCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);

@@ -9,7 +9,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
@@ -23,6 +23,7 @@ import {
   SHADOW,
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import EmptyState from '../components/EmptyState';
@@ -92,6 +93,16 @@ export default function TransactionListScreen() {
   const tabletColumnCap = isTablet
     ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
     : null;
+
+  // Tab root: null the shared brand-header back slot on focus so a
+  // stale handler left over by ProductDetail / ProductEdit doesn't
+  // bleed through onto the Transactions list.
+  useFocusEffect(
+    useCallback(() => {
+      useHeaderBackStore.getState().clearOnBack();
+      return undefined;
+    }, []),
+  );
 
   const [transactions, setTransactions] = useState<Sale[]>([]);
   // Default to 'all' so the screen renders populated on first open. Filters
