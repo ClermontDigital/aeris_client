@@ -95,13 +95,22 @@ const BarcodeScannerScreen: React.FC = () => {
   // 'telephoto-camera']` requests "give me everything you have"; iOS
   // exposes the combined virtual device (e.g. `back-dual-wide-camera`,
   // `back-triple-camera`) and handles the lens switching internally.
-  const defaultDevice = useCameraDevice('back', {
+  const preferredDevice = useCameraDevice('back', {
     physicalDevices: [
       'ultra-wide-angle-camera',
       'wide-angle-camera',
       'telephoto-camera',
     ],
   });
+  // Fallback: plain back camera with no lens-preference list. On older
+  // iPhones (iPhone 8, X, XR, SE) the multi-lens virtual device
+  // sometimes resolves to undefined because the device has no ultra-wide
+  // / telephoto pair to combine. Without a fallback, vision-camera then
+  // never mounts and the scanner is stuck on the spinner. The plain
+  // 'back' query returns the single-lens wide-angle and works on every
+  // iOS device vision-camera supports.
+  const fallbackDevice = useCameraDevice('back');
+  const defaultDevice = preferredDevice ?? fallbackDevice;
   // Macro-only device for the explicit "Macro" toggle below. On phones
   // without an ultra-wide lens this falls back to whatever 'back' picks
   // — which is the same as defaultDevice, so the toggle is a no-op for
@@ -125,9 +134,16 @@ const BarcodeScannerScreen: React.FC = () => {
   // continuous AF never kicks in. Sorted by priority: AF first, then a
   // sane video resolution. Format is undefined while the device hook
   // is still resolving.
+  //
+  // 720p is the secondary fallback target — older iPhones (iPhone 8 era)
+  // either don't support 1080p continuous focus or burn CPU keeping up
+  // with frame processing, both of which hurt code-scan reliability.
+  // useCameraFormat tries options in declared order and falls through if
+  // a format doesn't exist on the device.
   const format = useCameraFormat(device, [
     {autoFocusSystem: 'phase-detection'},
     {videoResolution: {width: 1920, height: 1080}},
+    {videoResolution: {width: 1280, height: 720}},
   ]);
   const cameraRef = useRef<Camera>(null);
   const [torchOn, setTorchOn] = useState(false);

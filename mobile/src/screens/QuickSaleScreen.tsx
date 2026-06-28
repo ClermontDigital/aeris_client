@@ -33,6 +33,7 @@ import ErrorBanner from '../components/ErrorBanner';
 import type {Product, Category} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
+import {isLikelyBarcode} from '../utils/barcode';
 
 type NavigationProp = NativeStackNavigationProp<QuickSaleStackParamList>;
 
@@ -155,6 +156,43 @@ export default function QuickSaleScreen() {
     },
     [addItem, haptics, isOutOfStock],
   );
+
+  // Bluetooth HID barcode scanners type the scan into whatever TextInput
+  // is focused, then send Enter/CR. We hook the search bar's onSubmitEditing
+  // and if the buffer looks like a barcode, try a direct product lookup +
+  // add-to-cart. Cache-first (instant), then fall back to the relay.
+  const [isBtScanning, setIsBtScanning] = useState(false);
+  const handleSearchSubmit = useCallback(async () => {
+    const trimmed = searchQuery.trim();
+    if (!isLikelyBarcode(trimmed) || isBtScanning) return;
+    setIsBtScanning(true);
+    try {
+      let found: Product | null = null;
+      // Cache hit first — cheaper + instant for stocked SKUs the cashier
+      // sees most often.
+      const cacheHit = cachedProducts.find(
+        p => typeof p.barcode === 'string' && p.barcode === trimmed,
+      );
+      if (cacheHit) {
+        found = cacheHit;
+      } else {
+        const detail = await ApiClient.getProductByBarcode(trimmed);
+        if (detail) found = detail;
+      }
+      if (found) {
+        handleAddToCart(found);
+        setSearchQuery('');
+      } else {
+        haptics.error();
+        // Leave buffer in place — the live text search results stay
+        // visible so the cashier can still tap a near-match manually.
+      }
+    } catch {
+      haptics.error();
+    } finally {
+      setIsBtScanning(false);
+    }
+  }, [searchQuery, isBtScanning, cachedProducts, handleAddToCart, haptics]);
 
   // Clean up the auto-dismiss timer on unmount so a tap-then-leave doesn't
   // setState on an unmounted component.
@@ -315,7 +353,9 @@ export default function QuickSaleScreen() {
           value={searchQuery}
           onChangeText={setSearchQuery}
           autoCorrect={false}
+          autoCapitalize="none"
           returnKeyType="search"
+          onSubmitEditing={handleSearchSubmit}
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity

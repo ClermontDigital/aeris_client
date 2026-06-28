@@ -28,6 +28,7 @@ import {useProductCacheStore} from '../stores/productCacheStore';
 import type {Product} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
+import {isLikelyBarcode} from '../utils/barcode';
 import StatCard, {pickStatRowFontSize} from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
@@ -70,6 +71,12 @@ const ItemsScreen: React.FC = () => {
   const isSyncingCache = useProductCacheStore(s => s.isSyncing);
 
   const [search, setSearch] = useState('');
+  // Bluetooth HID barcode scanners type their scan into whatever
+  // TextInput is focused, then send Enter. We intercept onSubmitEditing
+  // and if the buffer looks like a barcode, try a direct product
+  // lookup → ProductDetail. If it's not a barcode (or no match) we
+  // leave it to fall through to the live text search.
+  const [isBtScanning, setIsBtScanning] = useState(false);
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [items, setItems] = useState<Product[]>([]);
   const [page, setPage] = useState(1);
@@ -438,6 +445,30 @@ const ItemsScreen: React.FC = () => {
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
+          onSubmitEditing={async () => {
+            // BT scanner end-of-scan: a CR/Enter delivered after a fast
+            // burst of characters. Same handler also fires when the user
+            // hits the on-screen Return key.
+            const trimmed = search.trim();
+            if (!isLikelyBarcode(trimmed) || isBtScanning) return;
+            setIsBtScanning(true);
+            try {
+              const product = await ApiClient.getProductByBarcode(trimmed);
+              if (product) {
+                haptics.success();
+                setSearch('');
+                navigation.navigate('ProductDetail', {productId: product.id});
+              } else {
+                // No barcode match — leave the buffer as-is so the
+                // already-running live text search keeps its results.
+                haptics.error();
+              }
+            } catch {
+              haptics.error();
+            } finally {
+              setIsBtScanning(false);
+            }
+          }}
         />
         {search ? (
           <TouchableOpacity onPress={() => setSearch('')} style={styles.clearBtn}>
