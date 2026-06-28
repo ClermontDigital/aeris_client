@@ -27,6 +27,7 @@ import {SettingsScreen} from '../screens/SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
 import {useScannerVisibilityStore} from '../stores/scannerVisibilityStore';
@@ -140,6 +141,11 @@ const AppTabsInner: React.FC = () => {
     erpTabEnabled && (connectionMode !== 'relay' || isServerReachable);
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
+  // React Navigation's bottom-tabs defaults to ~56dp on Android, which
+  // reads as a thin strip on a 10" Samsung Tab. Bump to 80dp content
+  // (+ safe-area inset) on regular/wide form factors so the bar visually
+  // balances the rest of the chrome. Phones keep the default.
+  const {isTablet} = useResponsiveLayout();
   // Gear icon now navigates to the AppStack's Settings route on the
   // parent navigator instead of opening a local modal. getParent() is
   // typed as the AppStack so navigate('Settings') is checked.
@@ -276,10 +282,20 @@ const AppTabsInner: React.FC = () => {
         initialRouteName="Dashboard"
         screenOptions={{
           headerShown: false,
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: isTablet
+            ? [
+                styles.tabBar,
+                {
+                  height: 80 + insets.bottom,
+                  paddingTop: 8,
+                  paddingBottom: insets.bottom + 8,
+                },
+              ]
+            : styles.tabBar,
           tabBarActiveTintColor: COLORS.crimson,
           tabBarInactiveTintColor: COLORS.textDim,
-          tabBarLabelStyle: styles.tabBarLabel,
+          tabBarLabelStyle: isTablet ? styles.tabBarLabelTablet : styles.tabBarLabel,
+          tabBarIconStyle: isTablet ? styles.tabBarIconTablet : undefined,
           tabBarBadgeStyle: styles.tabBarBadge,
           tabBarButton: (props) => <TabButton {...props} />,
         }}>
@@ -473,6 +489,14 @@ const styles = StyleSheet.create({
   tabBarLabel: {
     fontSize: FONT_SIZE.xs,
     fontFamily: FONT_FAMILY.medium,
+  },
+  tabBarLabelTablet: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+    marginTop: 2,
+  },
+  tabBarIconTablet: {
+    marginBottom: 2,
   },
   tabBarBadge: {
     backgroundColor: COLORS.cream,
