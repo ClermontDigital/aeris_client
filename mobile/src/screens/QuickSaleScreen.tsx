@@ -115,8 +115,18 @@ export default function QuickSaleScreen() {
     }
   }, [cachedProducts, searchQuery, selectedCategory, searchLocal, haptics]);
 
+  // Track user-pulled-to-refresh separately from the background `isSyncing`
+  // flag. The cache sync paginates the whole catalog (can take 30-60s on
+  // larger workspaces) and we don't want the spinner showing for every
+  // background refresh — only when the cashier explicitly pulled down.
+  const [userRefreshing, setUserRefreshing] = useState(false);
   const handleRefresh = useCallback(async () => {
-    await syncProducts();
+    setUserRefreshing(true);
+    try {
+      await syncProducts();
+    } finally {
+      setUserRefreshing(false);
+    }
   }, [syncProducts]);
 
   // Treat absent track_stock as "tracked" so the gate matches the cashier's
@@ -388,7 +398,7 @@ export default function QuickSaleScreen() {
         ListEmptyComponent={renderEmpty}
         refreshControl={
           <RefreshControl
-            refreshing={isSyncing}
+            refreshing={userRefreshing}
             onRefresh={handleRefresh}
             tintColor={COLORS.accent}
           />

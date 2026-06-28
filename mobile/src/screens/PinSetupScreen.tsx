@@ -18,6 +18,7 @@ import {useAppLockStore} from '../stores/appLockStore';
 import {useAuthStore} from '../stores/authStore';
 import AppLockService from '../services/AppLockService';
 import {useHaptics} from '../hooks/useHaptics';
+import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {
   COLORS,
   SPACING,
@@ -147,9 +148,11 @@ const PinSetupScreen: React.FC = () => {
   // PinSetupScreen has more vertical content than AppLockScreen
   // (subheading + step eyebrow on top of the keypad), so it clips first
   // on short viewports. ScrollView is the safety net; compact tightens
-  // the brand margin.
+  // the brand margin. Tablet centers the stack vertically (otherwise the
+  // keypad sinks toward the bottom edge in portrait).
   const {height: viewportHeight} = useWindowDimensions();
-  const compact = viewportHeight < 700;
+  const {isTablet} = useResponsiveLayout();
+  const compact = !isTablet && viewportHeight < 700;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -162,7 +165,10 @@ const PinSetupScreen: React.FC = () => {
       </TouchableOpacity>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isTablet && styles.scrollContentTablet,
+        ]}
         bounces={false}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
@@ -229,6 +235,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingBottom: SPACING.lg,
+  },
+  scrollContentTablet: {
+    justifyContent: 'center',
+    paddingTop: SPACING.xl,
+    gap: SPACING.xl,
   },
   signOutBtn: {
     position: 'absolute',
