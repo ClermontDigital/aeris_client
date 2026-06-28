@@ -184,8 +184,20 @@ export default function QuickSaleScreen() {
         setSearchQuery('');
       } else {
         haptics.error();
-        // Leave buffer in place — the live text search results stay
-        // visible so the cashier can still tap a near-match manually.
+        // Clear the buffer + reuse the stockNotice banner. Without this
+        // the screen would hold the scanned barcode in the search box
+        // and slide into the "No products match your search" empty
+        // state, which reads like the app is asking the cashier to
+        // create a new item.
+        setSearchQuery('');
+        if (stockNoticeTimerRef.current) {
+          clearTimeout(stockNoticeTimerRef.current);
+        }
+        setStockNotice(`Barcode ${trimmed} not found.`);
+        stockNoticeTimerRef.current = setTimeout(() => {
+          setStockNotice(null);
+          stockNoticeTimerRef.current = null;
+        }, 2500);
       }
     } catch {
       haptics.error();
