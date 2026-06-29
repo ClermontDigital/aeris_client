@@ -7,8 +7,10 @@ import {ModeDetailSheet} from './ModeDetailSheet';
 import type {RoutingMode} from '../types/dr.types';
 
 // ModeIndicator — the persistent §19.3 cloud-vs-local authority chip.
-// Source of truth: docs/PROJECT_DR_NAS_WARM_FAILOVER.md §19.3, §21 (places it
-// "left of the centred wordmark, mirror of the gear" — AppTabs.tsx:268-280).
+// Source of truth: docs/PROJECT_DR_NAS_WARM_FAILOVER.md §19.3, §21.
+//
+// Anchored on the right, just inboard of the gear, so the two header
+// affordances cluster together and the wordmark sits unobstructed on the left.
 //
 // Always-visible so the cashier knows which authority they're selling against
 // (and that in-store sales will reconcile later). Tappable → ModeDetailSheet.
@@ -43,8 +45,8 @@ const DOT: Record<RoutingMode, string> = {
 };
 
 interface Props {
-  // Absolute-position offset to mirror the gear (passed by AppTabs so the chip
-  // lines up with the gear's `top: insets.top + 36`).
+  // Absolute-position offset so the chip lines up with the gear's
+  // `top: insets.top + 36` (passed by AppTabs).
   topOffset: number;
 }
 
@@ -81,11 +83,13 @@ export function ModeIndicator({topOffset}: Props): React.ReactElement {
 }
 
 const styles = StyleSheet.create({
-  // Mirror of gearBtn (AppTabs) but anchored LEFT of the centred wordmark.
-  // Absolutely positioned so it never disturbs the wordmark layout.
+  // Anchored to the right edge, just inboard of gearBtn (which is `right:12`
+  // + 44 wide → its left edge is at `right:56`). The chip's right edge sits
+  // at `right:60` so there's a 4px gap between the two affordances.
+  // Absolutely positioned so it never disturbs the centred wordmark.
   chip: {
     position: 'absolute',
-    left: 8,
+    right: 60,
     height: 44,
     maxWidth: 116, // cap so a large label can't reach the wordmark
     flexDirection: 'row',
