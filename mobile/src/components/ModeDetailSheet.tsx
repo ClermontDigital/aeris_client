@@ -19,8 +19,8 @@ import type {CertTrust} from '../types/dr.types';
 //     When provisioned, it shows the masked address + last-sync + identity.
 //
 // The §17.4 manual / paper toggle was removed: it froze writes globally with
-// no clear path back, and on a cloud-only shop it surfaced controls that
-// have no NAS to fall back to. The state engine still drives Checkout's
+// no clear path back, and on a cloud-only deployment it surfaced controls
+// that have no NAS to fall back to. The state engine still drives Checkout's
 // write gate when the NAS is genuinely unreachable (§19.2 cascade).
 
 // §18 cert-trust readout. Until SPKI-pinning lands (see drStore §22.5 Q7 TODO)
@@ -122,8 +122,7 @@ export function ModeDetailSheet({visible, onClose}: Props): React.ReactElement {
             </>
           ) : (
             <Text style={styles.hintLine}>
-              Not set up. On-prem failover isn’t configured for this device
-              yet — your shop is running cloud-only.
+              Not set up. On-prem failover isn’t configured for this device.
             </Text>
           )}
         </View>
