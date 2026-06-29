@@ -69,11 +69,13 @@ export function ModeIndicator({topOffset}: Props): React.ReactElement {
         accessibilityRole="button"
         accessibilityLabel={`Connection mode: ${SHORT_LABEL[mode]}. Tap for details.`}
         hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-        <View style={[styles.dot, {backgroundColor: DOT[mode]}]} />
-        <Text style={styles.glyph} allowFontScaling={false}>
-          {GLYPH[mode]}
-        </Text>
-        <Text style={styles.label} numberOfLines={1}>
+        <View style={styles.iconRow}>
+          <View style={[styles.dot, {backgroundColor: DOT[mode]}]} />
+          <Text style={styles.glyph} allowFontScaling={false}>
+            {GLYPH[mode]}
+          </Text>
+        </View>
+        <Text style={styles.label} numberOfLines={1} allowFontScaling={false}>
           {SHORT_LABEL[mode]}
         </Text>
       </TouchableOpacity>
@@ -86,17 +88,24 @@ const styles = StyleSheet.create({
   // Anchored to the right edge, just inboard of gearBtn (which is `right:12`
   // + 44 wide → its left edge is at `right:56`). The chip's right edge sits
   // at `right:60` so there's a 4px gap between the two affordances.
-  // Absolutely positioned so it never disturbs the centred wordmark.
+  // Two-line stack: dot+glyph on top, label below, both centred under each
+  // other. Absolutely positioned so it never disturbs the centred wordmark.
   chip: {
     position: 'absolute',
     right: 60,
     height: 44,
-    maxWidth: 116, // cap so a large label can't reach the wordmark
-    flexDirection: 'row',
+    maxWidth: 96,
+    flexDirection: 'column',
     alignItems: 'center',
     paddingHorizontal: 6,
-    gap: 4,
     zIndex: 3,
+  },
+  // Top half — dot + glyph. Exactly 22px so the label below also gets 22px.
+  iconRow: {
+    height: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   dot: {
     width: 7,
@@ -106,10 +115,12 @@ const styles = StyleSheet.create({
   glyph: {
     fontSize: 14,
   },
+  // Bottom half — the small word. lineHeight 22 centres the glyph in a 22-tall
+  // line box so the label visually occupies exactly half the chip.
   label: {
     color: COLORS.navy,
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.medium,
-    flexShrink: 1,
+    lineHeight: 22,
   },
 });
