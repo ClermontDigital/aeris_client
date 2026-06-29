@@ -27,6 +27,9 @@ describe('IPCHandlers', () => {
         focus: jest.fn(),
         printToPDF: jest.fn(() => Promise.resolve(Buffer.from('pdf-data'))),
         getPrintersAsync: jest.fn(() => Promise.resolve([{ name: 'Printer1' }])),
+        session: {
+          clearStorageData: jest.fn(() => Promise.resolve())
+        },
       },
       isDestroyed: jest.fn(() => false)
     };
@@ -35,6 +38,8 @@ describe('IPCHandlers', () => {
 
     defaultConfig = {
       baseUrl: 'http://aeris.local',
+      localUrl: '',
+      routingMode: 'cloud',
       autoStart: false,
       enableSessionManagement: true,
       sessionTimeout: 30
@@ -63,6 +68,8 @@ describe('IPCHandlers', () => {
 
       expect(settings).toEqual({
         baseUrl: 'http://test.local',
+        localUrl: expect.any(String),
+        routingMode: expect.any(String),
         autoStart: true,
         enableSessionManagement: expect.any(Boolean),
         sessionTimeout: expect.any(Number)
@@ -175,6 +182,185 @@ describe('IPCHandlers', () => {
 
       // Either success or error is acceptable for unit test
       expect(result).toHaveProperty('success');
+    });
+
+    test('saveSettings should reject an invalid localUrl (strict validator)', async () => {
+      const result = await ipcHandlers.saveSettings({}, {
+        baseUrl: defaultConfig.baseUrl,
+        localUrl: 'http://192.168.1.10', // plain http — rejected on the DR path
+        autoStart: false,
+        enableSessionManagement: true,
+        sessionTimeout: 30
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/in-store url/i);
+      // Must NOT have persisted the bad value.
+      expect(mockStore.get('localUrl')).toBeUndefined();
+    });
+
+    test('saveSettings should accept and persist a valid https LAN localUrl', async () => {
+      const result = await ipcHandlers.saveSettings({}, {
+        baseUrl: defaultConfig.baseUrl,
+        localUrl: 'https://192.168.1.10',
+        autoStart: false,
+        enableSessionManagement: true,
+        sessionTimeout: 30
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockStore.get('localUrl')).toBe('https://192.168.1.10');
+    });
+  });
+
+  describe('DR Routing Mode Handler', () => {
+    test('setRoutingMode should reject an invalid mode', async () => {
+      const result = await ipcHandlers.setRoutingMode({}, 'sideways');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Invalid routing mode');
+    });
+
+    test("setRoutingMode should refuse 'local' when localUrl is unset", async () => {
+      // No localUrl stored.
+      const result = await ipcHandlers.setRoutingMode({}, 'local');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('No valid in-store (NAS) URL configured');
+      expect(mockStore.get('routingMode')).not.toBe('local');
+    });
+
+    test("setRoutingMode should refuse 'local' when stored localUrl is invalid", async () => {
+      mockStore.set('localUrl', 'http://192.168.1.10'); // invalid on DR path
+
+      const result = await ipcHandlers.setRoutingMode({}, 'local');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('No valid in-store (NAS) URL configured');
+    });
+
+    test("setRoutingMode should switch to 'local', set the store, clear the persist:main partition session, and emit", async () => {
+      const { session } = require('electron');
+      const clearStorageData = jest.fn(() => Promise.resolve());
+      session.fromPartition.mockReturnValue({ clearStorageData });
+
+      mockStore.set('localUrl', 'https://192.168.1.10');
+
+      const result = await ipcHandlers.setRoutingMode({}, 'local');
+
+      expect(result.success).toBe(true);
+      expect(result.mode).toBe('local');
+      expect(result.targetUrl).toBe('https://192.168.1.10');
+      expect(mockStore.get('routingMode')).toBe('local');
+      // The auth state lives in the `persist:main` partition session, NOT the
+      // main window's default session. That partition must be the one cleared.
+      expect(session.fromPartition).toHaveBeenCalledWith('persist:main');
+      expect(clearStorageData).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storages: expect.arrayContaining(['cookies', 'localstorage', 'indexdb'])
+        })
+      );
+      // The default (main window) session must NOT be the clear target.
+      expect(mockMainWindow.webContents.session.clearStorageData).not.toHaveBeenCalled();
+      // Renderer notified.
+      expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
+        'routing-mode-changed',
+        { mode: 'local', targetUrl: 'https://192.168.1.10' }
+      );
+    });
+
+    test("setRoutingMode should always allow switching back to 'cloud'", async () => {
+      mockStore.set('routingMode', 'local');
+
+      const result = await ipcHandlers.setRoutingMode({}, 'cloud');
+
+      expect(result.success).toBe(true);
+      expect(result.mode).toBe('cloud');
+      expect(result.targetUrl).toBe(defaultConfig.baseUrl);
+      expect(mockStore.get('routingMode')).toBe('cloud');
+    });
+
+    test("setRoutingMode should clear EVERY per-cashier persist:user-<id> partition (multi-cashier)", async () => {
+      const { session } = require('electron');
+      // Track a distinct clearStorageData spy per partition name so we can
+      // assert each cashier's partition (not just persist:main) was wiped.
+      const cleared = {};
+      session.fromPartition.mockImplementation((name) => {
+        const clearStorageData = jest.fn(() => Promise.resolve());
+        cleared[name] = clearStorageData;
+        return { clearStorageData };
+      });
+
+      // Multi-cashier mode ON + a couple of REAL sessions so getAllSessions()
+      // returns them (the prior test stubbed []). These id-keyed partitions are
+      // where each cashier's auth state lives.
+      mockStore.set('enableSessionManagement', true);
+      mockStore.set('localUrl', 'https://192.168.1.10');
+      const idA = mockSessionManager.createSession('Alice', '1234');
+      const idB = mockSessionManager.createSession('Bob', '5678');
+      expect(mockSessionManager.getAllSessions()).toHaveLength(2);
+
+      const result = await ipcHandlers.setRoutingMode({}, 'local');
+
+      expect(result.success).toBe(true);
+      // persist:main AND each per-cashier partition must be cleared.
+      expect(session.fromPartition).toHaveBeenCalledWith('persist:main');
+      expect(session.fromPartition).toHaveBeenCalledWith(`persist:user-${idA}`);
+      expect(session.fromPartition).toHaveBeenCalledWith(`persist:user-${idB}`);
+      const expectStorages = expect.objectContaining({
+        storages: expect.arrayContaining([
+          'cookies',
+          'localstorage',
+          'indexdb',
+        ]),
+      });
+      expect(cleared['persist:main']).toHaveBeenCalledWith(expectStorages);
+      expect(cleared[`persist:user-${idA}`]).toHaveBeenCalledWith(expectStorages);
+      expect(cleared[`persist:user-${idB}`]).toHaveBeenCalledWith(expectStorages);
+    });
+
+    // GUARD: every key passed to clearStorageData MUST be a member of Electron's
+    // ClearStorageDataOptions.storages union. Chromium SILENTLY IGNORES unknown
+    // keys, so a misspelling (e.g. the Electron quirk 'indexdb' typo'd as
+    // 'indexeddb', or the non-member 'sessionstorage') no-ops at runtime with no
+    // error. This test fails loudly if an invalid key is ever reintroduced.
+    // Source of truth: electron/electron.d.ts ClearStorageDataOptions.storages
+    // (Electron 28.3.3).
+    test('setRoutingMode passes ONLY valid Electron clearStorageData storage keys', async () => {
+      const { session } = require('electron');
+      // Exact valid set from electron.d.ts (Electron 28.3.3).
+      const VALID_ELECTRON_STORAGES = new Set([
+        'cookies',
+        'filesystem',
+        'indexdb',
+        'localstorage',
+        'shadercache',
+        'websql',
+        'serviceworkers',
+        'cachestorage',
+      ]);
+
+      const capturedKeys = [];
+      session.fromPartition.mockImplementation(() => ({
+        clearStorageData: jest.fn((opts) => {
+          for (const k of (opts && opts.storages) || []) capturedKeys.push(k);
+          return Promise.resolve();
+        }),
+      }));
+
+      mockStore.set('localUrl', 'https://192.168.1.10');
+      const result = await ipcHandlers.setRoutingMode({}, 'local');
+      expect(result.success).toBe(true);
+
+      // Must have actually requested some storages to clear...
+      expect(capturedKeys.length).toBeGreaterThan(0);
+      // ...and every one of them must be a real Electron enum member.
+      for (const key of capturedKeys) {
+        expect(VALID_ELECTRON_STORAGES.has(key)).toBe(true);
+      }
+      // And the IndexedDB clear specifically must use the quirk spelling.
+      expect(capturedKeys).toContain('indexdb');
+      expect(capturedKeys).not.toContain('indexeddb');
     });
   });
 
@@ -489,8 +675,9 @@ describe('IPCHandlers', () => {
       expect(registeredChannels).toContain('navigate');
       expect(registeredChannels).toContain('show-confirm-dialog');
 
-      // Verify all major handlers are registered (26 total in IPCHandlers)
-      expect(mockIpcMain.handle.mock.calls.length).toBe(26);
+      // Verify all major handlers are registered (27 total in IPCHandlers:
+      // 26 original + set-routing-mode for DR warm-failover)
+      expect(mockIpcMain.handle.mock.calls.length).toBe(27);
     });
   });
 

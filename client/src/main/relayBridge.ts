@@ -10,13 +10,21 @@ import { settingsStore } from './settingsStore';
 import { tokenStore } from './tokenStore';
 import { logger } from './logger';
 import { safeHandle } from './senderGuard';
+import { DirectClient } from './directClient';
+import { isLocalUrlSafeForCache } from './drUrlValidator';
 
-// relayBridge owns a single RelayClient and is the one place in the app
+// relayBridge owns the transport client(s) and is the one place in the app
 // that knows the bearer token. The renderer issues calls via the
 // `relay:call` IPC and never sees the token.
 //
+// DR Warm-Failover (§3.1/§8) added a Direct/LAN transport alongside the
+// RelayClient: when settings.connectionMode === 'direct' the same dispatch
+// routes to the DirectClient (peer-to-peer over the LAN to the NAS), which
+// keeps the till selling during a true WAN outage. The bearer is kept in sync
+// across both transports so a mode flip preserves the token confinement.
+//
 // Auth lifecycle:
-// - On startup: applies settings + persisted token to the client.
+// - On startup: applies settings + persisted token to both clients.
 // - Wires onUnauthorized -> authManager.handleUnauthorized() so a 401
 //   anywhere routes through the same logout path.
 // - Network/timeout errors translate to RelayCallResult.code = 'NETWORK' |
@@ -24,6 +32,7 @@ import { safeHandle } from './senderGuard';
 //   out (peer review revision #6).
 
 let client: RelayClient | null = null;
+let direct: DirectClient | null = null;
 let onUnauthorizedCb: (() => void) | null = null;
 
 export function getRelayClient(): RelayClient {
@@ -33,18 +42,71 @@ export function getRelayClient(): RelayClient {
   return client;
 }
 
+export function getDirectClient(): DirectClient {
+  if (!direct) {
+    direct = new DirectClient();
+  }
+  return direct;
+}
+
+// Whether the app is currently operating in Direct/LAN mode (vs cloud relay).
+export function isDirectMode(): boolean {
+  return settingsStore.get().connectionMode === 'direct';
+}
+
 export async function initRelayBridge(): Promise<void> {
   const c = getRelayClient();
-  const settings = settingsStore.get();
+  const d = getDirectClient();
+  let settings = settingsStore.get();
+
+  // COLD-START DR gate (DR §15-2 / §14.7) — the second leg of the validator.
+  // settingsStore.set() validates the Direct baseUrl at WRITE-time and on a
+  // mode switch, but NOT here on READ at cold start. A malicious/legacy bad
+  // baseUrl already on disk + connectionMode==='direct' would otherwise be
+  // configured onto the DirectClient and (once authManager applies the bearer)
+  // ship the token to the attacker host on the next renderer action — no switch
+  // happens, so the write-time gate never runs. Re-validate on read and, on
+  // failure, FORCE a fallback to relay mode so the bearer is never applied to a
+  // Direct client pointed at an unvalidated/bad host. Persist the fallback so
+  // the renderer's settings UI reflects the safe state.
+  let directBaseUrlRejected = false;
+  if (settings.connectionMode === 'direct') {
+    const baseUrl = (settings.baseUrl ?? '').trim();
+    if (!isLocalUrlSafeForCache(baseUrl)) {
+      directBaseUrlRejected = true;
+      logger.warn(
+        '[relayBridge] cold-start: persisted Direct baseUrl failed validation; ' +
+          'forcing fallback to relay mode (bearer will NOT be applied to the ' +
+          'Direct client)',
+      );
+      // settingsStore.set with only connectionMode='relay' bypasses the
+      // Direct-baseUrl gate (we're leaving Direct, not entering it) and emits
+      // the onChange so the relay/direct configure() below stay consistent.
+      settings = settingsStore.set({ connectionMode: 'relay' });
+    }
+  }
+
   c.configure({
     relayUrl: settings.relayUrl,
     workspaceCode: settings.workspaceCode,
   });
+  // When we rejected the persisted Direct baseUrl, do NOT configure the Direct
+  // client with that bad host (nor seed the bearer onto it below). It stays
+  // unconfigured + tokenless until the user re-enters Direct mode through the
+  // write-time gate, which re-runs validation and the onChange listener seeds
+  // a known-good target. We're in relay mode now, so dispatch uses the relay
+  // client regardless.
+  if (!directBaseUrlRejected) {
+    d.configure({ baseUrl: settings.baseUrl });
+  }
 
   const token = await tokenStore.getToken();
   c.setAuthToken(token);
+  if (!directBaseUrlRejected) {
+    d.setAuthToken(token);
+  }
 
-  c.setOnUnauthorized(() => {
+  const onUnauth = () => {
     if (onUnauthorizedCb) {
       try {
         onUnauthorizedCb();
@@ -52,20 +114,36 @@ export async function initRelayBridge(): Promise<void> {
         logger.warn('[relayBridge] onUnauthorized callback threw', e);
       }
     }
-  });
+  };
+  c.setOnUnauthorized(onUnauth);
+  d.setOnUnauthorized(onUnauth);
 
   // Re-apply settings as they change so the renderer's settings UI takes
-  // effect immediately.
+  // effect immediately. The Direct baseUrl + the relay URL/workspace are
+  // both kept current so a connection-mode flip routes correctly.
   settingsStore.onChange((next) => {
     c.configure({
       relayUrl: next.relayUrl,
       workspaceCode: next.workspaceCode,
     });
+    d.configure({ baseUrl: next.baseUrl });
   });
 }
 
 export function setOnUnauthorized(cb: (() => void) | null): void {
   onUnauthorizedCb = cb;
+}
+
+// M-R9: set (or clear) the bearer on BOTH transports in one call. Previously
+// authManager only touched getRelayClient(); the per-call sync at the dispatch
+// site (`d.setAuthToken(getRelayClient().getAuthToken())`) covered the 401
+// path but NOT fresh-login (DirectClient stayed null until the first call) or
+// rapid mode flips. Routing every authManager token mutation through here keeps
+// the relay + direct clients in lockstep so a mode switch never dispatches with
+// a stale or absent token.
+export function applyAuthToken(token: string | null): void {
+  getRelayClient().setAuthToken(token);
+  getDirectClient().setAuthToken(token);
 }
 
 function classifyError(err: unknown): {
@@ -170,9 +248,20 @@ export function registerRelayBridgeIpc(): void {
       };
     }
 
-    const c = getRelayClient();
     try {
-      const data = await callDispatch(c, action, params, options);
+      // Route by connection mode (§3.1). Direct mode talks straight to the
+      // LAN deployment; relay mode goes through the gateway. The bearer is
+      // synced onto whichever client serves the call so token confinement
+      // holds across a mode flip without authManager needing to know about
+      // both transports.
+      let data: unknown;
+      if (isDirectMode()) {
+        const d = getDirectClient();
+        d.setAuthToken(getRelayClient().getAuthToken());
+        data = await callDirectDispatch(d, action, params, options);
+      } else {
+        data = await callDispatch(getRelayClient(), action, params, options);
+      }
       return { ok: true, data };
     } catch (err) {
       const classified = classifyError(err);
@@ -322,6 +411,124 @@ async function callDispatch(
         ) => Promise<unknown>;
       };
       return anyClient.relayRpc(action, p, options);
+    }
+  }
+}
+
+// Direct-mode counterpart of callDispatch (§3.1). The DirectClient mirrors the
+// RelayClient method surface, so the routing is identical; only the transport
+// differs (LAN REST vs gateway RPC). Kept as a separate switch (rather than a
+// shared structural type) so each transport's available bindings stay explicit
+// and a NAS that lacks an action surfaces a clean error rather than a silent
+// wrong call. Actions not yet bound here throw 'unsupported in direct mode'
+// — there is no relayRpc fallback on the LAN path.
+async function callDirectDispatch(
+  d: DirectClient,
+  action: string,
+  params: unknown,
+  _options?: RelayCallOptions,
+): Promise<unknown> {
+  const p = (params ?? {}) as Record<string, unknown>;
+  switch (action) {
+    case RELAY_ACTIONS.DASHBOARD_SUMMARY:
+      return d.getDailySummary(
+        p.date as string | undefined,
+        p.location_id as number | undefined,
+      );
+    case RELAY_ACTIONS.PRODUCTS_LIST:
+      return d.listProducts(
+        (p.page as number | undefined) ?? 1,
+        (p.per_page as number | undefined) ?? (p.perPage as number | undefined) ?? 20,
+      );
+    case RELAY_ACTIONS.PRODUCTS_SEARCH:
+      return d.searchProducts(
+        (p.query as string) ?? (p.q as string) ?? '',
+        (p.page as number | undefined) ?? 1,
+        (p.per_page as number | undefined) ?? (p.perPage as number | undefined) ?? 20,
+      );
+    case RELAY_ACTIONS.PRODUCTS_DETAIL:
+      return d.getProductDetail((p.id as number) ?? (p.product_id as number));
+    case RELAY_ACTIONS.PRODUCTS_BARCODE:
+      return d.getProductByBarcode(p.barcode as string);
+    case RELAY_ACTIONS.PRODUCTS_CATEGORIES:
+      return d.getCategories();
+    case RELAY_ACTIONS.INVENTORY_STOCK:
+      return d.getStock(
+        (p.product_id as number) ?? (p.id as number),
+        p.location_id as number | undefined,
+      );
+    case RELAY_ACTIONS.CUSTOMERS_LIST:
+      return d.listCustomers(
+        (p.page as number | undefined) ?? 1,
+        (p.per_page as number | undefined) ?? (p.perPage as number | undefined) ?? 20,
+      );
+    case RELAY_ACTIONS.CUSTOMERS_SEARCH:
+      return d.searchCustomers(
+        (p.query as string) ?? (p.q as string) ?? '',
+        (p.page as number | undefined) ?? 1,
+      );
+    case RELAY_ACTIONS.CUSTOMERS_DETAIL:
+      return d.getCustomerDetail((p.id as number) ?? (p.customer_id as number));
+    case RELAY_ACTIONS.TRANSACTIONS_LIST:
+      return d.getTransactions({
+        page: p.page as number | undefined,
+        per_page:
+          (p.per_page as number | undefined) ?? (p.perPage as number | undefined),
+        date_from: (p.date_from as string | undefined) ?? (p.from_date as string | undefined),
+        date_to: (p.date_to as string | undefined) ?? (p.to_date as string | undefined),
+      });
+    case RELAY_ACTIONS.TRANSACTIONS_DETAIL:
+      return d.getTransactionDetail((p.id as number) ?? (p.sale_id as number));
+    case RELAY_ACTIONS.TRANSACTIONS_RECEIPT:
+      return d.getReceipt((p.id as number) ?? (p.sale_id as number));
+    case RELAY_ACTIONS.POS_PAYMENT_METHODS:
+      return d.getPaymentMethods();
+    case RELAY_ACTIONS.SALE_CREATE:
+      return d.createSale(
+        p as unknown as Parameters<DirectClient['createSale']>[0],
+      );
+    case RELAY_ACTIONS.CUSTOMERS_CREATE:
+      return d.createCustomer(
+        p as unknown as Parameters<DirectClient['createCustomer']>[0],
+      );
+    case RELAY_ACTIONS.CUSTOMERS_UPDATE: {
+      const id = (p.id as number) ?? (p.customer_id as number);
+      const { id: _omitId, customer_id: _omitCid, ...patch } = p;
+      return d.updateCustomer(
+        id,
+        patch as unknown as Parameters<DirectClient['updateCustomer']>[1],
+      );
+    }
+    case RELAY_ACTIONS.CUSTOMERS_DELETE:
+      return d.deleteCustomer((p.id as number) ?? (p.customer_id as number));
+    case RELAY_ACTIONS.PRODUCTS_CREATE:
+      return d.createProduct(
+        p as unknown as Parameters<DirectClient['createProduct']>[0],
+      );
+    case RELAY_ACTIONS.PRODUCTS_UPDATE: {
+      const id = (p.id as number) ?? (p.product_id as number);
+      const { id: _omitId, product_id: _omitPid, ...patch } = p;
+      return d.updateProduct(
+        id,
+        patch as unknown as Parameters<DirectClient['updateProduct']>[1],
+      );
+    }
+    case RELAY_ACTIONS.INVENTORY_ADJUST_STOCK:
+      return d.adjustStock(
+        p as unknown as Parameters<DirectClient['adjustStock']>[0],
+      );
+    // NOTE: sales.daily-summary (the full Z-report) is deliberately NOT bound
+    // in Direct mode — the Z-report stays cloud-only by construction (§14.7
+    // Q10), matching mobile's DirectClient (which has no getDailyZReport). It
+    // falls through to the default branch below and surfaces a clean 400
+    // rather than serving a day-close report off the NAS during a failover.
+    // The renderer hides the Z-report screen in Direct mode (see Sidebar /
+    // DailyZReportScreen); the in-store running total is dashboard.summary,
+    // labelled "In-store totals only".
+    default: {
+      const err = new Error(`action '${action}' is unsupported in direct mode`);
+      (err as Error & { status?: number }).status = 400;
+      throw err;
     }
   }
 }

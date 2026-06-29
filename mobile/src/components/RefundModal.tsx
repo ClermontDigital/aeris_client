@@ -28,6 +28,7 @@ import {
   SPACING,
 } from '../constants/theme';
 import ApiClient from '../services/ApiClient';
+import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {
@@ -291,6 +292,12 @@ const RefundModal: React.FC<RefundModalProps> = ({
     submitLockRef.current = true;
     setSubmitting(true);
     setError(null);
+    // M-R7 (§19.2 rule 1 / §22.5 Q1): a refund is a money-move; mark it
+    // in-flight so the routing cascade never flips cloud↔local mid-refund. The
+    // store comment claimed saleInFlight covered createSale OR refundSale, but
+    // only CheckoutScreen wrote it — this closes the refund gap. Cleared in the
+    // finally below.
+    useTransactionActivityStore.getState().setSaleInFlight(true);
 
     // Mint a fresh key only if the body changed since the last submit.
     // A clean retry (no edits) reuses the previous key so the server
@@ -360,6 +367,8 @@ const RefundModal: React.FC<RefundModalProps> = ({
     } finally {
       setSubmitting(false);
       submitLockRef.current = false;
+      // M-R7: clear the mid-transaction defer flag once the refund settles.
+      useTransactionActivityStore.getState().setSaleInFlight(false);
     }
   }, [
     canSubmit,

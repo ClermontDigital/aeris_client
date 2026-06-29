@@ -15,6 +15,8 @@ class IPCHandlers {
   async getSettings() {
     const settings = {
       baseUrl: this.store.get('baseUrl', this.defaultConfig.baseUrl),
+      localUrl: this.store.get('localUrl', this.defaultConfig.localUrl),
+      routingMode: this.store.get('routingMode', this.defaultConfig.routingMode),
       autoStart: this.store.get('autoStart', this.defaultConfig.autoStart),
       enableSessionManagement: this.store.get('enableSessionManagement', this.defaultConfig.enableSessionManagement),
       sessionTimeout: this.store.get('sessionTimeout', this.defaultConfig.sessionTimeout)
@@ -23,8 +25,17 @@ class IPCHandlers {
     return settings;
   }
 
+  // DR routing: resolve which URL the webview should load.
+  getActiveTargetUrl() {
+    const mode = this.store.get('routingMode', this.defaultConfig.routingMode);
+    if (mode === 'local') {
+      return this.store.get('localUrl', this.defaultConfig.localUrl);
+    }
+    return this.store.get('baseUrl', this.defaultConfig.baseUrl);
+  }
+
   async saveSettings(event, settings) {
-    // Validate URL scheme before saving
+    // Validate baseUrl scheme before saving (lax http/https — cloud target).
     if (settings.baseUrl) {
       try {
         const parsed = new URL(settings.baseUrl);
@@ -36,12 +47,25 @@ class IPCHandlers {
       }
     }
 
+    // DR: the NAS/LAN target gets the STRICT validator (no fall-through to the
+    // lax http/https check). A poisoned localUrl is a credential-harvest vector.
+    if (settings.localUrl) {
+      const { isLocalUrlSafeForCache } = require('./dr-url-validator');
+      if (!isLocalUrlSafeForCache(settings.localUrl)) {
+        return {
+          success: false,
+          error: 'In-store URL must be an https:// LAN address (private IP or a single-label .local name)'
+        };
+      }
+    }
+
     const oldSettings = {
       baseUrl: this.store.get('baseUrl', this.defaultConfig.baseUrl),
       enableSessionManagement: this.store.get('enableSessionManagement', this.defaultConfig.enableSessionManagement)
     };
 
     this.store.set('baseUrl', settings.baseUrl);
+    this.store.set('localUrl', settings.localUrl || '');
     this.store.set('autoStart', settings.autoStart);
     this.store.set('enableSessionManagement', settings.enableSessionManagement);
     this.store.set('sessionTimeout', settings.sessionTimeout);
@@ -431,6 +455,67 @@ class IPCHandlers {
     return { success: true };
   }
 
+  // DR routing-mode switch (cloud ↔ in-store/NAS). Reload-in-place, NOT a
+  // restart — does not use the needsRestart path.
+  async setRoutingMode(event, mode) {
+    try {
+      if (mode !== 'cloud' && mode !== 'local') {
+        return { success: false, error: 'Invalid routing mode' };
+      }
+
+      // Fail closed: refuse in-store mode unless a valid LAN target is stored.
+      if (mode === 'local') {
+        const localUrl = this.store.get('localUrl', this.defaultConfig.localUrl);
+        const { isLocalUrlSafeForCache } = require('./dr-url-validator');
+        if (!localUrl || !isLocalUrlSafeForCache(localUrl)) {
+          return { success: false, error: 'No valid in-store (NAS) URL configured' };
+        }
+      }
+
+      this.store.set('routingMode', mode);
+
+      const targetUrl = this.getActiveTargetUrl();
+
+      // Clear the webview web session(s) so the user re-authenticates against
+      // the new target. The POS webview that holds auth state lives in the
+      // `persist:main` partition (NOT the main window's default session), and
+      // per-cashier webviews live in `persist:user-${id}`. We must clear those
+      // partition sessions explicitly — clearing mainWindow.webContents.session
+      // would only clear the unused default session and leave the prior (cloud)
+      // token/localStorage intact, defeating the re-auth guarantee (M-R8 / §15-2).
+      // Do NOT touch electron-store PIN/cashier identities (the per-cashier model).
+      const { session } = require('electron');
+      const partitions = ['persist:main'];
+      if (this.store.get('enableSessionManagement', this.defaultConfig.enableSessionManagement)) {
+        // Enumerate every per-cashier partition so a switch clears all of them.
+        for (const s of this.sessionManager.getAllSessions()) {
+          partitions.push(`persist:user-${s.id}`);
+        }
+      }
+      // Storages MUST be members of Electron's Session.clearStorageData enum
+      // (electron.d.ts ClearStorageDataOptions.storages): cookies | filesystem |
+      // indexdb | localstorage | shadercache | websql | serviceworkers |
+      // cachestorage. NOTE the Electron quirk: it is 'indexdb' (no second 'e').
+      // Unknown keys are SILENTLY IGNORED by Chromium, so a typo no-ops.
+      // 'sessionstorage' is NOT a member of this enum in Electron 28 and cannot
+      // be cleared via this API; sessionStorage is per-renderer and is dropped
+      // when the partition's pages are reloaded on the routing-mode switch.
+      const storages = ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'];
+      await Promise.all(
+        partitions.map((p) => session.fromPartition(p).clearStorageData({ storages }))
+      );
+
+      const mainWindow = this.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('routing-mode-changed', { mode, targetUrl });
+      }
+
+      return { success: true, mode, targetUrl };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
   // Register all handlers
   registerHandlers(ipcMain) {
     // Settings
@@ -470,6 +555,9 @@ class IPCHandlers {
     ipcMain.handle('close-session-switcher', this.closeSessionSwitcher.bind(this));
     ipcMain.handle('create-new-session', this.createNewSession.bind(this));
     ipcMain.handle('update-session-activity', this.updateSessionActivity.bind(this));
+
+    // DR routing
+    ipcMain.handle('set-routing-mode', this.setRoutingMode.bind(this));
   }
 }
 

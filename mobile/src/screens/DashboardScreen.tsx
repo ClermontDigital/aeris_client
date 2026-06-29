@@ -28,6 +28,7 @@ import {
 } from '../constants/theme';
 import {useAuthStore} from '../stores/authStore';
 import {useCartStore} from '../stores/cartStore';
+import {useSettingsStore} from '../stores/settingsStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {formatCurrency} from '../utils/format';
@@ -105,6 +106,15 @@ const DashboardScreen: React.FC = () => {
     ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
     : null;
   const userName = useAuthStore(s => s.user?.name);
+  // §14.7 Q10: in Direct (in-store/NAS) mode the daily summary reflects only
+  // sales rung on this NAS during the outage — NOT the cloud's authoritative
+  // day total. Label it so the cashier doesn't read a partial figure as the
+  // full day. (The Z-report stays cloud-only by construction — getDailyZReport
+  // exists only on RelayClient, never DirectClient — so day-close can't be
+  // double-owned from the failed-over device.)
+  const isDirectMode = useSettingsStore(
+    s => s.settings.connectionMode === 'direct',
+  );
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [recentCustomers, setRecentCustomers] = useState<
     Array<{
@@ -355,6 +365,9 @@ const DashboardScreen: React.FC = () => {
         ) : null}
 
         <EyebrowLabel>Today</EyebrowLabel>
+        {isDirectMode ? (
+          <Text style={styles.provenanceLabel}>In-store totals only</Text>
+        ) : null}
 
         {/* When today has no sales yet, the hero/stat strip would all read
             $0.00 / 0, which reads as "the app is broken" rather than "you
@@ -512,6 +525,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  // §14.7 Q10 Direct-mode provenance marker under the "Today" eyebrow.
+  provenanceLabel: {
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+    color: COLORS.textMuted,
+    marginTop: -SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   centered: {
     flex: 1,

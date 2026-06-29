@@ -4,6 +4,7 @@ import { Bell, Search } from 'lucide-react';
 import { COLORS, FONT_SIZE, SPACING, BORDER_RADIUS } from '../theme/tokens';
 import { useAuthStore } from '../stores/authStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { ModeIndicator } from './ModeIndicator';
 
 export function TopBar(): React.ReactElement {
   const navigate = useNavigate();
@@ -49,6 +50,10 @@ export function TopBar(): React.ReactElement {
           color: COLORS.textMuted,
         }}
       >
+        {/* §19.3 DR mode indicator — the cloud-vs-in-store authority chip.
+            v2 was relay-only; the DR project adds Direct/LAN mode, so the
+            cashier needs the same persistent readout the mobile client has. */}
+        <ModeIndicator />
         <span>Workspace</span>
         <span
           style={{

@@ -43,6 +43,7 @@ export function SettingsScreen(): React.ReactElement {
   const settings = useSettingsStore((s) => s.settings);
   const setSettings = useSettingsStore((s) => s.set);
   const logout = useAuthStore((s) => s.logout);
+  const modeSwitch = useAuthStore((s) => s.modeSwitch);
   const lockNow = useAppLockStore((s) => s.lockNow);
   const clearPin = useAppLockStore((s) => s.clearPin);
   const isPinSet = useAppLockStore((s) => s.isPinSet);
@@ -54,6 +55,17 @@ export function SettingsScreen(): React.ReactElement {
   const [printerNameDraft, setPrinterNameDraft] = useState<string>(
     settings.printerName ?? '',
   );
+  // DR Direct/LAN mode (§3.1/§8). Local drafts so the URL field doesn't
+  // commit on every keystroke; the mode toggle commits immediately.
+  const [baseUrlDraft, setBaseUrlDraft] = useState<string>(settings.baseUrl ?? '');
+  const [baseUrlError, setBaseUrlError] = useState<string | null>(null);
+  // FIX 2 (§14.7): confirm-then-switch state. Holds the pending target mode +
+  // the host the bearer would be sent to, so the dialog can show it before we
+  // flip + wipe the session.
+  const [pendingModeSwitch, setPendingModeSwitch] = useState<{
+    next: 'relay' | 'direct';
+    host: string;
+  } | null>(null);
   const [printToast, setPrintToast] = useState<{
     kind: 'success' | 'error';
     text: string;
@@ -62,6 +74,30 @@ export function SettingsScreen(): React.ReactElement {
   useEffect(() => {
     setPrinterNameDraft(settings.printerName ?? '');
   }, [settings.printerName]);
+
+  useEffect(() => {
+    setBaseUrlDraft(settings.baseUrl ?? '');
+  }, [settings.baseUrl]);
+
+  const onSaveBaseUrl = async () => {
+    const trimmed = baseUrlDraft.trim();
+    // FIX 1: the AUTHORITATIVE validation lives in MAIN (settingsStore.set →
+    // isLocalUrlSafeForCache, §15-2). MAIN rejects an unsafe Direct baseUrl and
+    // the IPC invoke rejects; surface that message inline so the cashier sees
+    // why it wasn't saved. The renderer is NOT the only check.
+    setBaseUrlError(null);
+    try {
+      await setSettings({ baseUrl: trimmed });
+    } catch (e) {
+      // Electron prefixes forwarded errors with "Error: " — strip it.
+      const msg =
+        e instanceof Error ? e.message.replace(/^Error:\s*/, '') : String(e);
+      setBaseUrlError(msg);
+      // Revert the draft to the last-persisted (safe) value so the field
+      // doesn't keep showing the rejected URL as if it were saved.
+      setBaseUrlDraft(settings.baseUrl ?? '');
+    }
+  };
 
   useEffect(() => {
     void window.aeris.app.version().then(setVersion);
@@ -87,6 +123,50 @@ export function SettingsScreen(): React.ReactElement {
     await setSettings({ printerName: trimmed === '' ? null : trimmed });
   };
 
+  // Resolve the host the bearer would be sent to after the flip, for the §14.7
+  // confirm dialog. →direct targets the NAS (baseUrl); →relay targets the cloud
+  // (relayUrl). Falls back to the raw string if it doesn't parse as a URL.
+  const targetHostFor = (next: 'relay' | 'direct'): string => {
+    const raw = next === 'direct' ? settings.baseUrl : settings.relayUrl;
+    if (!raw) return '';
+    try {
+      return new URL(raw).host;
+    } catch {
+      return raw;
+    }
+  };
+
+  // FIX 2 (§14.7): a connection-mode flip (cloud ↔ in-store) changes the auth
+  // audience — the relay Sanctum token is not valid on the on-prem ERP and
+  // vice-versa. Rather than flip on the bare <select> change, open a confirm
+  // dialog that shows the TARGET HOST + the directional copy, mirroring v1's
+  // app-wrapper.html handleRoutingModeToggle (which shows "Target: <host>").
+  // Only confirmModeSwitch() actually persists + wipes the session.
+  const onChangeConnectionMode = (next: 'relay' | 'direct') => {
+    if (next === settings.connectionMode) return;
+    setPendingModeSwitch({ next, host: targetHostFor(next) });
+  };
+
+  // Persist the new mode + wipe the session so the cashier re-authenticates
+  // against the new target. Mirrors mobile's SettingsModal (clearLocalSession +
+  // the §14.7 copy). Only reached after the user confirms the dialog.
+  const confirmModeSwitch = async () => {
+    const pending = pendingModeSwitch;
+    setPendingModeSwitch(null);
+    if (!pending) return;
+    try {
+      await setSettings({ connectionMode: pending.next });
+    } catch (e) {
+      // MAIN fail-closed gate refused the switch (e.g. →direct with an unsafe /
+      // unset baseUrl). Surface it where the URL field is and abort the flip.
+      const msg =
+        e instanceof Error ? e.message.replace(/^Error:\s*/, '') : String(e);
+      setBaseUrlError(msg);
+      return;
+    }
+    await modeSwitch();
+  };
+
   const onPrintTest = async () => {
     const res = await window.aeris.print.testPage();
     setPrintToast(
@@ -110,6 +190,66 @@ export function SettingsScreen(): React.ReactElement {
           <span style={{ color: COLORS.textMuted }}>Relay URL</span>
           <span style={{ color: COLORS.text, fontSize: FONT_SIZE.sm }}>{settings.relayUrl}</span>
         </div>
+
+        {/* DR Direct/LAN mode (§3.1/§8). 'Cloud' = relay via the gateway;
+            'In-store' = peer-to-peer over the LAN to the on-prem/NAS server,
+            which keeps the till selling during a WAN outage. Switching mode
+            re-authenticates against the new target — surfaced as the §14.7
+            in-store copy by the login flow. */}
+        <label style={{ display: 'flex', flexDirection: 'column', gap: SPACING.xs, color: COLORS.text, marginTop: SPACING.sm }}>
+          <span>Connection mode</span>
+          <select
+            value={settings.connectionMode}
+            onChange={(e) =>
+              onChangeConnectionMode(e.target.value as 'relay' | 'direct')
+            }
+            style={{
+              padding: `${SPACING.sm}px ${SPACING.md}px`,
+              border: `1px solid ${COLORS.inputBorder}`,
+              borderRadius: BORDER_RADIUS.md,
+              background: COLORS.inputBg,
+              color: COLORS.text,
+            }}
+          >
+            <option value="relay">Cloud (via Aeris relay)</option>
+            <option value="direct">In-store (direct to LAN server)</option>
+          </select>
+        </label>
+
+        {settings.connectionMode === 'direct' ? (
+          <label
+            style={{ display: 'flex', flexDirection: 'column', gap: SPACING.xs, color: COLORS.text }}
+          >
+            <span>In-store server URL</span>
+            <input
+              type="text"
+              value={baseUrlDraft}
+              onChange={(e) => setBaseUrlDraft(e.target.value)}
+              onBlur={() => void onSaveBaseUrl()}
+              placeholder="https://aeris.shop.local:8822"
+              aria-label="In-store server URL"
+              style={{
+                padding: `${SPACING.sm}px ${SPACING.md}px`,
+                border: `1px solid ${COLORS.inputBorder}`,
+                borderRadius: BORDER_RADIUS.md,
+                background: COLORS.inputBg,
+                color: COLORS.text,
+              }}
+            />
+            <span style={{ color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
+              The on-prem server's LAN address. Used only in in-store mode.
+            </span>
+            {baseUrlError ? (
+              <span
+                role="alert"
+                style={{ color: COLORS.danger, fontSize: FONT_SIZE.sm }}
+              >
+                {baseUrlError}
+              </span>
+            ) : null}
+          </label>
+        ) : null}
+
         <Button
           variant="secondary"
           onClick={() => setConfirmWorkspaceSwitch(true)}
@@ -289,6 +429,39 @@ export function SettingsScreen(): React.ReactElement {
       >
         Resetting your PIN clears it immediately. You'll be prompted to set a new
         PIN right away before you can keep using Aeris.
+      </Modal>
+
+      {/* FIX 2 (§14.7): mode-switch confirm. Shows the target host + the
+          directional copy before flipping + wiping the session. */}
+      <Modal
+        open={pendingModeSwitch !== null}
+        onClose={() => setPendingModeSwitch(null)}
+        title={
+          pendingModeSwitch?.next === 'direct'
+            ? 'Switch to in-store mode'
+            : 'Switch to cloud mode'
+        }
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setPendingModeSwitch(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => void confirmModeSwitch()}>
+              Switch &amp; sign out
+            </Button>
+          </>
+        }
+      >
+        <p style={{ margin: 0 }}>
+          {pendingModeSwitch?.next === 'direct'
+            ? 'Switching to in-store mode — sign in again to continue.'
+            : 'Switching to cloud mode — sign in again to continue.'}
+        </p>
+        {pendingModeSwitch?.host ? (
+          <p style={{ margin: `${SPACING.sm}px 0 0`, color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
+            Target: {pendingModeSwitch.host}
+          </p>
+        ) : null}
       </Modal>
 
       <Modal

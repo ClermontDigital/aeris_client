@@ -16,4 +16,11 @@ export interface Settings {
   // restoreSession flow finds nothing in SecureStorage and routes to login.
   // Surfaced as a "Keep me signed in" checkbox on LoginScreen.
   keepSignedIn?: boolean;
+  // §19.4 presence beacon — cloud (relay) sink gate. Defaults to off/undefined.
+  // The gateway /presence/beacon endpoint does not exist yet, so the relay
+  // beacon is NOT emitted for ordinary cloud-only clients (it would be
+  // fleet-wide 404 noise). usePresenceBeacon emits the relay sink only when DR
+  // is actually in use for this client OR when this flag is explicitly set.
+  // Remove the gate once the gateway presence contract ships (§22.5 Q10).
+  presenceBeaconEnabled?: boolean;
 }

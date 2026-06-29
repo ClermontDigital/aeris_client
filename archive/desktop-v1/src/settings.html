@@ -176,6 +176,14 @@
                     <div class="help-text">Enter the URL where your Aeris ERP server is running</div>
                     <div id="connection-status" class="status-message"></div>
                 </div>
+
+                <div class="form-group">
+                    <label for="localUrl">NAS / In-store URL</label>
+                    <input type="url" id="localUrl" name="localUrl" placeholder="https://aeris.shop.local">
+                    <button type="button" class="test-button" onclick="testLocalConnection()">Test Connection</button>
+                    <div class="help-text">Optional. The on-site NAS LAN address used in in-store (failover) mode. Must be https:// and a private LAN address (e.g. 192.168.x.x) or a single-label .local name.</div>
+                    <div id="local-connection-status" class="status-message"></div>
+                </div>
                 
                 <div class="form-group">
                     <div class="checkbox-group">
@@ -215,6 +223,7 @@
                 originalSettings = { ...settings };
                 
                 document.getElementById('baseUrl').value = settings.baseUrl;
+                document.getElementById('localUrl').value = settings.localUrl || '';
                 document.getElementById('autoStart').checked = settings.autoStart;
                 document.getElementById('enableSessionManagement').checked = settings.enableSessionManagement !== false; // default to true
                 document.getElementById('sessionTimeout').value = settings.sessionTimeout || 30;
@@ -262,16 +271,45 @@
             }
         }
         
-        function showStatus(message, type) {
-            const statusDiv = document.getElementById('connection-status');
+        function showStatus(message, type, targetId = 'connection-status') {
+            const statusDiv = document.getElementById(targetId);
             statusDiv.textContent = message;
             statusDiv.className = `status-message status-${type}`;
             statusDiv.style.display = 'block';
-            
+
             // Hide after 5 seconds
             setTimeout(() => {
                 statusDiv.style.display = 'none';
             }, 5000);
+        }
+
+        async function testLocalConnection() {
+            const url = document.getElementById('localUrl').value;
+            const testButton = event.target;
+
+            if (!url) {
+                showStatus('Please enter a NAS / in-store URL first', 'error', 'local-connection-status');
+                return;
+            }
+
+            testButton.disabled = true;
+            testButton.textContent = 'Testing...';
+
+            try {
+                // Reuse the existing LAN probe (loads the URL in a hidden window).
+                const result = await window.electronAPI.testConnection(url);
+
+                if (result.success) {
+                    showStatus('Connection successful!', 'success', 'local-connection-status');
+                } else {
+                    showStatus(`Connection failed: ${result.error}`, 'error', 'local-connection-status');
+                }
+            } catch (error) {
+                showStatus(`Connection test failed: ${error.message}`, 'error', 'local-connection-status');
+            } finally {
+                testButton.disabled = false;
+                testButton.textContent = 'Test Connection';
+            }
         }
         
         async function saveSettings(event) {
@@ -279,14 +317,27 @@
             
             const settings = {
                 baseUrl: document.getElementById('baseUrl').value,
+                localUrl: document.getElementById('localUrl').value.trim(),
                 autoStart: document.getElementById('autoStart').checked,
                 enableSessionManagement: document.getElementById('enableSessionManagement').checked,
                 sessionTimeout: parseInt(document.getElementById('sessionTimeout').value)
             };
-            
+
             try {
                 const result = await window.electronAPI.saveSettings(settings);
-                
+
+                // Surface validation rejection (e.g. an invalid NAS/in-store URL)
+                // instead of silently closing the window.
+                if (result && result.success === false) {
+                    const isLocalErr = /in-store url/i.test(result.error || '');
+                    showStatus(
+                        result.error || 'Failed to save settings',
+                        'error',
+                        isLocalErr ? 'local-connection-status' : 'connection-status'
+                    );
+                    return;
+                }
+
                 if (result.needsRestart) {
                     showStatus('Settings saved! Application will restart to apply changes.', 'success');
                     
