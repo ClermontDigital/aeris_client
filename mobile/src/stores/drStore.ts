@@ -35,7 +35,7 @@ interface PersistedDrState {
   cachedLocalUrl: string | null;
   // The deployment this local_url belongs to. The cache is per-paired
   // deployment and MUST be flushed on re-pair so a till roaming between shops
-  // never fails over to another shop's NAS (§15-E1). Tracked via the
+  // never fails over to another deployment's NAS (§15-E1). Tracked via the
   // workspace code (the relay routing token) as the pairing identity.
   pairedWorkspaceCode: string | null;
   routingDirective: RoutingDirective;
@@ -175,7 +175,7 @@ export const useDrStore = create<DrState>((set, get) => ({
       null;
 
     // Re-pair guard (§15-E1): if the cached value belongs to a DIFFERENT
-    // workspace, flush first so we never fail over to another shop's NAS.
+    // workspace, flush first so we never fail over to another deployment's NAS.
     const current = get();
     if (
       workspaceCode &&
@@ -215,7 +215,7 @@ export const useDrStore = create<DrState>((set, get) => ({
     }
 
     // Step 2 — LAN probe (§15-M1). The cloud can't reach a private address;
-    // the client must verify reachability on the shop LAN before committing.
+    // the client must verify reachability on the deployment LAN before committing.
     // We reuse the existing settings-store testConnection probe.
     //
     // TODO(DR-M1, §22.2/§22.5 Q7): testConnection is a liveness-only probe.
