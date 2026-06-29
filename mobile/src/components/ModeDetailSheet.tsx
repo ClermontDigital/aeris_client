@@ -4,36 +4,24 @@ import Modal from 'react-native-modal';
 import {COLORS, FONT_FAMILY, FONT_SIZE, SPACING} from '../constants/theme';
 import {useRoutingDecision} from '../hooks/useRoutingDecision';
 import {useDrStore} from '../stores/drStore';
-import {useFailoverAbortStore} from '../stores/failoverAbortStore';
+import {useCloudReachabilityStore} from '../stores/cloudReachabilityStore';
+import {useSettingsStore} from '../stores/settingsStore';
 import EyebrowLabel from './EyebrowLabel';
-import type {CertTrust, RoutingMode} from '../types/dr.types';
-import type {RoutingReason} from '../services/routingDecisionService';
+import type {CertTrust} from '../types/dr.types';
 
-// ModeDetailSheet — the §19.3 tap-through detail for the ModeIndicator.
-// Source of truth: docs/PROJECT_DR_NAS_WARM_FAILOVER.md §19.3, §17.4, §18.
+// ModeDetailSheet — the tap-through detail for the ModeIndicator chip.
+// Source of truth: docs/PROJECT_DR_NAS_WARM_FAILOVER.md §19.3, §18.
 //
-// Surfaces: mode, reason, last-sync, masked NAS address, the §17.4 manual
-// switch / abort-to-manual controls, and the §18 cert-trust indicator. The
-// actual mode SWITCH (re-auth against the NAS) stays in the existing Settings
-// flow (§14.7 copy); this sheet exposes the operator affordances around it.
-
-const MODE_TITLE: Record<RoutingMode, string> = {
-  cloud: 'Cloud (online)',
-  local: 'In-store mode (NAS)',
-  switching: 'Switching…',
-  offline: 'Offline / degraded',
-};
-
-const REASON_COPY: Record<RoutingReason, string> = {
-  'mid-transaction-defer': 'Holding the current mode until the sale completes.',
-  'directive-local': 'Planned cutover — your shop was switched to in-store mode.',
-  'cloud-primary': 'Connected to the Aeris cloud as normal.',
-  'outage-prompt': 'Cloud unreachable — you can switch to in-store mode to keep selling.',
-  'degraded-fail-closed':
-    'Neither the cloud nor a trusted in-store server is reachable. Look-ups use cached data; recording sales is paused.',
-  'failback-hold': 'Cloud is back — staying in-store briefly to finish syncing.',
-  'failback-ready': 'Cloud is back and stable — returning to cloud mode.',
-};
+// Split into two honest sections:
+//   • Cloud — always shown. Online / unreachable + workspace.
+//   • On-prem server — always shown. When the device has no rails-delivered
+//     local_url cached, the section reads "Not set up" with no NAS fields.
+//     When provisioned, it shows the masked address + last-sync + identity.
+//
+// The §17.4 manual / paper toggle was removed: it froze writes globally with
+// no clear path back, and on a cloud-only shop it surfaced controls that
+// have no NAS to fall back to. The state engine still drives Checkout's
+// write gate when the NAS is genuinely unreachable (§19.2 cascade).
 
 // §18 cert-trust readout. Until SPKI-pinning lands (see drStore §22.5 Q7 TODO)
 // the trust is 'unverified' — we say so plainly so a redirect to an unpinned
@@ -63,18 +51,37 @@ interface Props {
 }
 
 export function ModeDetailSheet({visible, onClose}: Props): React.ReactElement {
-  const {currentMode, reason} = useRoutingDecision();
+  const {currentMode} = useRoutingDecision();
   const certTrust = useDrStore(s => s.certTrust);
   const maskedUrl = useDrStore(s => s.getMaskedLocalUrl());
   const lastSyncAt = useDrStore(s => s.lastSyncAt);
   const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
+  const cloudReachable = useCloudReachabilityStore(s => s.cloudReachable);
+  const workspaceCode = useSettingsStore(s => s.settings.workspaceCode);
 
-  const manualMode = useFailoverAbortStore(s => s.manualMode);
-  const nasUnavailable = useFailoverAbortStore(s => s.nasUnavailable);
-  const returnToManual = useFailoverAbortStore(s => s.returnToManual);
-  const clearManual = useFailoverAbortStore(s => s.clearManual);
-
+  const provisioned = cachedLocalUrl != null;
   const cert = CERT_COPY[certTrust];
+
+  // Title + lead reason synced with the chip (see ModeIndicator).
+  let title: string;
+  let lead: string;
+  if (provisioned && currentMode === 'local') {
+    title = 'On-prem mode';
+    lead =
+      'Sales are being recorded against your on-prem server. They will reconcile with the cloud once it is back.';
+  } else if (currentMode === 'cloud' && cloudReachable === false) {
+    title = 'Cloud unreachable';
+    lead =
+      'Your device can’t reach the Aeris cloud right now. Check your network connection.';
+  } else {
+    title = 'Cloud (online)';
+    lead = 'Connected to the Aeris cloud as normal.';
+  }
+
+  const cloudStatusLabel =
+    cloudReachable === false ? 'Unreachable' : 'Online';
+  const cloudStatusColor =
+    cloudReachable === false ? COLORS.warning : COLORS.success;
 
   return (
     <Modal
@@ -83,64 +90,42 @@ export function ModeDetailSheet({visible, onClose}: Props): React.ReactElement {
       onBackButtonPress={onClose}
       style={styles.modal}>
       <View style={styles.surface}>
-        <Text style={styles.title}>{MODE_TITLE[currentMode]}</Text>
-        <Text style={styles.reason}>{REASON_COPY[reason]}</Text>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.reason}>{lead}</Text>
 
+        {/* Cloud — always shown. */}
         <View style={styles.section}>
-          <EyebrowLabel>Status</EyebrowLabel>
-          <Row label="Last sync" value={formatLastSync(lastSyncAt)} />
+          <EyebrowLabel>Cloud</EyebrowLabel>
           <Row
-            label="In-store server"
-            value={maskedUrl ?? 'Not configured'}
+            label="Status"
+            value={cloudStatusLabel}
+            valueColor={cloudStatusColor}
           />
           <Row
-            label="Server identity"
-            value={cert.label}
-            valueColor={cert.color}
+            label="Workspace"
+            value={workspaceCode || 'Not paired'}
           />
         </View>
 
-        {/* §17.4 manual / abort controls. "Return to manual" freezes write
-            actions (paper fallback); "Resume" clears it once recovered. */}
+        {/* On-prem server — always shown, copy differs by provisioned. */}
         <View style={styles.section}>
-          <EyebrowLabel>Controls</EyebrowLabel>
-          {nasUnavailable ? (
-            <Text style={styles.warnLine}>
-              The in-store server is unreachable. Use manual / paper until it
-              returns.
-            </Text>
-          ) : null}
-          {manualMode ? (
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => {
-                clearManual();
-                onClose();
-              }}
-              accessibilityRole="button">
-              <Text style={styles.secondaryText}>Resume recording sales</Text>
-            </TouchableOpacity>
+          <EyebrowLabel>On-prem server</EyebrowLabel>
+          {provisioned ? (
+            <>
+              <Row label="Address" value={maskedUrl ?? '—'} />
+              <Row label="Last sync" value={formatLastSync(lastSyncAt)} />
+              <Row
+                label="Identity"
+                value={cert.label}
+                valueColor={cert.color}
+              />
+            </>
           ) : (
-            <TouchableOpacity
-              style={styles.dangerBtn}
-              onPress={() => {
-                returnToManual();
-                onClose();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Return to manual or paper">
-              <Text style={styles.dangerText}>Return to manual / paper</Text>
-            </TouchableOpacity>
-          )}
-          {/* The mode SWITCH itself (re-auth against the NAS) lives in
-              Settings → Connection per the §14.7 copy. We point there rather
-              than duplicate the auth flow here. */}
-          {!cachedLocalUrl ? (
             <Text style={styles.hintLine}>
-              No in-store server address has been delivered to this device yet.
-              You can enter one manually in Settings.
+              Not set up. On-prem failover isn’t configured for this device
+              yet — your shop is running cloud-only.
             </Text>
-          ) : null}
+          )}
         </View>
 
         <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
@@ -213,48 +198,12 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'right',
   },
-  warnLine: {
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.regular,
-    color: COLORS.warningText,
-    marginTop: SPACING.xs,
-    marginBottom: SPACING.sm,
-    lineHeight: 18,
-  },
   hintLine: {
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.regular,
     color: COLORS.textMuted,
     marginTop: SPACING.sm,
     lineHeight: 18,
-  },
-  dangerBtn: {
-    marginTop: SPACING.sm,
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.destructive,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dangerText: {
-    color: COLORS.destructive,
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.semibold,
-  },
-  secondaryBtn: {
-    marginTop: SPACING.sm,
-    minHeight: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.inputBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryText: {
-    color: COLORS.navy,
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.medium,
   },
   closeBtn: {
     marginTop: SPACING.lg,
