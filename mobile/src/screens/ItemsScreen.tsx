@@ -509,7 +509,15 @@ const ItemsScreen: React.FC = () => {
               if (product) {
                 haptics.success();
                 setSearch('');
-                navigation.navigate('ProductDetail', {productId: product.id});
+                // Pass the already-fetched ProductDetail through so the
+                // destination hydrates from it instead of doing a redundant
+                // products.detail RPC on mount. Eliminates a brief spinner
+                // flash and a back-to-back race we'd otherwise depend on
+                // server-side consistency to handle.
+                navigation.navigate('ProductDetail', {
+                  productId: product.id,
+                  product,
+                });
               } else {
                 // Explicit submit miss — clear + warn so the cashier
                 // knows the scan landed but produced no match.

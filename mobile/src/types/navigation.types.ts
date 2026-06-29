@@ -1,6 +1,7 @@
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {BottomTabScreenProps} from '@react-navigation/bottom-tabs';
 import type {NavigatorScreenParams} from '@react-navigation/native';
+import type {ProductDetail} from '@aeris/shared';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -62,7 +63,11 @@ export type TransactionsStackParamList = {
 
 export type ItemsStackParamList = {
   ItemsList: undefined;
-  ProductDetail: {productId: number};
+  // `product` is an optional pre-fetched payload from a barcode-scan caller;
+  // when present, ProductDetail hydrates initial state from it (no spinner
+  // flash on scan) and skips the on-mount fetch. The focus-effect re-fetch
+  // still runs, so edits made elsewhere are reflected on return.
+  ProductDetail: {productId: number; product?: ProductDetail};
   // mode = 'detail': on found product, replace Scanner with ProductDetail.
   // mode = 'capture': on first successful scan, pop back with the raw
   // barcode value merged onto the previous screen's params (used by
