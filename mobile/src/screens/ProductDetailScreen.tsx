@@ -38,10 +38,17 @@ export default function ProductDetailScreen() {
   const tabletColumnCap = isTablet
     ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
     : null;
-  const {productId} = route.params;
+  const {productId, product: seedProduct} = route.params;
 
-  const [product, setProduct] = useState<ProductDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // When the caller hands us a pre-fetched product (the barcode-scan path in
+  // ItemsScreen does this), hydrate initial state from it so the screen
+  // doesn't flash a spinner before showing the photo + details. The focus-
+  // effect re-fetch still runs once the screen settles, so edits made
+  // elsewhere are reflected on return.
+  const [product, setProduct] = useState<ProductDetail | null>(
+    seedProduct ?? null,
+  );
+  const [isLoading, setIsLoading] = useState(seedProduct == null);
   const [isUnavailable, setIsUnavailable] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [stockModalVisible, setStockModalVisible] = useState(false);
@@ -83,7 +90,13 @@ export default function ProductDetailScreen() {
   }, [productId]);
 
   useEffect(() => {
+    // When a caller seeded us with a pre-fetched product (the barcode-scan
+    // path), skip the on-mount load — initial state is already populated.
+    // The useFocusEffect below still refreshes once the screen has settled,
+    // so the user gets fresh data without a back-to-back duplicate fetch.
+    if (seedProduct) return;
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
   // Fetch a small page of recent transactions for this product. Best-

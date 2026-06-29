@@ -81,7 +81,23 @@ const ProductImagePicker: React.FC<Props> = ({
     };
   }, []);
 
-  const shownUrl = localUrl ?? currentImageUrl ?? null;
+  // Treat empty string the same as null — `??` only falls through on
+  // null/undefined, so a stray "" from either layer would otherwise render
+  // an empty <Image>. Belt-and-braces with the normalizer's "" → null fix.
+  const safeLocal = localUrl && localUrl !== '' ? localUrl : null;
+  const safeCurrent =
+    currentImageUrl && currentImageUrl !== '' ? currentImageUrl : null;
+  const baseUrl = safeLocal ?? safeCurrent ?? null;
+  // Cache-bust when localUrl is set (i.e. we just uploaded). RN's native
+  // image cache can latch onto a previously-failed fetch verdict for a URL —
+  // appending a per-localUrl query suffix forces a fresh fetch so a single
+  // momentary 4xx from R2 can't poison subsequent renders of the same URL.
+  const shownUrl =
+    baseUrl == null
+      ? null
+      : safeLocal != null
+        ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}v=${safeLocal.length}`
+        : baseUrl;
 
   const doUpload = useCallback(
     async (fileUri: string) => {

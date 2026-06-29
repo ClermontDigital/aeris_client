@@ -93,34 +93,35 @@ const styles = StyleSheet.create({
   chip: {
     position: 'absolute',
     right: 60,
+    minWidth: 44,
+    maxWidth: 52,
     height: 44,
-    maxWidth: 96,
     flexDirection: 'column',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    justifyContent: 'center',
+    paddingHorizontal: 2,
     zIndex: 3,
   },
-  // Top half — dot + glyph. Exactly 22px so the label below also gets 22px.
+  // Carrier-indicator style: a tiny dot + glyph row above a micro label,
+  // matching the gear's 44×44 footprint so the two read as a pair.
   iconRow: {
-    height: 22,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
   },
   dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
   },
   glyph: {
-    fontSize: 14,
+    fontSize: 11,
   },
-  // Bottom half — the small word. lineHeight 22 centres the glyph in a 22-tall
-  // line box so the label visually occupies exactly half the chip.
   label: {
     color: COLORS.navy,
-    fontSize: FONT_SIZE.sm,
+    fontSize: 9,
     fontFamily: FONT_FAMILY.medium,
-    lineHeight: 22,
+    lineHeight: 11,
+    marginTop: 1,
   },
 });
