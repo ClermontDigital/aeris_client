@@ -10,14 +10,14 @@ import {useDrStore} from '../stores/drStore';
 // chrome tongue. Source of truth: §14.7 Q9 (cloud-unreachable) + §17.4.
 //
 // Gating: the on-prem-specific banner only fires when the device has a
-// rails-delivered local_url cached (provisioned). Cloud-only shops never
-// see the "On-prem server unreachable" banner — there is no NAS for it
-// to refer to. The cloud-unreachable advisory still fires on cloud-only
-// shops, but with shorter copy (no "switch to in-store" CTA — there's
-// nowhere to switch to).
+// rails-delivered local_url cached (provisioned). Cloud-only deployments
+// never see the "On-prem server unreachable" banner — there is no NAS
+// for it to refer to. The cloud-unreachable advisory still fires on
+// cloud-only deployments, but with shorter copy (no "switch to on-prem"
+// CTA — there's nowhere to switch to).
 //
 // Precedence: the on-prem-unreachable banner is the more severe state
-// (provisioned shop mid-outage with no working server) and wins.
+// (provisioned deployment mid-outage with no working server) and wins.
 
 export function FailoverBanners(): React.ReactElement | null {
   const cloudReachable = useCloudReachabilityStore(s => s.cloudReachable);
@@ -26,8 +26,8 @@ export function FailoverBanners(): React.ReactElement | null {
   const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
   const provisioned = cachedLocalUrl != null;
 
-  // Most severe — only meaningful on a provisioned shop (cloud-only shops
-  // have no NAS to be "unreachable").
+  // Most severe — only meaningful on a provisioned deployment (cloud-only
+  // deployments have no NAS to be "unreachable").
   if (provisioned && nasUnavailable) {
     return (
       <View

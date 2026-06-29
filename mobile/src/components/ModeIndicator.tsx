@@ -59,8 +59,8 @@ export function ModeIndicator({topOffset}: Props): React.ReactElement {
   const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
   const cloudReachable = useCloudReachabilityStore(s => s.cloudReachable);
   const nasUnavailable = useFailoverAbortStore(s => s.nasUnavailable);
-  // `provisioned` gates everything DR-specific. A cloud-only shop (no
-  // cached local_url) gets a cloud-only chip; the NAS-side states
+  // `provisioned` gates everything DR-specific. A cloud-only deployment
+  // (no cached local_url) gets a cloud-only chip; the NAS-side states
   // ('switching'/'local'/nasUnavailable-driven 'offline') never fire.
   const provisioned = cachedLocalUrl != null;
   // Display-mode derivation. Sync priority:
