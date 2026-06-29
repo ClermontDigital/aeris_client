@@ -12,9 +12,10 @@ import {
   ScrollView,
 } from 'react-native';
 import Modal from 'react-native-modal';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {BrandHeaderChrome} from '../components/BrandHeaderChrome';
 import {useSettings} from '../hooks/useSettings';
 import {useAuthStore} from '../stores/authStore';
 import {useAppLockStore} from '../stores/appLockStore';
@@ -539,8 +540,9 @@ type SettingsNav = NativeStackNavigationProp<AppStackParamList, 'Settings'>;
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<SettingsNav>();
   const haptics = useHaptics();
-  // The Save button lives in the page header, outside SettingsBody. The
-  // body publishes its latest save closure into this ref via the
+  const insets = useSafeAreaInsets();
+  // The Save button lives in the brand-header overlay, outside SettingsBody.
+  // The body publishes its latest save closure into this ref via the
   // onSaveHandlerReady callback (fires on every change to captured form
   // state), so the header's tap always commits the freshest values.
   const saveRef = React.useRef<(() => void) | null>(null);
@@ -551,8 +553,9 @@ export const SettingsScreen: React.FC = () => {
   }, [haptics, navigation]);
 
   const handleSavePress = useCallback(() => {
+    haptics.light();
     saveRef.current?.();
-  }, []);
+  }, [haptics]);
 
   // Stable callback so SettingsBody's effect doesn't re-fire and republish
   // an identical reference on every render.
@@ -565,33 +568,39 @@ export const SettingsScreen: React.FC = () => {
   }, [navigation]);
 
   return (
-    <SafeAreaView edges={['top']} style={styles.pageRoot}>
-      <View style={styles.pageHeader}>
-        <TouchableOpacity
-          onPress={handleBack}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          style={styles.pageHeaderBtn}
-          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <Icon name="chevron-back" size={24} color={COLORS.navy} />
-        </TouchableOpacity>
-        <Text style={styles.pageHeaderTitle}>Settings</Text>
-        <TouchableOpacity
-          onPress={handleSavePress}
-          accessibilityRole="button"
-          accessibilityLabel="Save settings"
-          style={styles.pageHeaderSaveBtn}
-          hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-          <Text style={styles.pageHeaderSaveText}>Save</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.pageRoot}>
+      {/* Brand-header chrome — identical SVG/wordmark to the main view
+          pages so the gear-pushed Settings screen reads as part of the
+          same surface. Back chevron on the left, Save on the right, both
+          absolute-positioned over the chrome at the same y as the
+          gear/back affordances on the main pages. */}
+      <BrandHeaderChrome />
+      <TouchableOpacity
+        onPress={handleBack}
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+        style={[styles.brandBackBtn, {top: insets.top + 36}]}
+        hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+        <Icon name="chevron-back" size={22} color={COLORS.navy} />
+        <Text style={styles.brandBackText} numberOfLines={1}>
+          Back
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={handleSavePress}
+        accessibilityRole="button"
+        accessibilityLabel="Save settings"
+        style={[styles.brandSaveBtn, {top: insets.top + 36}]}
+        hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+        <Text style={styles.brandSaveText}>Save</Text>
+      </TouchableOpacity>
       <SettingsBody
         variant="page"
         onCommit={handleCommit}
         onCancel={handleCommit}
         onSaveHandlerReady={publishSave}
       />
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -630,39 +639,42 @@ const styles = StyleSheet.create({
   modalContent: {padding: 24},
   pageFlex: {flex: 1},
   pageRoot: {flex: 1, backgroundColor: COLORS.background},
-  pageHeader: {
+  // Absolute Back affordance overlayed on the brand-header chrome. Mirrors
+  // AppTabs's backBtnHeader exactly so the affordance reads identically
+  // between Settings and any drill-down (item detail, customer detail, etc).
+  brandBackBtn: {
+    position: 'absolute',
+    left: 8,
+    height: 44,
+    maxWidth: 96,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.surfaceBorder,
-    backgroundColor: COLORS.background,
+    paddingHorizontal: 4,
+    zIndex: 3,
   },
-  pageHeaderBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pageHeaderTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontFamily: FONT_FAMILY.semibold,
-    fontSize: FONT_SIZE.lg,
+  brandBackText: {
     color: COLORS.navy,
+    fontFamily: FONT_FAMILY.medium,
+    fontSize: FONT_SIZE.md,
+    marginLeft: 2,
+    flexShrink: 1,
   },
-  pageHeaderSaveBtn: {
-    minWidth: 56,
+  // Absolute Save affordance, mirrors the gear position (right:12) so the
+  // chrome's right slot is occupied consistently with the main pages.
+  brandSaveBtn: {
+    position: 'absolute',
+    right: 12,
     height: 44,
+    minWidth: 56,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: SPACING.sm,
+    zIndex: 3,
   },
-  pageHeaderSaveText: {
+  brandSaveText: {
     color: COLORS.crimson,
     fontFamily: FONT_FAMILY.semibold,
-    fontSize: FONT_SIZE.lg,
+    fontSize: FONT_SIZE.md,
   },
   pageContent: {padding: SPACING.md, paddingBottom: SPACING.xxl},
   title: {fontSize: 22, fontFamily: FONT_FAMILY.bold, color: COLORS.navy, marginBottom: 20},

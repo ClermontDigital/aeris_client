@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from 'react';
+import React, {useState, useEffect, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import type {
 } from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 
 const formatShortDate = (iso: string | null | undefined): string => {
   if (!iso) return '';
@@ -127,6 +128,61 @@ export default function CustomerDetailScreen() {
       load();
     }, [load]),
   );
+
+  // Single back handler shared by the brand-header Back button and any
+  // in-page Back. Cross-tab breadcrumb aware: if the user arrived via a
+  // cross-tab jump (e.g. TransactionsList -> SaleDetail -> CustomerDetail),
+  // return them to the originating tab rather than popping inside the
+  // Customers stack.
+  // One-shot guard: handleBack is reachable from BOTH the header and the
+  // in-page button; popPrev() mutates history, so a fast double-tap could
+  // over-navigate. Reset on each focus.
+  const backFiredRef = useRef(false);
+  const handleBack = useCallback(() => {
+    if (backFiredRef.current) return;
+    backFiredRef.current = true;
+    haptics.light();
+    const prev = useNavHistoryStore.getState().popPrev();
+    if (prev) {
+      const parent = navigation.getParent?.();
+      if (parent) {
+        (parent as unknown as {
+          navigate: (tab: string, params: object) => void;
+        }).navigate(prev.tab, {
+          initial: false,
+          screen: prev.screen,
+          params: prev.params ?? {},
+        });
+        return;
+      }
+    }
+    navigation.goBack();
+  }, [haptics, navigation]);
+
+  // Surface the Back button in the shared brand header while focused.
+  // NO cleanup on useFocusEffect — with react-native-screens v4 + native-
+  // stack the popped screen's blur fires BEFORE the revealed screen's
+  // focus on goBack(), so identity-matched cleanup races ahead and wipes
+  // the slot just as the next screen is about to install its own handler.
+  // Instead, beforeRemove (below) handles the slot cleanup when this
+  // screen is actually being removed from the stack; clearIf is identity-
+  // matched so we never accidentally wipe the next screen's handler.
+  // (Mirrors the ProductDetailScreen v1.3.70 race fix.)
+  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
+  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
+  useFocusEffect(
+    useCallback(() => {
+      backFiredRef.current = false;
+      setHeaderBack(handleBack);
+      return undefined;
+    }, [setHeaderBack, handleBack]),
+  );
+  useEffect(() => {
+    const sub = navigation.addListener('beforeRemove', () => {
+      clearHeaderBackIf(handleBack);
+    });
+    return sub;
+  }, [navigation, clearHeaderBackIf, handleBack]);
 
   const openMail = useCallback(
     (email: string) => {
