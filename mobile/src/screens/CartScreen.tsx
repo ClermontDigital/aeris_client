@@ -14,7 +14,8 @@ import {
   Pressable,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
 import {
@@ -234,7 +235,14 @@ export default function CartScreen() {
     [discountMode, haptics],
   );
 
+  // One-shot guard: handleBackToProducts is fired from the brand-header
+  // Back affordance and from the Clear-cart confirm. Resetting on focus
+  // mirrors the ProductDetail/CustomerDetail pattern so a fast double-tap
+  // can't over-navigate while a transition is in flight.
+  const backFiredRef = useRef(false);
   const handleBackToProducts = useCallback(() => {
+    if (backFiredRef.current) return;
+    backFiredRef.current = true;
     // Pop back if we have history (came from ProductGrid → Cart navigate),
     // otherwise jump to ProductGrid directly. Both land on the same screen
     // either way; popping preserves any existing scroll/search state on
@@ -245,6 +253,26 @@ export default function CartScreen() {
       navigation.navigate('ProductGrid');
     }
   }, [navigation]);
+
+  // Surface the Back button in the shared brand header while focused.
+  // beforeRemove handles the slot cleanup with an identity-matched clearIf
+  // so the revealed screen's own handler never gets wiped (the v1.3.70
+  // race fix — see ProductDetailScreen comment for the rationale).
+  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
+  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
+  useFocusEffect(
+    useCallback(() => {
+      backFiredRef.current = false;
+      setHeaderBack(handleBackToProducts);
+      return undefined;
+    }, [setHeaderBack, handleBackToProducts]),
+  );
+  useEffect(() => {
+    const sub = navigation.addListener('beforeRemove', () => {
+      clearHeaderBackIf(handleBackToProducts);
+    });
+    return sub;
+  }, [navigation, clearHeaderBackIf, handleBackToProducts]);
 
   const handleClearCart = useCallback(() => {
     Alert.alert(
@@ -370,20 +398,10 @@ export default function CartScreen() {
         style={styles.dismissArea}
         onPress={Keyboard.dismiss}
         accessible={false}>
-      {/* Header */}
+      {/* Header — Back lives in the shared brand header (top-left of the
+          chrome) via useHeaderBackStore above; this row just titles the
+          screen and shows the item count. */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={handleBackToProducts}
-          accessibilityRole="button"
-          accessibilityLabel="Back to products">
-          <Icon
-            name="chevron-back"
-            size={ICON_SIZE.action}
-            color={COLORS.text}
-          />
-          <Text style={styles.backText}>Products</Text>
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Cart</Text>
         <Text style={styles.headerCount}>
           {itemCount} {itemCount === 1 ? 'item' : 'items'}
