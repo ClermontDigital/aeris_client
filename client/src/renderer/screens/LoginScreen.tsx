@@ -24,6 +24,10 @@ function copyForError(kind: string | null): string | null {
       return 'Workspace, email, or password is incorrect.';
     case 'expired':
       return 'Your session has expired. Please log in again.';
+    case 'mode-switch':
+      // §21 Q5 copy — mirrors mobile's SettingsModal so the cashier reads the
+      // mode change, not an app misbehaviour, mid-shift.
+      return 'Switching to in-store mode — sign in again to continue.';
     case 'network':
       return "Couldn't reach the server. Check your connection and try again.";
     case 'unknown':
@@ -121,7 +125,16 @@ export function LoginScreen(): React.ReactElement {
           Aeris
         </div>
 
-        {errorCopy ? <ErrorBanner message={errorCopy} tone={errorKind === 'expired' ? 'warning' : 'error'} /> : null}
+        {errorCopy ? (
+          <ErrorBanner
+            message={errorCopy}
+            tone={
+              errorKind === 'expired' || errorKind === 'mode-switch'
+                ? 'warning'
+                : 'error'
+            }
+          />
+        ) : null}
 
         <TextField
           label="Workspace"

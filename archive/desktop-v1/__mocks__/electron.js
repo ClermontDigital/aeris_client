@@ -146,6 +146,12 @@ const contextBridge = {
   exposeInMainWorld: jest.fn(),
 };
 
+const session = {
+  fromPartition: jest.fn(() => ({
+    clearStorageData: jest.fn(() => Promise.resolve()),
+  })),
+};
+
 module.exports = {
   BrowserWindow,
   Menu,
@@ -156,4 +162,5 @@ module.exports = {
   shell,
   app,
   contextBridge,
+  session,
 };

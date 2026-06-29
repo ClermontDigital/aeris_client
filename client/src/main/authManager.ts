@@ -8,7 +8,7 @@ import {
 } from '../shared-types/ipc';
 import { settingsStore } from './settingsStore';
 import { tokenStore } from './tokenStore';
-import { getRelayClient, setOnUnauthorized } from './relayBridge';
+import { getRelayClient, setOnUnauthorized, applyAuthToken } from './relayBridge';
 import { logger } from './logger';
 import { safeHandle } from './senderGuard';
 
@@ -104,7 +104,9 @@ async function doInitialize(): Promise<void> {
   // path. Probing here previously caused a duplicate cold-start fetch
   // whose transient relay-edge 5xx surfaced as a spurious "Couldn't reach
   // the server" banner even though the session was valid.
-  getRelayClient().setAuthToken(token);
+  // M-R9: apply to BOTH transports so a cold-start mode flip to Direct never
+  // dispatches against a null-token DirectClient.
+  applyAuthToken(token);
   setState({
     initialized: true,
     isAuthenticated: true,
@@ -166,7 +168,9 @@ export async function login(req: LoginRequest): Promise<AuthState> {
       setState({ errorKind: 'unknown' });
       return state;
     }
-    getRelayClient().setAuthToken(token);
+    // M-R9: fresh login must seed BOTH clients (the DirectClient was otherwise
+    // tokenless until its first dispatch).
+    applyAuthToken(token);
 
     setState({
       isAuthenticated: true,
@@ -196,7 +200,7 @@ export async function logout(): Promise<AuthState> {
     logger.warn('[authManager] server logout failed (continuing)', e);
   }
   await clearSession();
-  getRelayClient().setAuthToken(null);
+  applyAuthToken(null);
   setState({
     isAuthenticated: false,
     user: null,
@@ -211,7 +215,7 @@ export async function handleUnauthorized(): Promise<void> {
   // in that we tag errorKind: 'expired' so the renderer can show
   // "session expired" copy.
   await clearSession();
-  getRelayClient().setAuthToken(null);
+  applyAuthToken(null);
   setState({
     isAuthenticated: false,
     user: null,
@@ -219,6 +223,27 @@ export async function handleUnauthorized(): Promise<void> {
     errorKind: 'expired',
   });
   logger.info('[authManager] 401 -> session wiped');
+}
+
+// M-R8 / §21 Q5: the cashier flipped connection mode (cloud ↔ in-store). The
+// relay-minted Sanctum token has the wrong audience for the on-prem ERP (and
+// vice-versa), so a stale token would silently 401 every on-prem call. Mirror
+// mobile's SettingsModal (clearLocalSession + the §14.7 copy): wipe the local
+// session on BOTH transports and tag errorKind:'mode-switch' so the
+// LoginScreen shows "Switching to in-store mode — sign in again to continue".
+// Local-only — we deliberately do NOT call the server logout (the target we'd
+// log out of is exactly the one being switched away from / may be unreachable).
+export async function handleModeSwitch(): Promise<AuthState> {
+  await clearSession();
+  applyAuthToken(null);
+  setState({
+    isAuthenticated: false,
+    user: null,
+    expiresAt: null,
+    errorKind: 'mode-switch',
+  });
+  logger.info('[authManager] connection mode switched -> session wiped');
+  return state;
 }
 
 export function registerAuthIpc(): void {
@@ -232,6 +257,7 @@ export function registerAuthIpc(): void {
   });
   safeHandle(IPC_CHANNELS.AUTH_LOGIN, (_e, req) => login(req as LoginRequest));
   safeHandle(IPC_CHANNELS.AUTH_LOGOUT, () => logout());
+  safeHandle(IPC_CHANNELS.AUTH_MODE_SWITCH, () => handleModeSwitch());
 }
 
 // Test-only.

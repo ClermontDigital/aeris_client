@@ -12,6 +12,10 @@ export const IPC_CHANNELS = {
   AUTH_GET_STATE: 'auth:get-state',
   AUTH_LOGIN: 'auth:login',
   AUTH_LOGOUT: 'auth:logout',
+  // M-R8: connection-mode switch → wipe the session so the cashier re-auths
+  // against the new target (the relay Sanctum token is not valid on the on-prem
+  // ERP and vice-versa). Surfaces the §21 Q5 "Switching to in-store mode" copy.
+  AUTH_MODE_SWITCH: 'auth:mode-switch',
   AUTH_STATE_CHANGED: 'auth:state-changed',
 
   SETTINGS_GET: 'settings:get',
@@ -77,7 +81,13 @@ export interface AuthUserSnapshot {
   role?: string;
 }
 
-export type AuthErrorKind = 'expired' | 'invalid' | 'network' | 'unknown';
+export type AuthErrorKind =
+  | 'expired'
+  | 'invalid'
+  | 'network'
+  | 'unknown'
+  // M-R8 / §21 Q5: shown after a connection-mode switch wiped the session.
+  | 'mode-switch';
 
 export interface AuthState {
   initialized: boolean;
@@ -98,9 +108,22 @@ export interface LoginRequest {
 
 // --- settings ---------------------------------------------------------------
 
+// Cloud (relay, via the marketplace gateway) vs Direct (peer-to-peer over the
+// LAN to the on-prem/NAS deployment). v2 shipped relay-only; the DR
+// Warm-Failover project (docs/PROJECT_DR_NAS_WARM_FAILOVER.md §3.1/§8) adds
+// Direct mode so an Electron till can fail over to the NAS during an outage,
+// mirroring the mobile client's existing two-target model.
+export type ConnectionMode = 'relay' | 'direct';
+
 export interface AppSettings {
   workspaceCode: string;
   relayUrl: string;
+  // Direct/LAN target — the on-prem/NAS deployment base URL (e.g.
+  // https://aeris.shop.local:8822). Empty until configured. Used only when
+  // connectionMode === 'direct'. Net-new in the DR project (§8).
+  baseUrl: string;
+  // Which transport relay:call routes through. Defaults to 'relay' (cloud).
+  connectionMode: ConnectionMode;
   autoLockMs: number;
   lockEnabled: boolean;
   // null → use the OS default printer. Non-null is matched against
@@ -111,6 +134,10 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   workspaceCode: '',
   relayUrl: 'https://api.aeris.team',
+  // Empty by default — Direct mode is opt-in (DR failover / on-prem). A blank
+  // baseUrl in relay mode is never read; in direct mode the UI requires it.
+  baseUrl: '',
+  connectionMode: 'relay',
   autoLockMs: 5 * 60 * 1000, // 5 minutes
   lockEnabled: true,
   printerName: null,

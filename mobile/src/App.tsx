@@ -37,6 +37,10 @@ import {useSettingsStore} from './stores/settingsStore';
 import {useAuthStore} from './stores/authStore';
 import {useProductCacheStore} from './stores/productCacheStore';
 import {useAppLockStore} from './stores/appLockStore';
+import {useDrStore} from './stores/drStore';
+import {useCloudReachabilityStore} from './stores/cloudReachabilityStore';
+import {usePresenceBeacon} from './hooks/usePresenceBeacon';
+import {useFailoverDetection} from './hooks/useFailoverDetection';
 import ApiClient from './services/ApiClient';
 import RootNavigator from './navigation/RootNavigator';
 import AppLockScreen from './screens/AppLockScreen';
@@ -136,7 +140,16 @@ const App: React.FC = () => {
   const expiresAt = useAuthStore(s => s.expiresAt);
   const refreshSession = useAuthStore(s => s.refreshSession);
   const initAppLock = useAppLockStore(s => s.init);
+  const initDr = useDrStore(s => s.init);
   const lockNow = useAppLockStore(s => s.lockNow);
+
+  // §19.4 presence beacon — fires {device_id, mode, app_version} on a 60s
+  // cadence + on foreground while authenticated. No-op until login.
+  usePresenceBeacon();
+  // M-R6 (§19.2 rule 5): single producer of the failoverAbortStore
+  // NAS-unavailable signal → auto-surfaces the "NAS unreachable" banner when
+  // the NAS is unusable mid-outage (detection only — no auto-switch; M2).
+  useFailoverDetection();
   const isLocked = useAppLockStore(s => s.isLocked);
   const hasPin = useAppLockStore(s => s.hasPin);
   const lockInitialized = useAppLockStore(s => s.initialized);
@@ -217,14 +230,24 @@ const App: React.FC = () => {
             // vs token-after would yield a false negative when the server
             // renews expiry without rotating the bearer string.
             const after = useAuthStore.getState().token;
+            // A completed refresh round-trip means the cloud answered →
+            // positive cloud-reachability signal for the §14.7 Q9 banner.
+            useCloudReachabilityStore.getState().reportSuccess();
             return after !== null;
-          } catch {
+          } catch (e) {
+            // Transport-class failure (no HTTP status) counts toward the
+            // cloud-unreachable signal; an HTTP error means the server DID
+            // answer, so it does not (§19.2 / §14.7 Q9).
+            const status = (e as {status?: number} | null)?.status;
+            useCloudReachabilityStore
+              .getState()
+              .reportFailure(status === undefined);
             return false;
           }
         });
         await restoreSession();
         if (cancelled) return;
-        await Promise.all([restoreCache(), initAppLock()]);
+        await Promise.all([restoreCache(), initAppLock(), initDr()]);
         if (cancelled) return;
         // No Android immersive — counter cashiers need the clock + battery
         // visible at a glance, and a single swipe down briefly overlays the
@@ -242,7 +265,7 @@ const App: React.FC = () => {
       ApiClient.setOnUnauthorized(null);
       ApiClient.setOnRefresh(null);
     };
-  }, [initSettings, restoreSession, restoreCache, clearLocalSession, initAppLock]);
+  }, [initSettings, restoreSession, restoreCache, clearLocalSession, initAppLock, initDr]);
 
   // Cold-start lock — applies ONLY when the lock store finishes initialising
   // and already-has-a-PIN. Previously this fired on every `hasPin` transition,

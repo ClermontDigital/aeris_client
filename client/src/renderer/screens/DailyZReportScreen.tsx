@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { DailyZReport } from '@aeris/shared';
 import { useRelayQuery } from '../hooks/useRelayQuery';
+import { useSettingsStore } from '../stores/settingsStore';
 import { Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -30,7 +31,32 @@ function isEmptyZ(z: DailyZReport): boolean {
   );
 }
 
+// §14.7 Q10: the Z-report is cloud-only by construction. In Direct (NAS/LAN)
+// mode the NAS never serves sales.daily-summary (DirectClient has no
+// getDailyZReport; the Direct dispatch 400s the action), so guard the screen
+// here. Splitting the query-bearing body into a child means useRelayQuery never
+// even mounts in Direct mode — no doomed 'sales.daily-summary' request fires.
 export function DailyZReportScreen(): React.ReactElement {
+  const isDirectMode = useSettingsStore(
+    (s) => s.settings.connectionMode === 'direct',
+  );
+  if (isDirectMode) {
+    return (
+      <section style={{ display: 'flex', flexDirection: 'column', gap: SPACING.lg }}>
+        <header>
+          <h1 style={{ margin: 0, color: COLORS.text, fontSize: FONT_SIZE.xxl }}>Day end</h1>
+        </header>
+        <EmptyState
+          title="Day end is available online only"
+          description="The Z-report is finalised in the cloud. While this terminal is selling locally (in-store mode), run day end once the connection is restored."
+        />
+      </section>
+    );
+  }
+  return <DailyZReportBody />;
+}
+
+function DailyZReportBody(): React.ReactElement {
   const [date, setDate] = useState<string>(todayIso());
   const [printing, setPrinting] = useState(false);
   const [printToast, setPrintToast] = useState<PrintToast | null>(null);

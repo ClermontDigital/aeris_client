@@ -33,6 +33,8 @@ export interface AerisBridge {
     getState(): Promise<AuthState>;
     login(req: LoginRequest): Promise<AuthState>;
     logout(): Promise<AuthState>;
+    // M-R8: wipe the session on a connection-mode switch (re-auth required).
+    modeSwitch(): Promise<AuthState>;
     onStateChanged(cb: (state: AuthState) => void): () => void;
   };
 

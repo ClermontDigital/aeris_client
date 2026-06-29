@@ -17,6 +17,8 @@ import {useNavigation, StackActions} from '@react-navigation/native';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
+import {ModeIndicator} from '../components/ModeIndicator';
+import {FailoverBanners} from '../components/FailoverBanners';
 import DashboardScreen from '../screens/DashboardScreen';
 import QuickSaleStack from './QuickSaleStack';
 import ItemsStack from './ItemsStack';
@@ -245,6 +247,15 @@ const AppTabsInner: React.FC = () => {
               resizeMode="contain"
             />
           </View>
+          {/* §19.3 mode indicator — mirror of the gear, left of the centred
+              wordmark. Suppressed while a drill-down back affordance occupies
+              the same slot so the two never collide. */}
+          {headerOnBack ? null : (
+            <ModeIndicator topOffset={insets.top + 36} />
+          )}
+          {/* §14.7 Q9 + §17.4 DR banners — thin, non-blocking, under the
+              tongue so they sit on every screen without their own chrome. */}
+          <FailoverBanners />
         </SafeAreaView>
       )}
       {isOnScanner || !headerOnBack ? null : (

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { COLORS, FONT_SIZE, SPACING } from '../theme/tokens';
 import { useCartStore } from '../stores/cartStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import logoUrl from '../assets/logo.png';
 
 interface NavItem {
@@ -33,6 +34,16 @@ const NAV: NavItem[] = [
 export function Sidebar(): React.ReactElement {
   // Subscribe to the derived count so the badge updates on every cart change.
   const cartItemCount = useCartStore((s) => s.getItemCount());
+  // §14.7 Q10: the Z-report ("Day end") is cloud-only by construction — the
+  // NAS never serves it (DirectClient has no getDailyZReport, the Direct
+  // dispatch refuses sales.daily-summary). Hide the nav entry in Direct mode
+  // so the cashier isn't routed to a screen that can only 400.
+  const isDirectMode = useSettingsStore(
+    (s) => s.settings.connectionMode === 'direct',
+  );
+  const nav = isDirectMode
+    ? NAV.filter((item) => item.to !== '/dashboard/eod')
+    : NAV;
   return (
     <nav
       aria-label="Primary navigation"
@@ -60,7 +71,7 @@ export function Sidebar(): React.ReactElement {
           style={{ width: 96, height: 'auto', display: 'block' }}
         />
       </div>
-      {NAV.map((item) => {
+      {nav.map((item) => {
         const Icon = item.icon;
         const showBadge = item.to === '/pos' && cartItemCount > 0;
         return (
