@@ -27,6 +27,8 @@ import {
   ICON_SIZE,
 } from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
+import {useTransactionActivityStore} from '../stores/transactionActivityStore';
+import {useFailoverAbortStore} from '../stores/failoverAbortStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {usePrintReceipt} from '../hooks/usePrintReceipt';
@@ -170,7 +172,19 @@ export default function CheckoutScreen() {
       ? tenderedCents - totalCents
       : 0;
 
+  // M-R5 (§17.4): once the cashier has aborted to manual (or the NAS went
+  // unavailable mid-outage), writes are blocked — the Complete-sale CTA must go
+  // dead and tell the cashier to record on paper. Subscribed so the button
+  // re-renders the moment the abort store flips.
+  // TODO(DR-M-R5 follow-up): apply the same `isWriteActionBlocked('refund')`
+  // gate to RefundModal and `isWriteActionBlocked('account')` to the
+  // customer-account screen (separate scope — not built here).
+  const saleWritesBlocked = useFailoverAbortStore(s =>
+    s.isWriteActionBlocked('sale'),
+  );
+
   const canComplete =
+    !saleWritesBlocked &&
     paymentMethodsState === 'live' &&
     selectedMethod !== null &&
     (selectedMethod !== 'cash' || tenderedCents >= totalCents);
@@ -182,6 +196,16 @@ export default function CheckoutScreen() {
   const submitLockRef = useRef(false);
 
   const handleCompleteSale = useCallback(async () => {
+    // FIX (M-R5 §17.4): re-check the write-gate at the TOP of the handler, not
+    // just via the button's `disabled` prop. A programmatic invoke or a
+    // render-flip race (gate flips to blocked between the press and re-render)
+    // could otherwise still post a sale in manual mode. Read live from the
+    // store so we never rely on a stale subscribed snapshot.
+    if (useFailoverAbortStore.getState().isWriteActionBlocked('sale')) {
+      haptics.error();
+      setError('Manual mode — record on paper');
+      return;
+    }
     if (!selectedMethod) return;
     if (submitLockRef.current) return;
     submitLockRef.current = true;
@@ -189,6 +213,9 @@ export default function CheckoutScreen() {
     haptics.medium();
     setIsSubmitting(true);
     setError(null);
+    // §19.2 rule 1: mark the createSale in flight so the routing cascade never
+    // switches connection mode mid-post (which would re-auth + drop the call).
+    useTransactionActivityStore.getState().setSaleInFlight(true);
 
     try {
       const saleItems = items.map(item => ({
@@ -229,6 +256,7 @@ export default function CheckoutScreen() {
     } finally {
       setIsSubmitting(false);
       submitLockRef.current = false;
+      useTransactionActivityStore.getState().setSaleInFlight(false);
     }
   }, [selectedMethod, items, totalCents, customerId, discountCents, notes, haptics, markSaleCompleted]);
 
@@ -301,6 +329,19 @@ export default function CheckoutScreen() {
         if (saleResult) resetSaleStack();
       };
     }, [saleResult, resetSaleStack]),
+  );
+
+  // §19.2 rule 1: while Checkout is focused we're mid-transaction, so the
+  // routing cascade must defer any cloud↔NAS switch. Set the activeScreen
+  // marker on focus and clear it on blur.
+  useFocusEffect(
+    useCallback(() => {
+      useTransactionActivityStore.getState().setActiveScreen('Checkout');
+      return () => {
+        const ta = useTransactionActivityStore.getState();
+        if (ta.activeScreen === 'Checkout') ta.setActiveScreen(null);
+      };
+    }, []),
   );
 
   // Success view
@@ -556,6 +597,12 @@ export default function CheckoutScreen() {
             <Text style={styles.completeSaleText}>Complete sale</Text>
           )}
         </TouchableOpacity>
+        {/* M-R5 (§17.4): manual-mode subtext under the dead CTA. */}
+        {saleWritesBlocked ? (
+          <Text style={styles.manualModeSubtext}>
+            Manual mode — record on paper
+          </Text>
+        ) : null}
       </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -752,6 +799,14 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZE.lg,
     fontFamily: FONT_FAMILY.bold,
+  },
+  // M-R5: subtext under the disabled Complete-sale CTA in manual mode.
+  manualModeSubtext: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.regular,
+    textAlign: 'center',
+    marginTop: SPACING.sm,
   },
   // Success screen styles
   successContainer: {

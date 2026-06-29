@@ -20,6 +20,7 @@ const aeris: AerisBridge = {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_GET_STATE),
     login: (req) => ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGIN, req),
     logout: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGOUT),
+    modeSwitch: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_MODE_SWITCH),
     onStateChanged: (cb) => {
       const handler = (_e: unknown, state: unknown) =>
         cb(state as Parameters<AerisBridge['auth']['onStateChanged']>[0] extends (s: infer S) => void ? S : never);

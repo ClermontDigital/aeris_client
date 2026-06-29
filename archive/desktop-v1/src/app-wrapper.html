@@ -906,6 +906,12 @@
                         <div class="tooltip">Update Available - Click to Download</div>
                     </button>
                     
+                    <!-- DR routing-mode indicator / switch (cloud ↔ in-store) -->
+                    <button class="toolbar-button" id="routing-mode-chip" title="Connection mode" style="margin-right: 10px; width: auto; padding: 0 12px;">
+                        ☁️ Cloud
+                        <div class="tooltip">Switch connection mode</div>
+                    </button>
+
                     <!-- Settings button -->
                     <button class="toolbar-button" id="settings-btn" title="Application Settings">
                         ⚙
@@ -1052,10 +1058,14 @@
             try {
                 // Load settings once and store globally
                 currentSettings = await window.electronAPI.getSettings();
-                currentUrl = currentSettings.baseUrl;
-                
+                // DR routing: load the ACTIVE target (in-store/NAS localUrl when
+                // routingMode === 'local', else the cloud baseUrl).
+                currentUrl = (currentSettings.routingMode === 'local' && currentSettings.localUrl)
+                    ? currentSettings.localUrl
+                    : currentSettings.baseUrl;
+
                 // Use the configured base URL directly
-                console.log('Using configured base URL:', currentUrl);
+                console.log('Using configured target URL:', currentUrl);
                 
                 // Check sessionStorage for persisted user info on init
                 manuallyExtractUserInfo(); // Initial extraction, will use persisted if available
@@ -1085,6 +1095,61 @@
             // Direct access to toolbar instead of iframe postMessage
             const sessionManagementEnabled = currentSettings.enableSessionManagement !== false;
             updateToolbarSessionButtons(sessionManagementEnabled);
+            updateRoutingModeChip(currentSettings.routingMode || 'cloud');
+        }
+
+        // DR routing: reflect the active mode in the toolbar chip.
+        function updateRoutingModeChip(mode) {
+            const chip = document.getElementById('routing-mode-chip');
+            if (!chip) return;
+            const isLocal = mode === 'local';
+            chip.firstChild
+                ? (chip.childNodes[0].nodeValue = isLocal ? '🏪 In-store ' : '☁️ Cloud ')
+                : (chip.textContent = isLocal ? '🏪 In-store' : '☁️ Cloud');
+        }
+
+        // DR routing: confirm-then-switch between cloud and in-store/NAS modes.
+        async function handleRoutingModeToggle() {
+            const currentMode = currentSettings.routingMode || 'cloud';
+            const targetMode = currentMode === 'local' ? 'cloud' : 'local';
+
+            // Show the target host so the operator can confirm where they're going.
+            let targetHost = '';
+            try {
+                const url = targetMode === 'local' ? currentSettings.localUrl : currentSettings.baseUrl;
+                targetHost = url ? new URL(url).host : '';
+            } catch (e) { /* leave blank */ }
+
+            if (targetMode === 'local' && !currentSettings.localUrl) {
+                showNotification('No in-store (NAS) URL configured — set it in Settings first', 'error');
+                return;
+            }
+
+            // §14.7-approved copy.
+            const dialogOpts = targetMode === 'local'
+                ? {
+                    title: 'Switch to in-store mode',
+                    message: 'Switching to in-store mode — sign in again to continue.',
+                    detail: targetHost ? `Target: ${targetHost}` : ''
+                  }
+                : {
+                    title: 'Switch to cloud mode',
+                    message: 'Switching to cloud mode — sign in again to continue.',
+                    detail: targetHost ? `Target: ${targetHost}` : ''
+                  };
+
+            const { confirmed } = await window.electronAPI.showConfirmDialog(dialogOpts);
+            if (!confirmed) return;
+
+            const result = await window.electronAPI.setRoutingMode(targetMode);
+            if (!result || result.success === false) {
+                showNotification(
+                    'Could not switch mode' + (result && result.error ? `: ${result.error}` : ''),
+                    'error'
+                );
+            }
+            // On success the main process emits routing-mode-changed, which
+            // reloads the webview and shows a toast.
         }
         
         function loadMainApp() {
@@ -2526,10 +2591,25 @@
             // Update toolbar to show/hide session management buttons immediately
             updateToolbarSettings();
             
-            // Update current URL if baseUrl changed
-            if (settings.baseUrl && settings.baseUrl !== currentUrl) {
+            // Update current URL if baseUrl changed (only relevant in cloud mode;
+            // in-store mode tracks localUrl via routing-mode-changed).
+            if ((settings.routingMode || 'cloud') !== 'local'
+                && settings.baseUrl && settings.baseUrl !== currentUrl) {
                 currentUrl = settings.baseUrl;
             }
+        });
+
+        // DR routing: the active target changed in the main process — reload the
+        // webview in place against the new URL (the web session was cleared in
+        // main, so the user re-authenticates).
+        window.electronAPI.onRoutingModeChanged(({ mode, targetUrl }) => {
+            currentUrl = targetUrl;
+            currentSettings.routingMode = mode;
+            updateRoutingModeChip(mode);
+            loadMainApp();
+            showNotification(
+                mode === 'local' ? 'Switched to in-store mode' : 'Switched to cloud mode'
+            );
         });
 
         // Note: toolbar actions are handled by the message listener above (line ~1368)
@@ -2693,6 +2773,10 @@
                 console.log('=== TOOLBAR: Settings button clicked ===');
                 handleToolbarAction('open-settings');
                 console.log('=== TOOLBAR: Settings action handled ===');
+            });
+
+            document.getElementById('routing-mode-chip').addEventListener('click', () => {
+                handleRoutingModeToggle();
             });
             
             document.getElementById('logout-btn').addEventListener('click', () => {

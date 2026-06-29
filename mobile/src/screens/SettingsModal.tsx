@@ -164,9 +164,12 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
       }
       // clearLocalSession sets a generic "session expired" error; replace
       // with mode-specific copy so the user understands why they were
-      // logged out.
+      // logged out. §14.7 Q5: in a real outage the cashier is flipping to
+      // the in-store NAS mid-shift — "session expired" / "please log in
+      // again" reads as the app misbehaving. The approved copy frames it as
+      // the deliberate in-store switch it is.
       useAuthStore.setState({
-        error: 'Connection mode changed. Please log in again.',
+        error: 'Switching to in-store mode — sign in again to continue.',
       });
     }
 

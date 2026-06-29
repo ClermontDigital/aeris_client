@@ -62,6 +62,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Settings event listener
   onSettingsUpdated: (callback) => ipcRenderer.on('settings-updated', (_event, ...args) => callback(...args)),
+
+  // DR routing (cloud ↔ in-store/NAS)
+  setRoutingMode: (mode) => ipcRenderer.invoke('set-routing-mode', mode),
+  onRoutingModeChanged: (callback) => ipcRenderer.on('routing-mode-changed', (_event, ...args) => callback(...args)),
   
   // App restart function
   restartApp: () => ipcRenderer.invoke('restart-app'),
@@ -77,5 +81,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('hide-session-overlay');
     ipcRenderer.removeAllListeners('print-request');
     ipcRenderer.removeAllListeners('print-silent-request');
+    ipcRenderer.removeAllListeners('routing-mode-changed');
   }
 }); 

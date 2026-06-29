@@ -10,6 +10,8 @@ interface AuthStore extends MainAuthState {
   init: () => Promise<void>;
   login: (req: LoginRequest) => Promise<void>;
   logout: () => Promise<void>;
+  // M-R8: wipe the session after a connection-mode switch.
+  modeSwitch: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -49,6 +51,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   logout: async () => {
     const next = await window.aeris.auth.logout();
+    set({ ...next });
+  },
+
+  modeSwitch: async () => {
+    const next = await window.aeris.auth.modeSwitch();
     set({ ...next });
   },
 

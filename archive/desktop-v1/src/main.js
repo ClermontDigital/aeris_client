@@ -19,6 +19,11 @@ let sessionCleanupInterval = null;
 // Default configuration
 const defaultConfig = {
   baseUrl: 'http://aeris.local:8000',
+  // DR NAS warm-failover: `localUrl` is the in-store (NAS/LAN) target the
+  // webview loads when `routingMode === 'local'`. `baseUrl` stays the cloud
+  // target. Empty until the operator configures + validates a LAN address.
+  localUrl: '',
+  routingMode: 'cloud',
   autoStart: false,
   enableSessionManagement: true,
   sessionTimeout: 30, // minutes
@@ -32,6 +37,32 @@ const defaultConfig = {
 // Get platform-specific icon
 function getAppIcon() {
   return path.join(__dirname, 'assets/icons/icon.png');
+}
+
+// DR routing: resolve which URL the webview should load. In 'local' (in-store)
+// mode this is the validated NAS LAN target; otherwise the cloud baseUrl.
+function getActiveTargetUrl() {
+  const mode = store.get('routingMode', defaultConfig.routingMode);
+  if (mode === 'local') {
+    return store.get('localUrl', defaultConfig.localUrl);
+  }
+  return store.get('baseUrl', defaultConfig.baseUrl);
+}
+
+// will-navigate security boundary (DR cross-target guard). Navigation is
+// confined to the ACTIVE target's host — same host = in-app (allow), any other
+// host (or a malformed URL) = treat as external and open in the system browser.
+// Pure so it can be unit-tested without spinning up a BrowserWindow. After a
+// cloud↔local switch the active target changes, so NAS nav is allowed in local
+// mode and cloud nav is allowed in cloud mode, but never the reverse.
+function isNavigationAllowed(navigationUrl, activeTargetUrl) {
+  try {
+    const parsedUrl = new URL(navigationUrl);
+    const parsedBaseUrl = new URL(activeTargetUrl);
+    return parsedUrl.hostname === parsedBaseUrl.hostname;
+  } catch (error) {
+    return false;
+  }
 }
 
 function createMainWindow() {
@@ -100,25 +131,21 @@ function createMainWindow() {
 
   // Handle navigation with security validation
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    const baseUrl = store.get('baseUrl', defaultConfig.baseUrl);
+    // Confine navigation to the ACTIVE target (cloud baseUrl or NAS localUrl) —
+    // not always baseUrl, else NAS nav is treated as external after a switch.
+    const activeTargetUrl = getActiveTargetUrl();
 
-    try {
-      const parsedUrl = new URL(navigationUrl);
-      const parsedBaseUrl = new URL(baseUrl);
+    if (isNavigationAllowed(navigationUrl, activeTargetUrl)) {
+      return; // same host as the active target — in-app navigation.
+    }
 
-      // Allow navigation within the same domain
-      if (parsedUrl.hostname !== parsedBaseUrl.hostname) {
-        event.preventDefault();
-        // Only open external links with valid schemes
-        if (navigationUrl.startsWith('https://') || navigationUrl.startsWith('http://')) {
-          shell.openExternal(navigationUrl);
-        } else {
-          console.warn('Blocked navigation to invalid scheme:', navigationUrl);
-        }
-      }
-    } catch (error) {
-      event.preventDefault();
-      console.warn('Blocked navigation to malformed URL:', navigationUrl);
+    // Different host or malformed URL — block in-app and (for valid web
+    // schemes) hand off to the system browser.
+    event.preventDefault();
+    if (navigationUrl.startsWith('https://') || navigationUrl.startsWith('http://')) {
+      shell.openExternal(navigationUrl);
+    } else {
+      console.warn('Blocked navigation to invalid scheme/URL:', navigationUrl);
     }
   });
 
@@ -377,6 +404,8 @@ function createMenu() {
 ipcMain.handle('get-settings', () => {
   const settings = {
     baseUrl: store.get('baseUrl', defaultConfig.baseUrl),
+    localUrl: store.get('localUrl', defaultConfig.localUrl),
+    routingMode: store.get('routingMode', defaultConfig.routingMode),
     autoStart: store.get('autoStart', defaultConfig.autoStart),
     enableSessionManagement: store.get('enableSessionManagement', defaultConfig.enableSessionManagement),
     sessionTimeout: store.get('sessionTimeout', defaultConfig.sessionTimeout)
@@ -386,7 +415,7 @@ ipcMain.handle('get-settings', () => {
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
-  // Validate baseUrl scheme before saving
+  // Validate baseUrl scheme before saving (lax http/https — cloud target).
   if (settings.baseUrl) {
     try {
       const parsed = new URL(settings.baseUrl);
@@ -398,12 +427,25 @@ ipcMain.handle('save-settings', (event, settings) => {
     }
   }
 
+  // DR: the NAS/LAN target gets the STRICT validator (no fall-through to the lax
+  // http/https check) — a poisoned localUrl is a credential-harvest primitive.
+  if (settings.localUrl) {
+    const { isLocalUrlSafeForCache } = require('./dr-url-validator');
+    if (!isLocalUrlSafeForCache(settings.localUrl)) {
+      return {
+        success: false,
+        error: 'In-store URL must be an https:// LAN address (private IP or a single-label .local name)'
+      };
+    }
+  }
+
   const oldSettings = {
     baseUrl: store.get('baseUrl', defaultConfig.baseUrl),
     enableSessionManagement: store.get('enableSessionManagement', defaultConfig.enableSessionManagement)
   };
 
   store.set('baseUrl', settings.baseUrl);
+  store.set('localUrl', settings.localUrl || '');
   store.set('autoStart', settings.autoStart);
   store.set('enableSessionManagement', settings.enableSessionManagement);
   store.set('sessionTimeout', settings.sessionTimeout);
@@ -819,7 +861,71 @@ ipcMain.handle('update-session-activity', async () => {
   return { success: true };
 });
 
-// App event handlers
+// DR routing-mode switch (cloud ↔ in-store/NAS). This is a reload-in-place, NOT
+// a restart — it does NOT go through the needsRestart path.
+ipcMain.handle('set-routing-mode', async (event, mode) => {
+  try {
+    if (mode !== 'cloud' && mode !== 'local') {
+      return { success: false, error: 'Invalid routing mode' };
+    }
+
+    // Fail closed: refuse to switch to in-store mode unless a valid LAN target
+    // is already stored.
+    if (mode === 'local') {
+      const localUrl = store.get('localUrl', defaultConfig.localUrl);
+      const { isLocalUrlSafeForCache } = require('./dr-url-validator');
+      if (!localUrl || !isLocalUrlSafeForCache(localUrl)) {
+        return { success: false, error: 'No valid in-store (NAS) URL configured' };
+      }
+    }
+
+    store.set('routingMode', mode);
+
+    const targetUrl = getActiveTargetUrl();
+
+    // Clear the webview web session(s) so the user re-authenticates against the
+    // new target. The POS webview that holds auth state lives in the
+    // `persist:main` partition (NOT the main window's default session), and
+    // per-cashier webviews live in `persist:user-${id}`. We must clear those
+    // partition sessions explicitly — clearing mainWindow.webContents.session
+    // would only clear the unused default session and leave the prior (cloud)
+    // token/localStorage intact, defeating the re-auth guarantee (M-R8 / §15-2).
+    // Do NOT touch electron-store PIN/cashier identities (the per-cashier model).
+    const { session } = require('electron');
+    const partitions = ['persist:main'];
+    if (store.get('enableSessionManagement', defaultConfig.enableSessionManagement)) {
+      // Enumerate every per-cashier partition so a switch clears all of them.
+      for (const s of sessionManager.getAllSessions()) {
+        partitions.push(`persist:user-${s.id}`);
+      }
+    }
+    // Storages MUST be members of Electron's Session.clearStorageData enum
+    // (electron.d.ts ClearStorageDataOptions.storages): cookies | filesystem |
+    // indexdb | localstorage | shadercache | websql | serviceworkers |
+    // cachestorage. NOTE the Electron quirk: it is 'indexdb' (no second 'e').
+    // Unknown keys are SILENTLY IGNORED by Chromium, so a typo no-ops.
+    // 'sessionstorage' is NOT a member of this enum in Electron 28 and cannot
+    // be cleared via this API; sessionStorage is per-renderer and is dropped
+    // when the partition's pages are reloaded on the routing-mode switch.
+    const storages = ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'];
+    await Promise.all(
+      partitions.map((p) => session.fromPartition(p).clearStorageData({ storages }))
+    );
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('routing-mode-changed', { mode, targetUrl });
+    }
+
+    return { success: true, mode, targetUrl };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// App event handlers. Skipped under the unit-test harness so requiring this
+// module to exercise the pure helpers (isNavigationAllowed) doesn't spin up a
+// real BrowserWindow / settings init.
+if (process.env.NODE_ENV !== 'test') {
 app.whenReady().then(() => {
   // Set app icon explicitly for macOS dock
   if (process.platform === 'darwin') {
@@ -848,6 +954,7 @@ app.whenReady().then(() => {
     }
   });
 });
+}
 
 app.on('window-all-closed', () => {
   // Clean up session manager
@@ -876,4 +983,8 @@ app.on('before-quit', () => {
   // Ensure cleanup happens before quit
   sessionManager.cleanup();
 });
+
+// Exported for unit testing of the will-navigate cross-target security
+// boundary. Not used by the running app (the listener calls the in-scope fn).
+module.exports = { isNavigationAllowed };
 

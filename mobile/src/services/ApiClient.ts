@@ -3,6 +3,8 @@ import {RelayClient} from '@aeris/shared';
 import type {ConnectionMode, Product, ProductImageType} from '../types/api.types';
 import {DirectClient} from './DirectClient';
 import {uploadProductImage as uploadProductImageImpl} from './ProductImageClient';
+import {useCloudReachabilityStore} from '../stores/cloudReachabilityStore';
+import {useDrStore} from '../stores/drStore';
 
 // Polyfill crypto.randomUUID for the shared RelayClient. Hermes does not
 // reliably expose globalThis.crypto.randomUUID across all OS versions, so
@@ -31,6 +33,21 @@ export class ApiClient {
   constructor() {
     // Default relayUrl mirrors the previous monolithic ApiClient behaviour.
     this.relay.configure({relayUrl: 'https://api.aeris.team'});
+    // M-R1 (§14.7 Q9 / §19.2 rule 4): drive the cloud-reachability signal off
+    // EVERY relay transport response — product fetch, dashboard, all RPC — not
+    // just the refresh-token path. Without this the cascade reads `null`
+    // (treated as reachable) and the outage prompt never fires. Mirrors the
+    // server-answered-vs-transport distinction: reachable=true ⇒ reportSuccess;
+    // reachable=false ⇒ reportFailure(isTransport=true). Only the relay client
+    // reports here — Direct/LAN traffic must not move the cloud signal.
+    this.relay.setOnResponse((reachable: boolean) => {
+      const store = useCloudReachabilityStore.getState();
+      if (reachable) {
+        store.reportSuccess();
+      } else {
+        store.reportFailure(true);
+      }
+    });
   }
 
   configure(options: {
@@ -63,6 +80,13 @@ export class ApiClient {
   setAuthToken(token: string | null): void {
     this.direct.setAuthToken(token);
     this.relay.setAuthToken(token);
+  }
+
+  // The current bearer (kept in sync across both transports via setAuthToken).
+  // Exposed for the DR presence beacon (§19.4), which scopes its push to the
+  // caller's deployment with this token.
+  getAuthToken(): string | null {
+    return this.relay.getAuthToken();
   }
 
   setOnUnauthorized(cb: (() => void) | null): void {
@@ -125,7 +149,24 @@ export class ApiClient {
     );
 
   private get active(): RelayClient | DirectClient {
-    return this.mode === 'relay' ? this.relay : this.direct;
+    if (this.mode !== 'relay') {
+      // M-R3 (credential-leak closure, lifted into M1): refuse to dispatch a
+      // Direct/LAN call to a NAS whose TLS identity has FAILED the pin
+      // ('mismatch'). The §19.2 cascade already fails-closed, but any path that
+      // bypasses it (manual settings switch, deep-link, test harness) would
+      // otherwise still send the bearer token to a spoofed host. This is NOT
+      // full SPKI pinning (that's M2) — it's the leak closure: throw before the
+      // token can leave the device. 'unverified'/'unknown' stay permitted (the
+      // UI surfaces the unverified state) until pinning ships.
+      if (useDrStore.getState().certTrust === 'mismatch') {
+        throw new Error(
+          'In-store (Direct) connection blocked — the server identity could ' +
+            'not be verified. Sign in again or use manual mode.',
+        );
+      }
+      return this.direct;
+    }
+    return this.relay;
   }
 
   // --- Auth ---

@@ -102,6 +102,14 @@ export class RelayClient {
   // token, call setAuthToken(), and return true on success. Any throw or
   // false is treated as "refresh failed" → onUnauthorized fires.
   private onRefreshCb: (() => Promise<boolean>) | null = null;
+  // Caller-supplied reachability hook (DR §14.7 Q9 / M-R1). Fired on EVERY
+  // transport response so the cascade's cloud-reachability signal is driven by
+  // normal traffic (product fetch / dashboard / all RPC), not only the
+  // refresh-token path. `reachable=true` means the server ANSWERED (HTTP 200
+  // envelope, app-level error envelope, 401, or any non-gateway HTTP status —
+  // a 4xx is still "the cloud is up"); `reachable=false` means a transport /
+  // gateway failure (502/503/504, envelope timeout, fetch abort/network).
+  private onResponseCb: ((reachable: boolean) => void) | null = null;
   // Single-flight refresh: when multiple in-flight calls all 401 at once
   // (e.g. Dashboard's Promise.all on cold-start), they must collapse onto
   // ONE refresh round-trip and all retry with the resulting token. Without
@@ -149,6 +157,26 @@ export class RelayClient {
 
   setOnRefresh(cb: (() => Promise<boolean>) | null): void {
     this.onRefreshCb = cb;
+  }
+
+  // DR §14.7 Q9 / M-R1 reachability reporting. The platform layer wires this
+  // to its cloud-reachability store so the §19.2 routing cascade sees a live
+  // signal from ordinary traffic. Optional — unset on clients that don't run
+  // DR (e.g. desktop without failover wiring).
+  setOnResponse(cb: ((reachable: boolean) => void) | null): void {
+    this.onResponseCb = cb;
+  }
+
+  // Report a transport outcome to the reachability hook. Wrapped so a throwing
+  // callback can never break the request path. `reachable=true` ⇒ server
+  // answered (incl. 4xx/app-error); `false` ⇒ transport/gateway failure.
+  private reportReachable(reachable: boolean): void {
+    if (!this.onResponseCb) return;
+    try {
+      this.onResponseCb(reachable);
+    } catch (cbErr) {
+      console.warn('onResponse callback threw:', cbErr);
+    }
   }
 
   getWorkspaceCode(): string {
@@ -941,13 +969,33 @@ export class RelayClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), clientTimeoutMs);
 
+    let response: Response;
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({action, params, timeout: serverTimeoutSec}),
         signal: controller.signal,
       });
+    } catch (netErr) {
+      // fetch() itself rejected → network down / abort-timeout, no HTTP status.
+      // Pure transport failure → unreachable (mirrors the refresh path's
+      // status===undefined rule). (M-R1)
+      clearTimeout(timer);
+      this.reportReachable(false);
+      throw netErr;
+    }
+
+    try {
+
+      // The server ANSWERED (we have an HTTP status). Even a 401/4xx means the
+      // cloud is up → reachable. Only gateway transport states (502/503/504,
+      // below) and network-level throws (catch) count as unreachable. (M-R1)
+      const transportFailure =
+        response.status === 502 ||
+        response.status === 503 ||
+        response.status === 504;
+      this.reportReachable(!transportFailure);
 
       if (response.status === 401) {
         // The auth.refresh action itself is allowed to 401 — that means the
@@ -1028,10 +1076,7 @@ export class RelayClient {
         // "Relay request failed (502)" leaks implementation detail; show
         // a friendlier copy for these specific transport states. Status
         // remains attached so isRetryable still classifies correctly.
-        const isTransportFailure =
-          response.status === 502 ||
-          response.status === 503 ||
-          response.status === 504;
+        const isTransportFailure = transportFailure;
         const err = new Error(
           isTransportFailure
             ? "Couldn't reach the server. Please try again."
@@ -1048,6 +1093,11 @@ export class RelayClient {
       );
 
       if (envelope.status === 'timeout') {
+        // The relay edge answered (HTTP 200) but the upstream deployment did
+        // not respond in time. For the §14.7 Q9 reachability signal this is a
+        // transport-class miss (mirrors the refresh path's no-HTTP-status →
+        // unreachable rule), so downgrade the earlier optimistic report. (M-R1)
+        this.reportReachable(false);
         throw new RelayError(
           'Server did not respond in time. Please try again.',
           'TIMEOUT',

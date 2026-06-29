@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { DailySummary } from '@aeris/shared';
 import { useRelayQuery } from '../hooks/useRelayQuery';
+import { useSettingsStore } from '../stores/settingsStore';
 import { Spinner } from '../components/Spinner';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -22,6 +23,14 @@ export function DashboardScreen(): React.ReactElement {
   const { data, loading, errorCode, errorMessage, refetch } =
     useRelayQuery<DailySummary>('dashboard.summary', {});
 
+  // §14.7 Q10: in Direct (in-store/NAS) mode the daily summary reflects only
+  // sales rung on this NAS during the outage — NOT the cloud's authoritative
+  // day total. Label it so the figure isn't misread as the full day. Mirrors
+  // mobile DashboardScreen's "In-store totals only" provenance marker.
+  const isDirectMode = useSettingsStore(
+    (s) => s.settings.connectionMode === 'direct',
+  );
+
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
   useEffect(() => {
     if (!loading && (data || errorCode)) {
@@ -37,6 +46,18 @@ export function DashboardScreen(): React.ReactElement {
           Refresh
         </Button>
       </header>
+
+      {isDirectMode ? (
+        <div
+          style={{
+            color: COLORS.textMuted,
+            fontSize: FONT_SIZE.sm,
+            marginTop: -SPACING.sm,
+          }}
+        >
+          In-store totals only
+        </div>
+      ) : null}
 
       {errorCode && errorMessage ? (
         <ErrorBanner
