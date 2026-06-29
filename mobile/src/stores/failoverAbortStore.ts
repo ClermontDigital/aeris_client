@@ -1,22 +1,16 @@
 import {create} from 'zustand';
 
-// failoverAbortStore — the §17.4 "abort to manual" path.
+// failoverAbortStore — system-detected NAS-down state.
 // Source of truth: docs/PROJECT_DR_NAS_WARM_FAILOVER.md §17.4, §21 (mobile).
 //
-// If the NAS turns out broken mid-outage, the cashier must be able to bail to
-// manual/paper. This store owns:
-//   - `nasUnavailable` — the NAS failed its reachability/cert check while we
-//     needed it (drives the global "NAS unreachable — use manual/paper"
-//     banner and disables write actions).
-//   - `manualMode` — the cashier explicitly chose "Return to manual" from the
-//     §19.3 detail sheet; writes are frozen until cloud or a valid NAS returns.
+// `nasUnavailable` is set by the routing layer when the NAS fails its
+// reachability/cert check while we needed it. It drives the on-prem-
+// unreachable banner and blocks write actions (Checkout's sale gate).
 //
-// WRITE-GATE SCAFFOLD (M1): `areWritesBlocked()` is the single mechanism
-// CheckoutScreen / refund / customer-account screens consult to disable their
-// write actions. M1 wires the DECISION-INDEPENDENT cases (NAS unavailable, or
-// the cashier chose manual). The §9-policy-gated disabled-states (offline card,
-// refund-of-cloud-origin, account/layby during an outage) are M2 — see the
-// clearly-marked TODO in `isWriteActionBlocked` below.
+// The previous "Return to manual / paper" cashier-controlled toggle was
+// removed: it was half-wired (Checkout only — refund + account TODO), it
+// surfaced on cloud-only shops that have no NAS to fall back to, and there
+// was no clear path back. The system-detected state above is sufficient.
 
 // Which write surface is asking. Lets M2 apply per-action §9 policy without
 // changing call sites (CheckoutScreen passes 'sale', refund sheet 'refund',
@@ -27,15 +21,8 @@ interface FailoverAbortState {
   // NAS failed its check while we needed it (reachability/cert). Set by the
   // routing layer; surfaces the global banner + blocks writes.
   nasUnavailable: boolean;
-  // Cashier explicitly returned to manual from the detail sheet.
-  manualMode: boolean;
 
   setNasUnavailable: (v: boolean) => void;
-  // "Return to manual" CTA (§17.4 / §19.3 detail sheet).
-  returnToManual: () => void;
-  // Clear manual mode once cloud or a valid NAS is back and the cashier
-  // resumes (or automatically when routing recovers).
-  clearManual: () => void;
   reset: () => void;
 
   // Global gate: are ALL writes currently blocked (decision-independent)?
@@ -47,17 +34,11 @@ interface FailoverAbortState {
 
 export const useFailoverAbortStore = create<FailoverAbortState>((set, get) => ({
   nasUnavailable: false,
-  manualMode: false,
 
   setNasUnavailable: (v: boolean) => set({nasUnavailable: v}),
-  returnToManual: () => set({manualMode: true}),
-  clearManual: () => set({manualMode: false}),
-  reset: () => set({nasUnavailable: false, manualMode: false}),
+  reset: () => set({nasUnavailable: false}),
 
-  areWritesBlocked: () => {
-    const s = get();
-    return s.nasUnavailable || s.manualMode;
-  },
+  areWritesBlocked: () => get().nasUnavailable,
 
   isWriteActionBlocked: (_action: WriteAction): boolean => {
     // M1 — decision-independent gate only.

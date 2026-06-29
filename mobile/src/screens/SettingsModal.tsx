@@ -170,7 +170,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
       // again" reads as the app misbehaving. The approved copy frames it as
       // the deliberate in-store switch it is.
       useAuthStore.setState({
-        error: 'Switching to in-store mode — sign in again to continue.',
+        error: 'Switching to on-prem mode — sign in again to continue.',
       });
     }
 
