@@ -247,10 +247,10 @@ const AppTabsInner: React.FC = () => {
               resizeMode="contain"
             />
           </View>
-          {/* §19.3 mode indicator — mirror of the gear, left of the centred
-              wordmark. Suppressed while a drill-down back affordance occupies
-              the same slot so the two never collide. */}
-          {headerOnBack ? null : (
+          {/* §19.3 mode indicator — right-anchored, just inboard of the gear,
+              so it clusters with the gear instead of crowding the wordmark.
+              Suppressed only while Scanner is focused, mirroring the gear. */}
+          {isOnScanner ? null : (
             <ModeIndicator topOffset={insets.top + 36} />
           )}
           {/* §14.7 Q9 + §17.4 DR banners — thin, non-blocking, under the
