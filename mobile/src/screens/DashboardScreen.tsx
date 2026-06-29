@@ -366,7 +366,7 @@ const DashboardScreen: React.FC = () => {
 
         <EyebrowLabel>Today</EyebrowLabel>
         {isDirectMode ? (
-          <Text style={styles.provenanceLabel}>In-store totals only</Text>
+          <Text style={styles.provenanceLabel}>On-prem totals only</Text>
         ) : null}
 
         {/* When today has no sales yet, the hero/stat strip would all read

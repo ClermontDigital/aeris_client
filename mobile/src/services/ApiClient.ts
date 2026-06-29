@@ -160,8 +160,8 @@ export class ApiClient {
       // UI surfaces the unverified state) until pinning ships.
       if (useDrStore.getState().certTrust === 'mismatch') {
         throw new Error(
-          'In-store (Direct) connection blocked — the server identity could ' +
-            'not be verified. Sign in again or use manual mode.',
+          'On-prem (Direct) connection blocked — the server identity could ' +
+            'not be verified. Sign in again from Settings.',
         );
       }
       return this.direct;

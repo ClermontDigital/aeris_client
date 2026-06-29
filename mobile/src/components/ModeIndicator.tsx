@@ -3,6 +3,8 @@ import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {COLORS, FONT_FAMILY, FONT_SIZE} from '../constants/theme';
 import {useRoutingDecision} from '../hooks/useRoutingDecision';
 import {useDrStore} from '../stores/drStore';
+import {useCloudReachabilityStore} from '../stores/cloudReachabilityStore';
+import {useFailoverAbortStore} from '../stores/failoverAbortStore';
 import {ModeDetailSheet} from './ModeDetailSheet';
 import type {RoutingMode} from '../types/dr.types';
 
@@ -30,7 +32,7 @@ const GLYPH: Record<RoutingMode, string> = {
 
 const SHORT_LABEL: Record<RoutingMode, string> = {
   cloud: 'Cloud',
-  local: 'In-store',
+  local: 'On-prem',
   switching: 'Switching',
   offline: 'Offline',
 };
@@ -53,13 +55,34 @@ interface Props {
 export function ModeIndicator({topOffset}: Props): React.ReactElement {
   const [sheetOpen, setSheetOpen] = useState(false);
   const {currentMode} = useRoutingDecision();
-  // A live "switching" override: when the cached target is being (re)probed we
-  // show the spinner glyph regardless of the steady-state mode.
   const cacheStatus = useDrStore(s => s.cacheStatus);
-  const mode: RoutingMode =
-    cacheStatus === 'pending' && currentMode === 'local'
-      ? 'switching'
-      : currentMode;
+  const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
+  const cloudReachable = useCloudReachabilityStore(s => s.cloudReachable);
+  const nasUnavailable = useFailoverAbortStore(s => s.nasUnavailable);
+  // `provisioned` gates everything DR-specific. A cloud-only shop (no
+  // cached local_url) gets a cloud-only chip; the NAS-side states
+  // ('switching'/'local'/nasUnavailable-driven 'offline') never fire.
+  const provisioned = cachedLocalUrl != null;
+  // Display-mode derivation. Sync priority:
+  //   1. NAS unavailable while provisioned → offline (banner reflects same)
+  //   2. Cloud-mode + cloud-unreachable → offline (sync with banner)
+  //   3. Switching (cached target being probed) — only meaningful when
+  //      provisioned, otherwise there is no NAS to switch to.
+  //   4. Steady-state currentMode.
+  let mode: RoutingMode;
+  if (provisioned && nasUnavailable) {
+    mode = 'offline';
+  } else if (currentMode === 'cloud' && cloudReachable === false) {
+    mode = 'offline';
+  } else if (
+    provisioned &&
+    cacheStatus === 'pending' &&
+    currentMode === 'local'
+  ) {
+    mode = 'switching';
+  } else {
+    mode = currentMode;
+  }
 
   return (
     <>

@@ -203,7 +203,7 @@ export default function CheckoutScreen() {
     // store so we never rely on a stale subscribed snapshot.
     if (useFailoverAbortStore.getState().isWriteActionBlocked('sale')) {
       haptics.error();
-      setError('Manual mode — record on paper');
+      setError('On-prem unavailable — record on paper');
       return;
     }
     if (!selectedMethod) return;
@@ -597,10 +597,12 @@ export default function CheckoutScreen() {
             <Text style={styles.completeSaleText}>Complete sale</Text>
           )}
         </TouchableOpacity>
-        {/* M-R5 (§17.4): manual-mode subtext under the dead CTA. */}
+        {/* M-R5 (§17.4): when writes are blocked by an unreachable on-prem
+            server, the CTA is dead — surface the reason so the cashier
+            knows to fall back to paper. */}
         {saleWritesBlocked ? (
           <Text style={styles.manualModeSubtext}>
-            Manual mode — record on paper
+            On-prem unavailable — record on paper
           </Text>
         ) : null}
       </ScrollView>
