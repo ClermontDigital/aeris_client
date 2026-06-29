@@ -36,11 +36,19 @@ export function normalizeProduct(input: unknown): Product {
   // (or null); gallery_images is an ordered array of URL strings. Both are
   // optional on the wire — coerce defensively and only include when present
   // so screens can prefer image_url but fall back / show a gallery later.
+  //
+  // Treat an empty string as absent. Consumers use the nullish-coalescing
+  // operator (`featured_image ?? image_url`) which only falls through on
+  // null/undefined — an empty-string column would short-circuit to "" and
+  // render an empty <Image>. Normalising "" to null here closes that trap
+  // at the boundary so every read site is safe.
   const featuredImage =
-    typeof raw.featured_image === 'string' ? raw.featured_image : null;
+    typeof raw.featured_image === 'string' && raw.featured_image !== ''
+      ? raw.featured_image
+      : null;
   const galleryImages = Array.isArray(raw.gallery_images)
     ? (raw.gallery_images as unknown[]).filter(
-        (v): v is string => typeof v === 'string',
+        (v): v is string => typeof v === 'string' && v !== '',
       )
     : [];
   return {
@@ -55,7 +63,10 @@ export function normalizeProduct(input: unknown): Product {
     stock_on_hand: asNumber(raw.stock_on_hand ?? raw.stock_quantity, 0),
     category_id: categoryId,
     category_name: categoryName,
-    image_url: typeof raw.image_url === 'string' ? raw.image_url : null,
+    image_url:
+      typeof raw.image_url === 'string' && raw.image_url !== ''
+        ? raw.image_url
+        : null,
     featured_image: featuredImage,
     gallery_images: galleryImages,
     is_active: isActive,
