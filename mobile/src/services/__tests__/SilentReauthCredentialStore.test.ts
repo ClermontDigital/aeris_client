@@ -28,7 +28,10 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-import {SilentReauthCredentialStore} from '../SilentReauthCredentialStore';
+import {
+  SilentReauthCredentialStore,
+  MAX_SILENT_REAUTH_FAILURES,
+} from '../SilentReauthCredentialStore';
 
 const CRED_KEY = 'aeris_silent_reauth_cred';
 
@@ -92,5 +95,38 @@ describe('SilentReauthCredentialStore — wipe + robustness', () => {
   it('save is a no-op with no workspace code (nothing to scope against)', async () => {
     await SilentReauthCredentialStore.save(true, null, 'u@x.com', 'pw');
     expect(mockSecureStore[CRED_KEY]).toBeUndefined();
+  });
+});
+
+describe('SilentReauthCredentialStore — failure TTL', () => {
+  it('wipes the cached credential after N CONSECUTIVE silent-reauth failures', async () => {
+    await SilentReauthCredentialStore.save(true, 'shop-a', 'u@x.com', 'pw');
+    expect(mockSecureStore[CRED_KEY]).toBeDefined();
+
+    // First N-1 failures keep the credential (transient-failure tolerance).
+    for (let i = 0; i < MAX_SILENT_REAUTH_FAILURES - 1; i++) {
+      const wiped = await SilentReauthCredentialStore.recordFailure();
+      expect(wiped).toBe(false);
+      expect(mockSecureStore[CRED_KEY]).toBeDefined();
+    }
+
+    // The Nth consecutive failure crosses the threshold and wipes the cache.
+    const wiped = await SilentReauthCredentialStore.recordFailure();
+    expect(wiped).toBe(true);
+    expect(mockSecureStore[CRED_KEY]).toBeUndefined();
+    expect(await SilentReauthCredentialStore.load(true, 'shop-a')).toBeNull();
+  });
+
+  it('a successful save() RESETS the consecutive-failure counter', async () => {
+    await SilentReauthCredentialStore.save(true, 'shop-a', 'u@x.com', 'pw');
+    // Two failures (one short of the threshold)...
+    await SilentReauthCredentialStore.recordFailure();
+    await SilentReauthCredentialStore.recordFailure();
+    // ...then a fresh successful save resets the counter.
+    await SilentReauthCredentialStore.save(true, 'shop-a', 'u@x.com', 'pw2');
+    // A single subsequent failure must NOT wipe (counter was reset to 0).
+    const wiped = await SilentReauthCredentialStore.recordFailure();
+    expect(wiped).toBe(false);
+    expect(mockSecureStore[CRED_KEY]).toBeDefined();
   });
 });

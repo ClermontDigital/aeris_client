@@ -3,6 +3,7 @@ import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {COLORS, FONT_FAMILY, FONT_SIZE} from '../constants/theme';
 import {useRoutingDecision} from '../hooks/useRoutingDecision';
 import {useDrStore} from '../stores/drStore';
+import {useSettingsStore} from '../stores/settingsStore';
 import {useCloudReachabilityStore} from '../stores/cloudReachabilityStore';
 import {useFailoverAbortStore} from '../stores/failoverAbortStore';
 import {ModeDetailSheet} from './ModeDetailSheet';
@@ -54,9 +55,12 @@ interface Props {
 
 export function ModeIndicator({topOffset}: Props): React.ReactElement {
   const [sheetOpen, setSheetOpen] = useState(false);
-  const {currentMode} = useRoutingDecision();
+  const {currentMode, reason} = useRoutingDecision();
   const cacheStatus = useDrStore(s => s.cacheStatus);
   const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
+  const connectionMode = useSettingsStore(
+    s => s.settings.connectionMode ?? 'relay',
+  );
   const cloudReachable = useCloudReachabilityStore(s => s.cloudReachable);
   const nasUnavailable = useFailoverAbortStore(s => s.nasUnavailable);
   // `provisioned` gates everything DR-specific. A cloud-only deployment
@@ -64,13 +68,19 @@ export function ModeIndicator({topOffset}: Props): React.ReactElement {
   // ('switching'/'local'/nasUnavailable-driven 'offline') never fire.
   const provisioned = cachedLocalUrl != null;
   // Display-mode derivation. Sync priority:
-  //   1. NAS unavailable while provisioned → offline (banner reflects same)
-  //   2. Cloud-mode + cloud-unreachable → offline (sync with banner)
-  //   3. Switching (cached target being probed) — only meaningful when
+  //   1. Auto-failover in flight (cascade wants the swap, we're still in relay)
+  //      → switching. The auto-swap flips connectionMode→direct only after the
+  //      clear-session + re-auth round-trip; by the time cacheStatus settles it
+  //      is 'ok', so without this the chip jumps Offline→On-prem with no 🔄.
+  //   2. NAS unavailable while provisioned → offline (banner reflects same)
+  //   3. Cloud-mode + cloud-unreachable → offline (sync with banner)
+  //   4. Switching (cached target being probed) — only meaningful when
   //      provisioned, otherwise there is no NAS to switch to.
-  //   4. Steady-state currentMode.
+  //   5. Steady-state currentMode.
   let mode: RoutingMode;
-  if (provisioned && nasUnavailable) {
+  if (provisioned && reason === 'outage-auto' && connectionMode === 'relay') {
+    mode = 'switching';
+  } else if (provisioned && nasUnavailable) {
     mode = 'offline';
   } else if (currentMode === 'cloud' && cloudReachable === false) {
     mode = 'offline';

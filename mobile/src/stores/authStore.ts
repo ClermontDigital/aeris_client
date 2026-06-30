@@ -267,6 +267,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
     await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
+    // M3-C (go-live doc): clearLocalSession INTENTIONALLY PRESERVES the cached
+    // silent-reauth credential. This path fires on a 401 — including the one
+    // the auto mode-switch itself triggers (the old-edge bearer is rejected by
+    // the new edge) — which is EXACTLY when the cache is needed to re-auth
+    // against the new edge. Only explicit logout() and flushForRepair() (re-pair)
+    // wipe it; the TTL counter wipes it after N consecutive silent-reauth
+    // failures. See SilentReauthCredentialStore threat model items 2 + the TTL.
     // DO NOT wipe cookies here. The gateway may set XSRF / session
     // cookies on the first call that subsequent calls expect; nuking
     // them on every 401-driven session wipe was the cause of the

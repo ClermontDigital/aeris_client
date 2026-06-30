@@ -63,10 +63,13 @@ export async function attemptSilentReauth(): Promise<SilentReauthResult> {
   } catch {
     // Silent re-auth failed (password changed, server rejected, transport). DO
     // NOT surface the raw error; authStore.login already set an appropriate
-    // banner. The cashier completes a normal manual login. We deliberately do
-    // NOT wipe the cached credential — a transient network failure shouldn't
-    // permanently disable silent re-auth; a genuinely-stale credential is
-    // overwritten on the next successful manual login.
+    // banner. The cashier completes a normal manual login. A single transient
+    // network failure shouldn't permanently disable silent re-auth, so we don't
+    // wipe immediately — but a genuinely-stale credential (e.g. a server-side
+    // password change) would otherwise leave a permanently-dead cache. The TTL
+    // counter wipes the credential after MAX_SILENT_REAUTH_FAILURES CONSECUTIVE
+    // failures; a successful manual login resets the counter + re-caches.
+    await SilentReauthCredentialStore.recordFailure();
     return {outcome: 'failed'};
   }
 }
