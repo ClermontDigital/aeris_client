@@ -31,6 +31,7 @@ import {
 } from '../constants/theme';
 import * as ExpoCrypto from 'expo-crypto';
 import ApiClient from '../services/ApiClient';
+import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
@@ -348,6 +349,11 @@ const ProductEditScreen: React.FC = () => {
     submitLockRef.current = true;
     setSaving(true);
     setError(null);
+    // DR M3-A mid-tx parity: a catalog write (create/update product) is an
+    // in-flight write — flag it so an auto-failover defers the endpoint swap
+    // until the save completes (an auto-swap mid-POST would drop the body).
+    // Cleared in the finally. Inert until auto-failover is enabled + cert-verified.
+    useTransactionActivityStore.getState().setSettlementOrPrintInFlight(true);
     try {
       const baseCents = dollarsToCents(form.basePriceDollars) ?? 0;
       const costCents = dollarsToCents(form.costPriceDollars);
@@ -508,6 +514,7 @@ const ProductEditScreen: React.FC = () => {
     } finally {
       setSaving(false);
       submitLockRef.current = false;
+      useTransactionActivityStore.getState().setSettlementOrPrintInFlight(false);
     }
   }, [
     form,
