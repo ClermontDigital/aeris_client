@@ -36,4 +36,12 @@ export const RELAY_ACTIONS = {
   // MUST treat that as "no DR routing available" and fall back to the M2 manual
   // path, never error (RelayClient.getDrRouting returns null for that case).
   DR_ROUTING: 'dr.routing',
+  // M3 (DR NAS warm-failover): route-proxied, auth:sanctum presence beat. The
+  // client POSTs {device_id, mode} over the relay; the Aeris2 deployment (which
+  // holds the tenant API key the gateway's deployment-scoped /dr/presence beacon
+  // requires) forwards it under its own tenant key so the deployment's live
+  // dr_presence count is real. Best-effort, fire-and-forget: a flag-off / non-DR
+  // deployment has no `dr` relay_service_config (deployment-404 / NOT_FOUND
+  // envelope) — clients treat ANY non-2xx as a silent no-op.
+  DR_PRESENCE: 'dr.presence',
 } as const;

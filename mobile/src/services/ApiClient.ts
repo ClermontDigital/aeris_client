@@ -179,6 +179,16 @@ export class ApiClient {
   getDrRouting = (): ReturnType<RelayClient['getDrRouting']> =>
     this.relay.getDrRouting();
 
+  // --- DR presence beat (M3) ---
+  // Always over the relay (cloud) transport: the deployment proxies the beat to
+  // the gateway's tenant-key-only /dr/presence beacon under its own tenant key.
+  // Best-effort / fire-and-forget (the RelayClient swallows every non-2xx). Not
+  // routed through `.active` so it never sends the bearer to a mismatch'd NAS.
+  reportDrPresence = (
+    ...args: Parameters<RelayClient['reportDrPresence']>
+  ): ReturnType<RelayClient['reportDrPresence']> =>
+    this.relay.reportDrPresence(...args);
+
   // --- Auth ---
   login = (...args: Parameters<RelayClient['login']>) => this.active.login(...args);
   loginBiometric = (...args: Parameters<RelayClient['loginBiometric']>) =>
