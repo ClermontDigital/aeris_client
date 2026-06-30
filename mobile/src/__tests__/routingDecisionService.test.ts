@@ -224,3 +224,98 @@ describe('decideRouting — §25.5 edge cases', () => {
     expect(d.reason).toBe('cloud-primary');
   });
 });
+
+// M3-D — the single auto-failover gate at Rule 4. The CRITICAL invariant is
+// "flag-off ⇒ cascade ≡ M2 manual prompt": no rule other than Rule 4 reads the
+// flag, and Rule 4 with the flag off is byte-for-byte the pre-M3 behaviour.
+describe('decideRouting — M3-D auto-failover flag gate (Rule 4)', () => {
+  // The exact outage shape that hits Rule 4.
+  function outage(overrides: Partial<RoutingInputs> = {}): RoutingInputs {
+    return base({
+      cloudReachable: false,
+      nasReachable: true,
+      nasCertTrust: 'unverified',
+      currentMode: 'cloud',
+      ...overrides,
+    });
+  }
+
+  it('flag OFF (default) ⇒ Rule 4 PROMPTS — identical to the M2 manual path', () => {
+    const d = decideRouting(outage()); // autoFailoverEnabled undefined → off
+    expect(d.reason).toBe('outage-prompt');
+    expect(d.promptFailover).toBe(true);
+    expect(d.mode).toBe('cloud'); // holds current, no auto-switch
+    expect(d.deferred).toBe(false);
+  });
+
+  it('flag OFF explicit false ⇒ still the M2 prompt', () => {
+    const d = decideRouting(outage({autoFailoverEnabled: false}));
+    expect(d.reason).toBe('outage-prompt');
+    expect(d.promptFailover).toBe(true);
+    expect(d.mode).toBe('cloud');
+  });
+
+  it('flag ON ⇒ Rule 4 AUTO-APPLIES the on-prem swap (mode=local, no prompt)', () => {
+    const d = decideRouting(outage({autoFailoverEnabled: true}));
+    expect(d.reason).toBe('outage-auto');
+    expect(d.mode).toBe('local');
+    expect(d.promptFailover).toBe(false);
+    expect(d.deferred).toBe(false);
+  });
+
+  it('flag ON but NAS cert MISMATCH ⇒ STILL fail-closed (never auto-swap to a spoofed host)', () => {
+    const d = decideRouting(
+      outage({autoFailoverEnabled: true, nasCertTrust: 'mismatch'}),
+    );
+    expect(d.mode).toBe('offline');
+    expect(d.reason).toBe('degraded-fail-closed');
+    expect(d.promptFailover).toBe(false);
+  });
+
+  it('flag ON but NAS unreachable ⇒ fail-closed, no auto-swap', () => {
+    const d = decideRouting(
+      outage({autoFailoverEnabled: true, nasReachable: false}),
+    );
+    expect(d.mode).toBe('offline');
+    expect(d.reason).toBe('degraded-fail-closed');
+  });
+
+  it('flag ON but mid-transaction ⇒ Rule 1 still DEFERS the auto-swap', () => {
+    const d = decideRouting(
+      outage({autoFailoverEnabled: true, cartItemCount: 1}),
+    );
+    expect(d.deferred).toBe(true);
+    expect(d.reason).toBe('mid-transaction-defer');
+    expect(d.mode).toBe('cloud'); // never switch mid-sale, even auto
+  });
+
+  it('flag ON but cloud still reachable ⇒ no failover at all (stays cloud)', () => {
+    const d = decideRouting(
+      outage({autoFailoverEnabled: true, cloudReachable: true}),
+    );
+    expect(d.mode).toBe('cloud');
+    expect(d.reason).toBe('cloud-primary');
+  });
+
+  it('the flag does NOT alter any non-Rule-4 branch (flag on == flag off everywhere else)', () => {
+    // Sweep every other entry path with the flag flipped and assert the
+    // decision is byte-identical — proves the flag is isolated to Rule 4.
+    const scenarios: Partial<RoutingInputs>[] = [
+      {cartItemCount: 1, cloudReachable: false}, // rule 1 defer
+      {directive: 'local'}, // rule 2
+      {cloudReachable: true}, // rule 3 cloud-primary
+      {currentMode: 'local', cloudReachable: true, cloudReachableSustainedMs: 0}, // rule 6 hold
+      {
+        currentMode: 'local',
+        cloudReachable: true,
+        cloudReachableSustainedMs: FAILBACK_HYSTERESIS_MS,
+      }, // rule 6 ready
+      {cloudReachable: false, nasReachable: false}, // rule 5
+    ];
+    for (const s of scenarios) {
+      const off = decideRouting(base({...s, autoFailoverEnabled: false}));
+      const on = decideRouting(base({...s, autoFailoverEnabled: true}));
+      expect(on).toEqual(off);
+    }
+  });
+});
