@@ -59,7 +59,9 @@ describe('failoverOrchestrator decision logic', () => {
     jest.restoreAllMocks();
   });
 
-  // Stage a "cloud down + NAS healthy + on cloud, idle" world.
+  // Stage a "cloud down + NAS healthy + on cloud, idle" world. cert='trusted'
+  // (the verified target state) so the BLOCKER-1 cert hard-gate permits AUTO —
+  // tests that exercise the gate override the cert below.
   function stageOutageWithHealthyNas(): void {
     drState.ingestRouting({
       drEnabled: true,
@@ -67,7 +69,7 @@ describe('failoverOrchestrator decision logic', () => {
       failbackEligible: false,
       syncQueueDepth: 5,
     });
-    drState.setCachedLocalUrl(VALID_NAS, 'unverified');
+    drState.setCachedLocalUrl(VALID_NAS, 'trusted');
     drState.setNasProbeReachable(true);
     // 3 transport failures -> cloud unreachable.
     cloudReachability.report(false);
@@ -126,6 +128,21 @@ describe('failoverOrchestrator decision logic', () => {
 
     expect(didSwap()).toBe(false);
     expect(getDrState().mode).toBe('offline');
+  });
+
+  test('FLAG ON but cert UNVERIFIED: no auto-swap, no silent re-auth (BLOCKER-1)', () => {
+    settingsStore.set({ autoFailoverEnabled: true });
+    settingsSetSpy.mockClear();
+    stageOutageWithHealthyNas();
+    drState.setCertTrust('unverified'); // pinning not yet verified
+
+    failoverOrchestrator._evaluateForTests();
+
+    // Falls back to the M2 PROMPT — never silently re-auths onto a non-pinned NAS.
+    expect(didSwap()).toBe(false);
+    expect(silentReauthSpy).not.toHaveBeenCalled();
+    expect(getDrState().promptFailover).toBe(true);
+    expect(getDrState().mode).toBe('cloud');
   });
 
   test('FLAG ON: NAS unreachable -> no swap (no target)', () => {

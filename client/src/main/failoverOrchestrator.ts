@@ -219,6 +219,13 @@ function evaluate(): void {
     ) {
       const target = drState.get().cachedLocalUrl;
       if (!target) return; // nasUsable should guarantee this; be safe.
+      // BLOCKER-1 belt-and-braces (mobile parity): never silently re-auth a
+      // cached password onto a NAS whose cert isn't fully verified. The cascade
+      // already requires certTrust==='trusted' to emit 'outage-auto'; re-assert
+      // it at this side-effecting boundary so a future cascade change can't
+      // regress the invariant. 'trusted' is unreachable until SPKI pinning ⇒
+      // this swap is inert.
+      if (drState.get().certTrust !== 'trusted') return;
       failoverLatched = true;
       void doSwap('failover', { connectionMode: 'direct', baseUrl: target });
       return;

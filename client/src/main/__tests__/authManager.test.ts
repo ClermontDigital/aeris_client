@@ -4,6 +4,7 @@ import * as authManager from '../authManager';
 import * as appLockManager from '../appLockManager';
 import { settingsStore } from '../settingsStore';
 import { tokenStore } from '../tokenStore';
+import { drState } from '../drState';
 import StoreMock from 'electron-store';
 
 describe('authManager', () => {
@@ -99,6 +100,19 @@ describe('authManager', () => {
     expect(next.isAuthenticated).toBe(false);
     expect(await tokenStore.getToken()).toBeNull();
     expect(c.getAuthToken()).toBeNull();
+  });
+
+  test('logout resets DR routing state (a cached LAN URL must not linger) — deployment-team LOW', () => {
+    // Stage a cached NAS target as if mid-session, then log out.
+    drState.setCachedLocalUrl('https://nas.local', 'unverified');
+    expect(drState.get().cachedLocalUrl).toBe('https://nas.local');
+    const resetSpy = jest.spyOn(drState, 'reset');
+    jest.spyOn(getRelayClient(), 'logout').mockResolvedValue(undefined);
+
+    return authManager.logout().then(() => {
+      expect(resetSpy).toHaveBeenCalled();
+      expect(drState.get().cachedLocalUrl).toBeNull();
+    });
   });
 
   test('initialize() restores optimistic session without firing a probe call', async () => {
