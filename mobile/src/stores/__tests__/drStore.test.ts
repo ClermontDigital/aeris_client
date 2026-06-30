@@ -34,6 +34,16 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
+// Mock the ApiClient singleton that drStore.pollDrRouting lazy-requires. We
+// drive getDrRouting per-test.
+const mockGetDrRouting = jest.fn();
+jest.mock('../../services/ApiClient', () => ({
+  __esModule: true,
+  default: {
+    getDrRouting: (...args: unknown[]) => mockGetDrRouting(...args),
+  },
+}));
+
 import {useDrStore} from '../drStore';
 import {useSettingsStore} from '../settingsStore';
 
@@ -41,6 +51,7 @@ describe('drStore — validate-on-cache (§15-M1)', () => {
   beforeEach(() => {
     Object.keys(mockSecureStore).forEach(k => delete mockSecureStore[k]);
     Object.keys(mockAsyncStorage).forEach(k => delete mockAsyncStorage[k]);
+    mockGetDrRouting.mockReset();
     useDrStore.setState({
       cachedLocalUrl: null,
       pairedWorkspaceCode: null,
@@ -50,6 +61,10 @@ describe('drStore — validate-on-cache (§15-M1)', () => {
       certTrust: 'unknown',
       lastSyncAt: null,
       isLoading: false,
+      failbackEligible: false,
+      syncQueueDepth: 0,
+      drEnabled: false,
+      nasProbeReachable: null,
     });
     useSettingsStore.setState(s => ({
       settings: {...s.settings, workspaceCode: 'shop-one'},
@@ -148,5 +163,98 @@ describe('drStore — validate-on-cache (§15-M1)', () => {
     expect(masked).not.toBeNull();
     expect(masked).not.toContain('aeris.local');
     expect(masked).toContain('https:');
+  });
+});
+
+describe('drStore.pollDrRouting — M3-0 dr.routing consume seam', () => {
+  beforeEach(() => {
+    mockGetDrRouting.mockReset();
+    useDrStore.setState({
+      cachedLocalUrl: null,
+      pairedWorkspaceCode: null,
+      routingDirective: 'cloud',
+      lastLocalUrlReportedAt: null,
+      cacheStatus: 'pending',
+      certTrust: 'unknown',
+      lastSyncAt: null,
+      isLoading: false,
+      failbackEligible: false,
+      syncQueueDepth: 0,
+      drEnabled: false,
+      nasProbeReachable: null,
+    });
+    useSettingsStore.setState(s => ({
+      settings: {...s.settings, workspaceCode: 'shop-one'},
+    }));
+    jest
+      .spyOn(useSettingsStore.getState(), 'testConnection')
+      .mockResolvedValue(true);
+  });
+
+  it('GRACEFUL: getDrRouting returns null (404 / dr_enabled=false) → no-op, drEnabled=false', async () => {
+    mockGetDrRouting.mockResolvedValue(null);
+    const ok = await useDrStore.getState().pollDrRouting();
+    expect(ok).toBe(false);
+    expect(useDrStore.getState().drEnabled).toBe(false);
+    // Never clears last-known-good on absence — and there was none, so null.
+    expect(useDrStore.getState().cachedLocalUrl).toBeNull();
+  });
+
+  it('GRACEFUL: a thrown transport error → false, last-known-good untouched', async () => {
+    // Seed a prior good value.
+    await useDrStore
+      .getState()
+      .ingestServedPayload({partner_local_url: 'https://192.168.1.50:8822'}, 'shop-one');
+    mockGetDrRouting.mockRejectedValue(new Error('network'));
+    const ok = await useDrStore.getState().pollDrRouting();
+    expect(ok).toBe(false);
+    expect(useDrStore.getState().cachedLocalUrl).toBe('https://192.168.1.50:8822');
+  });
+
+  it('ingests a served DR payload through the validate→probe→commit pipeline', async () => {
+    mockGetDrRouting.mockResolvedValue({
+      dr_enabled: true,
+      routing_target: 'local',
+      partner_local_url: 'https://192.168.1.77:8822',
+      partner_local_url_reported_at: '2026-06-30T00:00:00Z',
+      active_writer: true,
+      failback_eligible: true,
+      sync_queue_depth: 5,
+      served_at: '2026-06-30T00:00:01Z',
+    });
+    const ok = await useDrStore.getState().pollDrRouting();
+    expect(ok).toBe(true);
+    const s = useDrStore.getState();
+    expect(s.drEnabled).toBe(true);
+    expect(s.cachedLocalUrl).toBe('https://192.168.1.77:8822');
+    expect(s.routingDirective).toBe('local');
+    // M3-B signals persisted (not acted on here).
+    expect(s.failbackEligible).toBe(true);
+    expect(s.syncQueueDepth).toBe(5);
+  });
+
+  it('persists M3-B signals even when partner_local_url is absent (no re-cache)', async () => {
+    mockGetDrRouting.mockResolvedValue({
+      dr_enabled: true,
+      routing_target: 'cloud',
+      partner_local_url: null,
+      partner_local_url_reported_at: null,
+      active_writer: false,
+      failback_eligible: true,
+      sync_queue_depth: 2,
+      served_at: '2026-06-30T00:00:01Z',
+    });
+    await useDrStore.getState().pollDrRouting();
+    const s = useDrStore.getState();
+    expect(s.failbackEligible).toBe(true);
+    expect(s.syncQueueDepth).toBe(2);
+    expect(s.cachedLocalUrl).toBeNull();
+  });
+
+  it('setNasProbeReachable updates the live probe verdict', () => {
+    useDrStore.getState().setNasProbeReachable(false);
+    expect(useDrStore.getState().nasProbeReachable).toBe(false);
+    useDrStore.getState().setNasProbeReachable(true);
+    expect(useDrStore.getState().nasProbeReachable).toBe(true);
   });
 });
