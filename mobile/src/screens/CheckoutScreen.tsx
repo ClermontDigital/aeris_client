@@ -29,10 +29,12 @@ import {
 import {useCartStore} from '../stores/cartStore';
 import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import {useFailoverAbortStore} from '../stores/failoverAbortStore';
+import {useRoutingDecision} from '../hooks/useRoutingDecision';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {usePrintReceipt} from '../hooks/usePrintReceipt';
 import ApiClient from '../services/ApiClient';
+import {RelayError} from '@aeris/shared';
 import ErrorBanner from '../components/ErrorBanner';
 import EyebrowLabel from '../components/EyebrowLabel';
 import type {PaymentMethod} from '../types/api.types';
@@ -57,6 +59,33 @@ const DEFAULT_PAYMENT_METHODS: PaymentMethod[] = [
   {code: 'card', name: 'Card', requires_reference: false},
   {code: 'account', name: 'Account', requires_reference: false},
 ];
+
+// Tenders the Aeris2 failover gate blocks during an active on-prem failover
+// (DrFailoverState.php:171-174). Mirroring the server-side superset here so
+// the tile is dead BEFORE the cashier taps — server still fails closed if a
+// tile somehow gets through. Lowercase compare, since the server gate is
+// case-insensitive (strtolower at DrFailoverState.php:177).
+const FAILOVER_BLOCKED_TENDERS: ReadonlySet<string> = new Set([
+  'card',
+  'eftpos',
+  'credit_card',
+  'debit_card',
+  'gift_card',
+  'account',
+  'on_account',
+  'layby',
+  'lay-by',
+  'laybuy',
+  'afterpay',
+  'zip_pay',
+  'zippay',
+  'zip',
+  'bank_transfer',
+]);
+
+function isTenderBlockedByFailover(code: string): boolean {
+  return FAILOVER_BLOCKED_TENDERS.has(code.toLowerCase());
+}
 
 interface SaleResult {
   sale_id: number;
@@ -183,10 +212,43 @@ export default function CheckoutScreen() {
     s.isWriteActionBlocked('sale'),
   );
 
+  // §19.2 routing mode — when the device is selling against the on-prem
+  // server (currentMode === 'local'), the Aeris2 NAS rejects non-cash
+  // tenders with HTTP 422 + DR_FAILOVER_TENDER_BLOCKED. Pre-disable those
+  // tiles so the cashier sees the constraint up-front instead of eating
+  // a 422 after picking Card. Cash + manual EFTPOS (free-text) still pass.
+  const {currentMode} = useRoutingDecision();
+  // Gate during 'local' (active failover) AND 'switching' (cascade mid-
+  // transition — conservative; treats the in-flight state as failover so
+  // the cashier can't sneak a card sale through right at the boundary).
+  const failoverTenderGateActive =
+    currentMode === 'local' || currentMode === 'switching';
+  const isMethodFailoverBlocked = useCallback(
+    (code: string): boolean =>
+      failoverTenderGateActive && isTenderBlockedByFailover(code),
+    [failoverTenderGateActive],
+  );
+
+  // If the cashier had a now-blocked tender selected when the routing
+  // mode flipped to local mid-checkout, clear the selection so they can't
+  // submit it. Cleanest place to enforce — runs only when the gate flag
+  // changes, doesn't fight user input on every render.
+  useEffect(() => {
+    if (
+      failoverTenderGateActive &&
+      selectedMethod !== null &&
+      isTenderBlockedByFailover(selectedMethod)
+    ) {
+      setSelectedMethod(null);
+      setAmountTendered('');
+    }
+  }, [failoverTenderGateActive, selectedMethod]);
+
   const canComplete =
     !saleWritesBlocked &&
     paymentMethodsState === 'live' &&
     selectedMethod !== null &&
+    !isMethodFailoverBlocked(selectedMethod) &&
     (selectedMethod !== 'cash' || tenderedCents >= totalCents);
 
   // Synchronous double-tap guard. `setIsSubmitting(true)` is async — between
@@ -250,8 +312,31 @@ export default function CheckoutScreen() {
       markSaleCompleted();
       setSaleResult(result);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Sale failed';
       haptics.error();
+      // Aeris2 DR gates surface as RelayError with `code` set on the relay
+      // envelope. We own the on-prem copy (per-tender server messages
+      // intentionally vary — gift_card omits "use cash." etc., per
+      // DrFailoverState.php:179-188) — don't echo server text.
+      if (e instanceof RelayError) {
+        if (e.code === 'DR_FAILOVER_TENDER_BLOCKED') {
+          setError(
+            'This payment type is paused during on-prem failover — use cash.',
+          );
+          // Clear the now-blocked selection so the cashier picks Cash.
+          if (selectedMethod && isTenderBlockedByFailover(selectedMethod)) {
+            setSelectedMethod(null);
+            setAmountTendered('');
+          }
+          return;
+        }
+        if (e.code === 'DR_FAILOVER_CLOUD_ORIGIN_REFUND_BLOCKED') {
+          setError(
+            'Cloud-origin sales can’t be refunded during on-prem failover.',
+          );
+          return;
+        }
+      }
+      const msg = e instanceof Error ? e.message : 'Sale failed';
       setError(msg);
     } finally {
       setIsSubmitting(false);
@@ -474,17 +559,24 @@ export default function CheckoutScreen() {
         <View style={styles.methodGrid}>
           {paymentMethods.map(method => {
             const selected = selectedMethod === method.code;
+            const blocked = isMethodFailoverBlocked(method.code);
             return (
               <TouchableOpacity
                 key={method.code}
+                disabled={blocked}
                 style={[
                   styles.methodButton,
                   selected && styles.methodButtonActive,
+                  blocked && styles.methodButtonBlocked,
                   tabletMethodTileCap,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={`Payment method ${method.name}`}
-                accessibilityState={{selected}}
+                accessibilityLabel={
+                  blocked
+                    ? `${method.name} unavailable during on-prem failover`
+                    : `Payment method ${method.name}`
+                }
+                accessibilityState={{selected, disabled: blocked}}
                 onPress={() => {
                   setSelectedMethod(method.code);
                   setAmountTendered('');
@@ -493,6 +585,7 @@ export default function CheckoutScreen() {
                   style={[
                     styles.methodButtonText,
                     selected && styles.methodButtonTextActive,
+                    blocked && styles.methodButtonTextBlocked,
                   ]}>
                   {method.name}
                 </Text>
@@ -500,6 +593,12 @@ export default function CheckoutScreen() {
             );
           })}
         </View>
+        {failoverTenderGateActive ? (
+          <Text style={styles.failoverHint}>
+            On-prem failover — cash only. Other tenders resume when the cloud
+            is back.
+          </Text>
+        ) : null}
 
         {/* Cash: Amount Tendered */}
         {selectedMethod === 'cash' && (
@@ -688,6 +787,24 @@ const styles = StyleSheet.create({
   },
   methodButtonTextActive: {
     color: COLORS.crimson,
+  },
+  // On-prem failover: visually mute blocked tender tiles. Border + bg drop
+  // to the disabled palette and opacity nudges down — the cashier reads
+  // them as "not available right now", paired with the failoverHint below.
+  methodButtonBlocked: {
+    opacity: 0.45,
+    borderColor: COLORS.surfaceBorder,
+    backgroundColor: COLORS.surface,
+  },
+  methodButtonTextBlocked: {
+    color: COLORS.textDim,
+  },
+  failoverHint: {
+    marginTop: SPACING.sm,
+    color: COLORS.warningText,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+    textAlign: 'center',
   },
   cashSection: {
     marginBottom: SPACING.lg,
