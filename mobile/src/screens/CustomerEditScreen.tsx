@@ -31,6 +31,7 @@ import Icon from '../components/Icon';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useCartStore} from '../stores/cartStore';
+import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import type {Customer, CustomerCreateInput} from '../types/api.types';
 import type {
   CustomersStackParamList,
@@ -274,6 +275,10 @@ const CustomerEditScreen: React.FC = () => {
     submitLockRef.current = true;
     setIsSubmitting(true);
     setError(null);
+    // BLOCKER-2 (§19.2 rule 1): a customer create/update is an open account
+    // write — defer any auto-failover swap until it completes (don't drop it
+    // mid-POST).
+    useTransactionActivityStore.getState().setAccountWriteInFlight(true);
     try {
       const payload = formToCreateInput(values);
       if (isEdit && customerId !== undefined) {
@@ -304,6 +309,7 @@ const CustomerEditScreen: React.FC = () => {
     } finally {
       setIsSubmitting(false);
       submitLockRef.current = false;
+      useTransactionActivityStore.getState().setAccountWriteInFlight(false);
     }
   }, [
     values,
@@ -333,6 +339,11 @@ const CustomerEditScreen: React.FC = () => {
             deleteLockRef.current = true;
             setIsDeleting(true);
             setError(null);
+            // BLOCKER-2 (§19.2 rule 1): a customer delete is an open account
+            // write — defer any auto-failover swap until it completes.
+            useTransactionActivityStore
+              .getState()
+              .setAccountWriteInFlight(true);
             try {
               await ApiClient.deleteCustomer(customerId);
               haptics.success();
@@ -352,6 +363,9 @@ const CustomerEditScreen: React.FC = () => {
             } finally {
               setIsDeleting(false);
               deleteLockRef.current = false;
+              useTransactionActivityStore
+                .getState()
+                .setAccountWriteInFlight(false);
             }
           },
         },
