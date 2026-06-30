@@ -14,6 +14,7 @@ const mockSettings: SettingsMock = {
 const mockLogin = jest.fn(() => Promise.resolve());
 const mockSetAuthState = jest.fn();
 const mockLoad = jest.fn();
+const mockRecordFailure = jest.fn(() => Promise.resolve(false));
 
 jest.mock('../../stores/settingsStore', () => ({
   useSettingsStore: {getState: () => ({settings: mockSettings.settings})},
@@ -27,6 +28,7 @@ jest.mock('../../stores/authStore', () => ({
 jest.mock('../SilentReauthCredentialStore', () => ({
   SilentReauthCredentialStore: {
     load: (...a: unknown[]) => mockLoad(...a),
+    recordFailure: (...a: unknown[]) => mockRecordFailure(...a),
   },
 }));
 // ApiClient is imported by silentReauth (unused on these paths) — stub it so no
@@ -40,6 +42,7 @@ beforeEach(() => {
   mockLogin.mockReset().mockResolvedValue(undefined);
   mockSetAuthState.mockReset();
   mockLoad.mockReset();
+  mockRecordFailure.mockReset().mockResolvedValue(false);
 });
 
 describe('attemptSilentReauth', () => {
@@ -67,6 +70,9 @@ describe('attemptSilentReauth', () => {
     expect(r.outcome).toBe('failed');
     // Does NOT clear the banner — the manual login screen stands.
     expect(mockSetAuthState).not.toHaveBeenCalled();
+    // TTL: records the failure so a permanently-stale credential is eventually
+    // wiped after N consecutive failures.
+    expect(mockRecordFailure).toHaveBeenCalledTimes(1);
   });
 
   it('no cached credential (flag off / none) → "no-cred", never calls login', async () => {
