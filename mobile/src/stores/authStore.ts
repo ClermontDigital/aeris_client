@@ -2,6 +2,7 @@ import {create} from 'zustand';
 import CookieManager from '@react-native-cookies/cookies';
 import ApiClient, {RelayError} from '../services/ApiClient';
 import {SecureStorage} from '../services/StorageService';
+import {SilentReauthCredentialStore} from '../services/SilentReauthCredentialStore';
 import {useSettingsStore} from './settingsStore';
 import type {User} from '../types/api.types';
 
@@ -156,6 +157,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error: null,
         errorKind: null,
       });
+      // M3-C — cache the credentials for SILENT re-auth across a future auto
+      // mode-switch (failover/failback wipes the audience-specific bearer, and
+      // auth.biometric can't run without a live token). SECURITY GATE: only
+      // when autoFailoverEnabled is ON — a default (flag-off) build caches
+      // NOTHING. Scoped to the active workspace code; wiped on explicit logout.
+      // See SilentReauthCredentialStore for the full threat model. Best-effort
+      // (never blocks login, never logs the credential).
+      const autoFailoverEnabled = s?.autoFailoverEnabled === true;
+      await SilentReauthCredentialStore.save(
+        autoFailoverEnabled,
+        s?.workspaceCode ?? null,
+        email,
+        password,
+      );
     } catch (e) {
       let message = e instanceof Error ? e.message : 'Login failed';
       // The "workspace not found" copy only makes sense in relay mode. In
@@ -215,6 +230,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
     await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
+    // M3-C — explicit logout WIPES the cached silent-re-auth credential (the
+    // "I'm deliberately leaving" path in the threat model). NOTE: the 401-driven
+    // clearLocalSession deliberately does NOT wipe — it fires DURING an auto
+    // mode-switch, which is exactly when the cache is needed to re-auth.
+    await SilentReauthCredentialStore.clear();
     await clearWebViewCookies();
     // PIN persists across logout — only Settings → Reset PIN clears it.
     // Cross-platform parity with desktop; on next login the cold-start
