@@ -134,4 +134,19 @@ describe('M3-C silent-reauth credential cache lifecycle', () => {
 
     expect(clearSpy).toHaveBeenCalled();
   });
+
+  it('(d) clearLocalSession (401-driven) → PRESERVES the cache, NEVER clears it', async () => {
+    // The 401 path includes the one the auto mode-switch itself triggers (old-edge
+    // bearer rejected by the new edge) — exactly when the cache is needed to
+    // silent-re-auth against the new edge. A future "tidy up on session wipe"
+    // refactor must NOT re-introduce a clear() here (it would bounce the cashier
+    // to a login screen mid-shift). This is the regression guard for that.
+    const clearSpy = jest
+      .spyOn(SilentReauthCredentialStore, 'clear')
+      .mockResolvedValue(undefined);
+
+    await useAuthStore.getState().clearLocalSession();
+
+    expect(clearSpy).not.toHaveBeenCalled();
+  });
 });
