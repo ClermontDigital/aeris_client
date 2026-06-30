@@ -65,6 +65,18 @@ const aeris: AerisBridge = {
     zReport: (date) => ipcRenderer.invoke(IPC_CHANNELS.PRINT_ZREPORT, date),
   },
 
+  dr: {
+    getState: () => ipcRenderer.invoke(IPC_CHANNELS.DR_GET_STATE),
+    reportActivity: (report) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DR_REPORT_ACTIVITY, report),
+    onStateChanged: (cb) => {
+      const handler = (_e: unknown, state: unknown) =>
+        cb(state as Parameters<AerisBridge['dr']['onStateChanged']>[0] extends (s: infer S) => void ? S : never);
+      ipcRenderer.on(IPC_CHANNELS.DR_STATE_CHANGED, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.DR_STATE_CHANGED, handler);
+    },
+  },
+
   update: {
     checkNow: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CHECK_NOW),
     openDownload: (url) =>

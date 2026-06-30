@@ -250,6 +250,29 @@ export function SettingsScreen(): React.ReactElement {
           </label>
         ) : null}
 
+        {/* DR M3-E auto-failover master flag (default OFF, ships dark). When
+            enabled the app automatically fails over cloud→in-store on a
+            sustained cloud outage (and back when the cloud returns + the
+            sync queue has drained), re-signing-in silently. Per-deployment
+            enablement is gated behind the DR proof process; left OFF here. */}
+        <label
+          style={{ display: 'flex', alignItems: 'center', gap: SPACING.sm, color: COLORS.text, marginTop: SPACING.sm }}
+        >
+          <input
+            type="checkbox"
+            checked={settings.autoFailoverEnabled}
+            onChange={(e) =>
+              void setSettings({ autoFailoverEnabled: e.target.checked })
+            }
+          />
+          Automatic failover to in-store mode during a cloud outage
+        </label>
+        <span style={{ color: COLORS.textMuted, fontSize: FONT_SIZE.sm }}>
+          When on, Aeris switches to the in-store server automatically if the
+          cloud becomes unreachable, and back when it returns. Leave off unless
+          your deployment has been enabled for disaster-recovery failover.
+        </span>
+
         <Button
           variant="secondary"
           onClick={() => setConfirmWorkspaceSwitch(true)}
