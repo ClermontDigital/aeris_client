@@ -24,6 +24,10 @@ interface MockState {
     cacheStatus: string;
     certTrust: string;
     cachedLocalUrl: string | null;
+    // M3-B — the real failback drain signal + DR-enabled flag.
+    failbackEligible: boolean;
+    drEnabled: boolean;
+    nasProbeReachable: boolean | null;
   };
   cloud: {
     cloudReachable: boolean | null;
@@ -45,6 +49,9 @@ const state: MockState = {
     cacheStatus: 'pending',
     certTrust: 'unknown',
     cachedLocalUrl: null,
+    failbackEligible: false,
+    drEnabled: false,
+    nasProbeReachable: null,
   },
   cloud: {cloudReachable: null, reachableSinceMs: null},
 };
@@ -85,6 +92,9 @@ function reset(): void {
     cacheStatus: 'pending',
     certTrust: 'unknown',
     cachedLocalUrl: null,
+    failbackEligible: false,
+    drEnabled: false,
+    nasProbeReachable: null,
   };
   state.cloud = {cloudReachable: null, reachableSinceMs: null};
 }
@@ -132,6 +142,46 @@ describe('useRoutingDecision — transitions (M-R4)', () => {
     const {result} = renderHook(() => useRoutingDecision());
     expect(result.current.currentMode).toBe('local');
     expect(result.current.mode).toBe('cloud');
+    expect(result.current.reason).toBe('failback-ready');
+  });
+});
+
+// M3-B — the REAL drain signal: useRoutingDecision must source the cascade's
+// reconcileQueueDrained from drStore.failbackEligible (gated by drEnabled), NOT
+// the Wave-1 hardcoded `true`. These prove the selector wiring of the drain
+// signal end-to-end through the hook.
+describe('useRoutingDecision — M3-B real drain signal', () => {
+  function sustainedLocalCloudBack(): void {
+    state.settings.settings.connectionMode = 'direct'; // operating local
+    state.cloud.cloudReachable = true;
+    state.cloud.reachableSinceMs = Date.now() - (FAILBACK_HYSTERESIS_MS + 5_000);
+  }
+
+  it('DR enabled + failbackEligible=false → HOLDS local (never failback mid-drain)', () => {
+    sustainedLocalCloudBack();
+    state.dr.drEnabled = true;
+    state.dr.failbackEligible = false; // outbox draining / open conflict
+    const {result} = renderHook(() => useRoutingDecision());
+    expect(result.current.reason).toBe('failback-hold');
+    expect(result.current.mode).toBe('local');
+  });
+
+  it('DR enabled + failbackEligible=true → failback-ready (drain complete)', () => {
+    sustainedLocalCloudBack();
+    state.dr.drEnabled = true;
+    state.dr.failbackEligible = true; // server says drained, no open conflicts
+    const {result} = renderHook(() => useRoutingDecision());
+    expect(result.current.reason).toBe('failback-ready');
+    expect(result.current.mode).toBe('cloud');
+  });
+
+  it('DR NOT served (drEnabled=false) → M1 behaviour: hysteresis alone (failback-ready)', () => {
+    // No DR surface / pre-seam deployment: there is no NAS outbox, so the
+    // hardcoded-drained M1 behaviour stands (failbackEligible is ignored).
+    sustainedLocalCloudBack();
+    state.dr.drEnabled = false;
+    state.dr.failbackEligible = false;
+    const {result} = renderHook(() => useRoutingDecision());
     expect(result.current.reason).toBe('failback-ready');
   });
 });
