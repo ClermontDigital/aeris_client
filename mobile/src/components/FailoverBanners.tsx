@@ -22,6 +22,12 @@ import {useDrStore} from '../stores/drStore';
 export function FailoverBanners(): React.ReactElement | null {
   const cloudReachable = useCloudReachabilityStore(s => s.cloudReachable);
   const connectionMode = useSettingsStore(s => s.settings.connectionMode);
+  // M3-D — when the auto-failover flag is ON the copy changes from the manual
+  // "switch in Settings" CTA to the informational "switched automatically".
+  // Flag OFF keeps the exact M2 manual copy.
+  const autoFailoverEnabled = useSettingsStore(
+    s => s.settings.autoFailoverEnabled ?? false,
+  );
   const nasUnavailable = useFailoverAbortStore(s => s.nasUnavailable);
   const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
   const provisioned = cachedLocalUrl != null;
@@ -40,6 +46,28 @@ export function FailoverBanners(): React.ReactElement | null {
     );
   }
 
+  // M3-A auto-mode confirmation: the flag is ON, we've auto-switched to the
+  // on-prem (Direct) server, and the cloud is still down. Inform the cashier
+  // the switch happened automatically (vs the manual "switch in Settings"
+  // prompt below). Only while the cloud is actually unreachable — once it's
+  // back, this clears (failback is M3-B).
+  if (
+    autoFailoverEnabled &&
+    connectionMode === 'direct' &&
+    provisioned &&
+    cloudReachable === false
+  ) {
+    return (
+      <View
+        style={[styles.banner, styles.cloudBanner]}
+        accessibilityRole="alert">
+        <Text style={styles.cloudText} numberOfLines={2}>
+          Switched to on-prem server automatically. Cloud is unreachable.
+        </Text>
+      </View>
+    );
+  }
+
   // §14.7 Q9 cloud-unreachable advisory — only meaningful while we're still
   // pointed at the cloud (relay mode). In Direct mode the cloud being down
   // is expected and not actionable.
@@ -50,7 +78,9 @@ export function FailoverBanners(): React.ReactElement | null {
         accessibilityRole="alert">
         <Text style={styles.cloudText} numberOfLines={2}>
           {provisioned
-            ? 'Cloud unreachable. Check your connection — or switch to on-prem mode in Settings.'
+            ? autoFailoverEnabled
+              ? 'Cloud unreachable. Switching to on-prem mode…'
+              : 'Cloud unreachable. Check your connection — or switch to on-prem mode in Settings.'
             : 'Cloud unreachable. Check your connection.'}
         </Text>
       </View>

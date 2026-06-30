@@ -65,6 +65,22 @@ interface DrState extends PersistedDrState {
   // false = no DR surface (404 / dr_enabled=false) → M2 manual path.
   drEnabled: boolean;
 
+  // M3-A — live CONTINUOUS NAS reachability, set by the health-probe loop
+  // (useNasHealthProbe) while a NAS target is cached. Replaces the one-time
+  // validation's static "cached+ok ⇒ reachable" assumption for the routing
+  // cascade. Transient (never persisted — a stale "reachable" must not survive
+  // a cold start).
+  //   null  — not probed yet this session (cascade treats as reachable, like
+  //           cloud's null, so a cold start doesn't read as NAS-down).
+  //   true  — last probe reached the NAS.
+  //   false — last probe failed → NAS unusable (drives Rule 5 fail-closed via
+  //           useFailoverDetection's existing producer path).
+  nasProbeReachable: boolean | null;
+  // Setter the health-probe loop calls. Kept on the store (not the hook) so
+  // the routing cascade reads it without the probe and the cascade fighting
+  // over ownership.
+  setNasProbeReachable: (v: boolean | null) => void;
+
   init: () => Promise<void>;
   // M3-0 — fetch the deployment's DR routing state over the relay and feed it
   // through the existing validate→probe→commit pipeline. 404 / dr_enabled=false
@@ -171,6 +187,9 @@ export const useDrStore = create<DrState>((set, get) => ({
   failbackEligible: false,
   syncQueueDepth: 0,
   drEnabled: false,
+  nasProbeReachable: null,
+
+  setNasProbeReachable: (v: boolean | null) => set({nasProbeReachable: v}),
 
   init: async () => {
     try {
@@ -351,6 +370,11 @@ export const useDrStore = create<DrState>((set, get) => ({
       lastLocalUrlReportedAt: null,
       cacheStatus: 'pending',
       certTrust: 'unknown',
+      // M3-A — drop the live probe verdict + M3-B signals on re-pair so a
+      // roaming till never carries another deployment's NAS health/failback.
+      nasProbeReachable: null,
+      failbackEligible: false,
+      syncQueueDepth: 0,
     });
     await persist(get());
   },
