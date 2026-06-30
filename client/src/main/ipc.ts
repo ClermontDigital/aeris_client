@@ -11,6 +11,12 @@ import {
 import { getRecentLogs } from './logger';
 import { safeHandle } from './senderGuard';
 import { printReceipt, printTestReceipt, printZReport } from './printService';
+import {
+  failoverOrchestrator,
+  registerDrWindow,
+  getDrState,
+} from './failoverOrchestrator';
+import { DrActivityReport } from '../shared-types/ipc';
 
 // Channel-handler registration is global per process: ipcMain.handle
 // throws on duplicate channel names, so we install handlers exactly once
@@ -70,6 +76,18 @@ export function registerIpc(): void {
     return printZReport(date as string | undefined);
   });
 
+  // DR M3-E: read-only DR state for the renderer chip/banner + the renderer's
+  // mid-transaction activity report. Orchestration itself is main-owned.
+  safeHandle(IPC_CHANNELS.DR_GET_STATE, () => getDrState());
+  safeHandle(IPC_CHANNELS.DR_REPORT_ACTIVITY, (_e, report) => {
+    const r = (report ?? {}) as Partial<DrActivityReport>;
+    failoverOrchestrator.reportActivity({
+      cartItemCount: typeof r.cartItemCount === 'number' ? r.cartItemCount : 0,
+      activeScreen: typeof r.activeScreen === 'string' ? r.activeScreen : null,
+    });
+    return { ok: true };
+  });
+
   registerRelayBridgeIpc();
   registerAuthIpc();
   registerAppLockIpc();
@@ -99,6 +117,7 @@ export function attachWindow(mainWindow: BrowserWindow): void {
 
   registerAuthWindow(mainWindow);
   registerAppLockWindow(mainWindow);
+  registerDrWindow(mainWindow);
 }
 
 // Test-only: reset the one-shot guard between scenarios so re-importing

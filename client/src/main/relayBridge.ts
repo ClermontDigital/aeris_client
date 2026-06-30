@@ -12,6 +12,8 @@ import { logger } from './logger';
 import { safeHandle } from './senderGuard';
 import { DirectClient } from './directClient';
 import { isLocalUrlSafeForCache } from './drUrlValidator';
+import { cloudReachability } from './cloudReachability';
+import { txnActivity } from './txnActivity';
 
 // relayBridge owns the transport client(s) and is the one place in the app
 // that knows the bearer token. The renderer issues calls via the
@@ -118,6 +120,14 @@ export async function initRelayBridge(): Promise<void> {
   c.setOnUnauthorized(onUnauth);
   d.setOnUnauthorized(onUnauth);
 
+  // DR M3-A/M3-E: drive the cloud-reachability hysteresis off the RelayClient's
+  // per-response hook. EVERY relay round-trip (any renderer action, the
+  // dr.routing poll, refresh) reports its transport outcome here; after 3
+  // consecutive transport failures cloudReachability flips unreachable, which is
+  // the producer the failover cascade consumes. Only the cloud transport feeds
+  // this signal — Direct/LAN responses say nothing about cloud reachability.
+  c.setOnResponse((reachable) => cloudReachability.report(reachable));
+
   // Re-apply settings as they change so the renderer's settings UI takes
   // effect immediately. The Direct baseUrl + the relay URL/workspace are
   // both kept current so a connection-mode flip routes correctly.
@@ -132,6 +142,25 @@ export async function initRelayBridge(): Promise<void> {
 
 export function setOnUnauthorized(cb: (() => void) | null): void {
   onUnauthorizedCb = cb;
+}
+
+// DR M3-0 — fetch the deployment's cached DR routing state over the relay.
+// REUSES the shared RelayClient.getDrRouting() (which maps a flag-off / non-DR
+// deployment's 404 / NOT_FOUND to null → callers fall back to the M2 manual
+// path, never error). ALWAYS uses the relay/cloud transport even in Direct
+// mode: dr.routing is a route-proxied gateway action served by the deployment,
+// not a Direct/LAN REST endpoint (mirrors mobile's relay-only ApiClient facade).
+export function getDrRouting(): ReturnType<RelayClient['getDrRouting']> {
+  return getRelayClient().getDrRouting();
+}
+
+// DR M3 — best-effort DR presence beat over the relay (fire-and-forget; any
+// non-2xx is a silent no-op inside the shared method). Relay-only, same reason.
+export function reportDrPresence(beat: {
+  device_id: string;
+  mode: 'cloud' | 'local';
+}): Promise<boolean> {
+  return getRelayClient().reportDrPresence(beat);
 }
 
 // M-R9: set (or clear) the bearer on BOTH transports in one call. Previously
@@ -248,6 +277,12 @@ export function registerRelayBridgeIpc(): void {
       };
     }
 
+    // DR M3-E rule 1: bracket in-flight sale/refund writes so the failover
+    // orchestrator never auto-switches mid-transaction (§22.5 Q1). The renderer
+    // also reports cart/screen, but a write in flight is the hard gate.
+    const isSaleWrite =
+      action === RELAY_ACTIONS.SALE_CREATE || action === RELAY_ACTIONS.SALES_REFUND;
+    if (isSaleWrite) txnActivity.beginSale();
     try {
       // Route by connection mode (§3.1). Direct mode talks straight to the
       // LAN deployment; relay mode goes through the gateway. The bearer is
@@ -274,6 +309,8 @@ export function registerRelayBridgeIpc(): void {
         correlationId: classified.correlationId,
       });
       return { ok: false, ...classified };
+    } finally {
+      if (isSaleWrite) txnActivity.endSale();
     }
   });
 }
