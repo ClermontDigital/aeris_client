@@ -920,7 +920,8 @@ async function performRoutingModeSwitch(mode, { trigger = 'manual' } = {}) {
 
   // PER-ENDPOINT PARTITIONS (M3 owner decision — replaces clear-all-on-switch).
   // We deliberately DO NOT clear storage here: the target endpoint loads its own
-  // persistent partition (persist:cloud[:user-id] / persist:nas[:user-id]).
+  // persistent partition (cloud reuses legacy persist:main[/persist:user-id];
+  // NAS uses persist:nas[:user-id]).
   // A warm session there = no re-login; an empty one = that endpoint's login
   // screen. Cloud and NAS partitions are isolated, so neither leaks into the
   // other. Explicit LOGOUT (logout-endpoint IPC) is what clears a partition.
