@@ -7,6 +7,8 @@ import type {
   AppSettings,
   AuthState,
   CheckNowResult,
+  DrActivityReport,
+  DrState,
   LoginRequest,
   PrintReceiptResult,
   RelayCallOptions,
@@ -61,6 +63,14 @@ export interface AerisBridge {
     receipt(saleId: number): Promise<PrintReceiptResult>;
     testPage(): Promise<PrintReceiptResult>;
     zReport(date?: string): Promise<PrintReceiptResult>;
+  };
+
+  dr: {
+    // Read-only DR failover state for the ModeIndicator chip + failover banner.
+    getState(): Promise<DrState>;
+    // Report cart/screen so main's orchestrator never auto-switches mid-sale.
+    reportActivity(report: DrActivityReport): Promise<{ ok: boolean }>;
+    onStateChanged(cb: (state: DrState) => void): () => void;
   };
 
   update: {
