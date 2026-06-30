@@ -13,6 +13,9 @@
     "typecheck": "tsc --build",
     "clean": "npm run clean --workspaces --if-present && rimraf node_modules"
   },
+  "devDependencies": {
+    "jest-util": "^29.7.0"
+  },
   "overrides": {
     "@xmldom/xmldom": "^0.8.13",
     "@tootallnate/once": "^2.0.1",

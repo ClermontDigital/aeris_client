@@ -20,15 +20,21 @@ export const useDrStore = create<DrStore>((set) => ({
 
   init: async () => {
     if (unsubscribe) return; // idempotent
-    const state = await window.aeris.dr.getState();
+    // Defensive optional-chaining — production preload always exposes the
+    // dr bridge, but jsdom tests that don't stub it shouldn't crash on a
+    // missing namespace. Tests get DEFAULT_DR_STATE; production gets live.
+    const dr = window.aeris?.dr;
+    if (!dr) return;
+    const state = await dr.getState();
     set({ ...state });
-    unsubscribe = window.aeris.dr.onStateChanged((next) => {
+    unsubscribe = dr.onStateChanged((next) => {
       set({ ...next });
     });
   },
 
   reportActivity: (report) => {
-    // Fire-and-forget; main re-evaluates the cascade on receipt.
-    void window.aeris.dr.reportActivity(report);
+    // Fire-and-forget; main re-evaluates the cascade on receipt. No-op when
+    // the bridge isn't present (jsdom tests without a dr stub).
+    window.aeris?.dr?.reportActivity?.(report);
   },
 }));

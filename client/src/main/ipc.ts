@@ -11,6 +11,7 @@ import {
 import { getRecentLogs } from './logger';
 import { safeHandle } from './senderGuard';
 import { printReceipt, printTestReceipt, printZReport } from './printService';
+import { txnActivity } from './txnActivity';
 import {
   failoverOrchestrator,
   registerDrWindow,
@@ -40,6 +41,10 @@ export function registerIpc(): void {
     getRecentLogs(typeof maxLines === 'number' ? maxLines : 100),
   );
 
+  // Print jobs are bracketed with begin/endSettlementOrPrint so an auto-
+  // failover swap can't interrupt an in-flight print. Validation failures
+  // return before begin so the refcount never increments without an
+  // end-pair on the finally side.
   safeHandle(IPC_CHANNELS.PRINT_RECEIPT, async (_e, saleId) => {
     if (
       typeof saleId !== 'number' ||
@@ -48,9 +53,21 @@ export function registerIpc(): void {
     ) {
       return { ok: false, message: 'saleId must be a positive integer' };
     }
-    return printReceipt(saleId);
+    txnActivity.beginSettlementOrPrint();
+    try {
+      return await printReceipt(saleId);
+    } finally {
+      txnActivity.endSettlementOrPrint();
+    }
   });
-  safeHandle(IPC_CHANNELS.PRINT_TEST, () => printTestReceipt());
+  safeHandle(IPC_CHANNELS.PRINT_TEST, async () => {
+    txnActivity.beginSettlementOrPrint();
+    try {
+      return await printTestReceipt();
+    } finally {
+      txnActivity.endSettlementOrPrint();
+    }
+  });
   safeHandle(IPC_CHANNELS.PRINT_ZREPORT, async (_e, date) => {
     // Regex catches shape; round-trip through Date.UTC catches roll-overs
     // like 2026-02-30 → Mar 2 that Date.parse alone would silently accept.
@@ -73,7 +90,12 @@ export function registerIpc(): void {
         return { ok: false, message: 'invalid date' };
       }
     }
-    return printZReport(date as string | undefined);
+    txnActivity.beginSettlementOrPrint();
+    try {
+      return await printZReport(date as string | undefined);
+    } finally {
+      txnActivity.endSettlementOrPrint();
+    }
   });
 
   // DR M3-E: read-only DR state for the renderer chip/banner + the renderer's
