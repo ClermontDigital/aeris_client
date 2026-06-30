@@ -293,12 +293,30 @@ export function registerRelayBridgeIpc(): void {
       };
     }
 
-    // DR M3-E rule 1: bracket in-flight sale/refund writes so the failover
-    // orchestrator never auto-switches mid-transaction (§22.5 Q1). The renderer
-    // also reports cart/screen, but a write in flight is the hard gate.
+    // DR M3-E rule 1: bracket in-flight writes so the failover orchestrator
+    // never auto-switches mid-transaction (§22.5 Q1). The renderer also reports
+    // cart/screen, but a write in flight is the hard gate.
+    //
+    // Three buckets — mirrors mobile's producer set (1.4.12):
+    //   • sale/refund      → beginSale          (money-move)
+    //   • customer writes  → beginAccountWrite  (account-side mutation)
+    //   • product writes / stock adjust → beginSettlementOrPrint (catalog/inv)
+    // Catalog edits + stock adjusts are bucketed with print because they
+    // share the "write that mustn't be interrupted" property and the mobile
+    // setter name happens to be the closest parity slot.
     const isSaleWrite =
       action === RELAY_ACTIONS.SALE_CREATE || action === RELAY_ACTIONS.SALES_REFUND;
+    const isAccountWrite =
+      action === RELAY_ACTIONS.CUSTOMERS_CREATE ||
+      action === RELAY_ACTIONS.CUSTOMERS_UPDATE ||
+      action === RELAY_ACTIONS.CUSTOMERS_DELETE;
+    const isSettlementOrPrintWrite =
+      action === RELAY_ACTIONS.PRODUCTS_CREATE ||
+      action === RELAY_ACTIONS.PRODUCTS_UPDATE ||
+      action === RELAY_ACTIONS.INVENTORY_ADJUST_STOCK;
     if (isSaleWrite) txnActivity.beginSale();
+    if (isAccountWrite) txnActivity.beginAccountWrite();
+    if (isSettlementOrPrintWrite) txnActivity.beginSettlementOrPrint();
     try {
       // Route by connection mode (§3.1). Direct mode talks straight to the
       // LAN deployment; relay mode goes through the gateway. The bearer is
@@ -327,6 +345,8 @@ export function registerRelayBridgeIpc(): void {
       return { ok: false, ...classified };
     } finally {
       if (isSaleWrite) txnActivity.endSale();
+      if (isAccountWrite) txnActivity.endAccountWrite();
+      if (isSettlementOrPrintWrite) txnActivity.endSettlementOrPrint();
     }
   });
 }

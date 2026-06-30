@@ -89,8 +89,14 @@ describe('SettingsScreen', () => {
 
   test('toggling auto-lock writes to settings', () => {
     render(<SettingsScreen />);
-    const cb = screen.getByRole('checkbox');
-    fireEvent.click(cb);
+    // Multiple checkboxes on the screen since DR M3-E added the auto-failover
+    // toggle. Pick the auto-lock one by its bound state (lockEnabled defaults
+    // to true; autoFailoverEnabled defaults to false), then assert the click
+    // flips that specific setting.
+    const checkboxes = screen.getAllByRole('checkbox');
+    const lockCheckbox = checkboxes.find((c) => (c as HTMLInputElement).checked);
+    if (!lockCheckbox) throw new Error('expected an enabled checkbox (auto-lock)');
+    fireEvent.click(lockCheckbox);
     expect(settingsSetMock).toHaveBeenCalledWith({ lockEnabled: false });
   });
 

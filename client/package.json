@@ -1,6 +1,6 @@
 {
   "name": "aeris-client",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "private": true,
   "description": "Aeris v2 — relay-native Electron client. Successor to archive/desktop-v1.",
   "homepage": "https://github.com/ClermontDigital/aeris_client",
@@ -22,6 +22,7 @@
     "package:linux": "electron-builder --linux"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.5.0",
     "@testing-library/react": "^16.0.0",
     "@types/jest": "^29.5.0",
