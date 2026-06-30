@@ -18,11 +18,15 @@ import {useFailoverAbortStore} from '../stores/failoverAbortStore';
 // full auto-failover is M2/Phase-3). It surfaces "the NAS we'd fail over to is
 // gone" so the cashier isn't left staring at a hung till with no signal.
 //
-// TODO(DR-M2, §22.2): once SPKI cert-pinning lands, certTrust can become
-// 'mismatch' on a spoofed/misconfigured host. Rule 5 already fails closed on
-// that; this hook then also surfaces it as NAS-unavailable. Until pinning
-// ships, 'mismatch' is not produced (drStore stays 'unverified'/'unknown'), so
-// in M1 this fires for the reachable-but-gone outage case.
+// M3-A: this hook is now also the cert-mismatch surface. The continuous NAS
+// health probe (useNasHealthProbe) writes nasProbeReachable=false on a
+// 'mismatch' cert-trust (as well as on a genuine reachability miss), which
+// drops the cascade to Rule 5 (degraded-fail-closed) when the cloud is also
+// down — so this hook raises the nasUnavailable banner for BOTH the
+// reachable-but-gone outage case AND a cert-mismatch'd NAS. (Until a native
+// SPKI pinning module lands — out of M3 scope, §5 — drStore still only emits
+// 'unverified'/'unknown' in practice, so mismatch is dormant-but-wired: the
+// path is active and tested, awaiting a real mismatch producer.)
 export function useFailoverDetection(): void {
   const {reason, nasAvailable, currentMode} = useRoutingDecision();
 

@@ -42,6 +42,8 @@ import {useCloudReachabilityStore} from './stores/cloudReachabilityStore';
 import {usePresenceBeacon} from './hooks/usePresenceBeacon';
 import {useFailoverDetection} from './hooks/useFailoverDetection';
 import {useDrRoutingPoll} from './hooks/useDrRoutingPoll';
+import {useNasHealthProbe} from './hooks/useNasHealthProbe';
+import {useAutoFailover} from './hooks/useAutoFailover';
 import ApiClient from './services/ApiClient';
 import RootNavigator from './navigation/RootNavigator';
 import AppLockScreen from './screens/AppLockScreen';
@@ -156,6 +158,15 @@ const App: React.FC = () => {
   // through drStore's validate→probe→commit pipeline. No-op on non-DR
   // deployments (404 → graceful M2 manual path).
   useDrRoutingPoll();
+  // M3-A — continuous NAS reachability probe while a failover target is cached
+  // (replaces the one-time validation); feeds the routing cascade + the
+  // nasUnavailable banner producer. Cheap on-LAN; no-op with no cached target.
+  useNasHealthProbe();
+  // M3-A — the flag-gated auto endpoint-swap orchestrator. No-op unless the
+  // autoFailoverEnabled flag is ON (default OFF) AND the cascade returns
+  // 'outage-auto' (cloud-unreachable-per-hysteresis + reachable validated NAS +
+  // cert-ok + not mid-transaction). Leaves the user at re-login (M3-C next).
+  useAutoFailover();
   const isLocked = useAppLockStore(s => s.isLocked);
   const hasPin = useAppLockStore(s => s.hasPin);
   const lockInitialized = useAppLockStore(s => s.initialized);

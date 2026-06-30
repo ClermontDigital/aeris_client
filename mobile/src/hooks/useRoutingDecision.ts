@@ -68,16 +68,26 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
   const cacheStatus = useDrStore(s => s.cacheStatus);
   const certTrust = useDrStore(s => s.certTrust);
   const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
+  // M3-A — live continuous NAS reachability from the health-probe loop. null =
+  // not probed yet (treated as reachable, like cloud's null cold-start rule);
+  // false = the probe positively failed → NAS unusable for failover.
+  const nasProbeReachable = useDrStore(s => s.nasProbeReachable);
 
   const cloudReachable = useCloudReachabilityStore(s => s.cloudReachable);
   const reachableSinceMs = useCloudReachabilityStore(s => s.reachableSinceMs);
 
   return useMemo<UseRoutingDecisionResult>(() => {
-    // A NAS is "available" to fail over to when we hold a cached, validated
-    // last-known-good target. Reachability of that target is best-effort in
-    // M1 (no live LAN probe loop) — we treat a cached+ok target as reachable
-    // and let the cascade fail-closed on an explicit cert mismatch.
+    // A NAS is "available" (we hold a cached, validated last-known-good
+    // target) — drives the banners' "provisioned" gate.
     const nasAvailable = !!cachedLocalUrl && cacheStatus === 'ok';
+
+    // M3-A — NAS *reachability* for the cascade now reflects the live health
+    // probe. A cached+ok target is reachable UNLESS the continuous probe has
+    // positively returned false (null = not-yet-probed ⇒ optimistic reachable,
+    // mirroring the cloud null cold-start rule). When the probe says false
+    // while we hold a target and the cloud is down, the cascade drops to Rule 5
+    // (degraded-fail-closed) and useFailoverDetection raises nasUnavailable.
+    const nasReachable = nasAvailable && nasProbeReachable !== false;
 
     const currentMode = deriveCurrentMode(connectionMode, cloudReachable);
 
@@ -97,7 +107,7 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
       // cloud-first and we don't want a cold start with no signal to read as
       // an outage. Only a positively-determined `false` counts as unreachable.
       cloudReachable: cloudReachable !== false,
-      nasReachable: nasAvailable,
+      nasReachable,
       nasCertTrust: certTrust,
       currentMode,
       cloudReachableSustainedMs,
@@ -122,6 +132,7 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
     cacheStatus,
     certTrust,
     cachedLocalUrl,
+    nasProbeReachable,
     cloudReachable,
     reachableSinceMs,
   ]);
