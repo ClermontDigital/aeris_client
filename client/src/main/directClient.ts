@@ -15,6 +15,7 @@ import {
   isRetryable,
   sleep,
   withReadRetry,
+  type AuthResponse,
   type Category,
   type Customer,
   type CustomerCreateInput,
@@ -111,6 +112,32 @@ export class DirectClient {
 
   getBaseUrl(): string {
     return this.baseUrl;
+  }
+
+  // --- Auth (Direct/LAN) — M3-E ---
+  // Direct-mode re-entry after an auto failover (M3-C silent re-login). The
+  // on-prem/NAS deployment exposes /api/v1/auth/login directly (no gateway),
+  // so a silent re-auth in Direct mode posts straight to the LAN edge. The
+  // response shape mirrors the relay AuthResponse ({access_token, ...}); the
+  // server may wrap it in {data:{...}} like every other Direct read, so we
+  // unwrap defensively. We deliberately clear any stale bearer first (login is
+  // unauth) so a wrong-audience token can't 401 the login itself.
+  async login(
+    email: string,
+    password: string,
+    deviceName?: string,
+  ): Promise<AuthResponse> {
+    this.authToken = null;
+    const raw = await this.post<unknown>('/api/v1/auth/login', {
+      email,
+      password,
+      device_name: deviceName,
+    });
+    const body =
+      raw && typeof raw === 'object' && 'data' in (raw as Record<string, unknown>)
+        ? ((raw as { data: unknown }).data as AuthResponse)
+        : (raw as AuthResponse);
+    return body;
   }
 
   // --- Dashboard ---
