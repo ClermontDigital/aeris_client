@@ -3,6 +3,7 @@ import {useRoutingDecision} from './useRoutingDecision';
 import {useAuthStore} from '../stores/authStore';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useDrStore} from '../stores/drStore';
+import {attemptSilentReauth} from '../services/silentReauth';
 
 // useAutoFailover — M3-A auto endpoint-swap orchestrator (FLAG-GATED).
 // Source of truth: docs/PROJECT_DR_M3_BUILD_PLAN.md §M3-A, §3 guardrails.
@@ -22,9 +23,11 @@ import {useDrStore} from '../stores/drStore';
 // THE SWAP mirrors the manual Settings switch EXACTLY (SettingsModal.handleSave
 // modeChanged branch): clear the local session (the bearer is audience-specific
 // and must not be forwarded to the new edge — §M3-C) then save the new mode +
-// base URL. Per the M3 scope, after an auto-swap the user is left at the
-// re-login prompt (silent re-login is M3-C, next agent). We set the same
-// deliberate-switch copy the manual path uses so it doesn't read as a crash.
+// base URL. We then attempt a SILENT re-auth (M3-C) against the NAS using the
+// cached credentials so the cashier keeps working with no manual password
+// entry; on failure (or when nothing is cached / flag off) we leave the
+// deliberate-switch banner so it reads as the in-store cutover it is, not a
+// crash, and the cashier completes a normal login.
 //
 // ANTI-FLAP / debounce: a `swappedRef` latches once we initiate a swap so a
 // re-render (or a brief decision oscillation) cannot fire a second swap. It
@@ -77,6 +80,7 @@ export function useAutoFailover(): void {
         }
         // Deliberate-switch copy (matches SettingsModal) so the forced
         // re-login reads as the in-store cutover it is, not a malfunction.
+        // (Overwritten on a successful silent re-auth below.)
         useAuthStore.setState({
           error:
             'Switched to on-prem mode automatically — sign in again to continue.',
@@ -87,6 +91,18 @@ export function useAutoFailover(): void {
         connectionMode: 'direct',
         baseUrl: target,
       });
+
+      // M3-C — silent re-auth against the NAS with the cached credentials.
+      // No-op (returns 'no-cred') when the flag is off or nothing is cached;
+      // on success the cashier keeps working with no prompt, on failure the
+      // deliberate-switch banner above stands and they log in manually.
+      if (isAuthenticated) {
+        try {
+          await attemptSilentReauth();
+        } catch (e) {
+          console.warn('[autoFailover] silent re-auth threw:', e);
+        }
+      }
     })();
   }, [reason, deferred, connectionMode]);
 }

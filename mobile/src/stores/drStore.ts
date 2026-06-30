@@ -376,6 +376,18 @@ export const useDrStore = create<DrState>((set, get) => ({
       failbackEligible: false,
       syncQueueDepth: 0,
     });
+    // M3-C — a roaming till re-pairing to a DIFFERENT deployment must not carry
+    // another shop's cached silent-re-auth credential. Wipe it on re-pair
+    // (per-workspace scope is also enforced at load-time, but wiping here keeps
+    // the Keychain clean). Lazy-require to avoid a static cycle.
+    try {
+      const {
+        SilentReauthCredentialStore,
+      } = require('../services/SilentReauthCredentialStore') as typeof import('../services/SilentReauthCredentialStore');
+      await SilentReauthCredentialStore.clear();
+    } catch {
+      // Best-effort — never block the re-pair flush.
+    }
     await persist(get());
   },
 
