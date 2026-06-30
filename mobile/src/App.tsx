@@ -41,6 +41,7 @@ import {useDrStore} from './stores/drStore';
 import {useCloudReachabilityStore} from './stores/cloudReachabilityStore';
 import {usePresenceBeacon} from './hooks/usePresenceBeacon';
 import {useFailoverDetection} from './hooks/useFailoverDetection';
+import {useDrRoutingPoll} from './hooks/useDrRoutingPoll';
 import ApiClient from './services/ApiClient';
 import RootNavigator from './navigation/RootNavigator';
 import AppLockScreen from './screens/AppLockScreen';
@@ -150,6 +151,11 @@ const App: React.FC = () => {
   // NAS-unavailable signal → auto-surfaces the "NAS unreachable" banner when
   // the NAS is unusable mid-outage (detection only — no auto-switch; M2).
   useFailoverDetection();
+  // M3-0 — consume the dr.routing delivery seam: fetch the deployment's cached
+  // DR routing state on a cadence (relay user-traffic, post-login) and feed it
+  // through drStore's validate→probe→commit pipeline. No-op on non-DR
+  // deployments (404 → graceful M2 manual path).
+  useDrRoutingPoll();
   const isLocked = useAppLockStore(s => s.isLocked);
   const hasPin = useAppLockStore(s => s.hasPin);
   const lockInitialized = useAppLockStore(s => s.initialized);

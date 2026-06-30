@@ -27,4 +27,13 @@ export const RELAY_ACTIONS = {
   SALES_DAILY_SUMMARY: 'sales.daily-summary',
   SALES_INVOICE_PDF_URL: 'sales.invoice-pdf-url',
   SALES_REFUND: 'sales.refund',
+  // M3-0 (DR NAS warm-failover): route-proxied, auth:sanctum action served by
+  // the Aeris2 deployment exposing its cached DR routing state to its already
+  // authenticated clients (option B — keeps the deployed gateway code
+  // untouched, respects the §15 local_url boundary). A flag-off / non-DR
+  // deployment has no `dr` relay_service_config (or the route is unregistered)
+  // and the call comes back as a deployment-404 / NOT_FOUND envelope — clients
+  // MUST treat that as "no DR routing available" and fall back to the M2 manual
+  // path, never error (RelayClient.getDrRouting returns null for that case).
+  DR_ROUTING: 'dr.routing',
 } as const;

@@ -169,6 +169,16 @@ export class ApiClient {
     return this.relay;
   }
 
+  // --- DR routing (M3-0) ---
+  // Always over the relay (cloud) transport — DR routing state is delivered by
+  // the deployment to its authenticated clients via the relay (option B), and
+  // is meaningless on the Direct/LAN path (we'd be asking the NAS where to fail
+  // over to). Returns null on a flag-off / non-DR deployment (graceful M2
+  // fallback). Not routed through `.active` so it never sends the bearer to a
+  // mismatch'd NAS.
+  getDrRouting = (): ReturnType<RelayClient['getDrRouting']> =>
+    this.relay.getDrRouting();
+
   // --- Auth ---
   login = (...args: Parameters<RelayClient['login']>) => this.active.login(...args);
   loginBiometric = (...args: Parameters<RelayClient['loginBiometric']>) =>
