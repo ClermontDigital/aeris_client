@@ -271,6 +271,30 @@ export class RelayClient {
     return payload;
   }
 
+  // M3 — DR presence beat (route-proxied dr.presence). The client posts
+  // {device_id, mode} over the relay; the Aeris2 deployment forwards it to the
+  // gateway's tenant-key-only /dr/presence beacon under its own tenant key, so
+  // a per-device live count is real WITHOUT the client holding a tenant key.
+  //
+  // BEST-EFFORT / FIRE-AND-FORGET: never throws to the caller. A flag-off /
+  // non-DR deployment has no `dr` relay_service_config → deployment-404 /
+  // NOT_FOUND envelope; a deployment that hasn't shipped the presence proxy →
+  // 405/404. ALL non-2xx (and any transport error) are swallowed here and
+  // reported as `false` so a presence beat never surfaces an error to the
+  // cashier. Returns true only on a clean relay round-trip.
+  async reportDrPresence(beat: {
+    device_id: string;
+    mode: 'cloud' | 'local';
+  }): Promise<boolean> {
+    try {
+      await this.relayRpc(RELAY_ACTIONS.DR_PRESENCE, beat);
+      return true;
+    } catch {
+      // Silent no-op on ANY failure (404/405 flag-off, NOT_FOUND, transport).
+      return false;
+    }
+  }
+
   // Defensive coercion of the dr.routing envelope `data` into the typed
   // contract. A malformed body returns null (treated as "no DR"). Keeps the
   // shape tolerant so an additive server-side field never crashes the client.
