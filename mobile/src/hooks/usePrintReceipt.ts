@@ -2,6 +2,7 @@ import {useCallback, useRef, useState} from 'react';
 import ApiClient from '../services/ApiClient';
 import PrintService, {PdfUrlExpiredError} from '../services/PrintService';
 import {useSettingsStore} from '../stores/settingsStore';
+import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import {useHaptics} from './useHaptics';
 import {PDF_PRINT_ENABLED, isSignedUrlSafe} from '../constants/config';
 import {buildReceiptHtml} from '../utils/receiptHtml';
@@ -32,6 +33,9 @@ export function usePrintReceipt() {
       if (printLockRef.current) return;
       printLockRef.current = true;
       setIsPrinting(true);
+      // BLOCKER-2 (§19.2 rule 1): receipt print/settlement is in flight — defer
+      // any auto-failover swap so the print round-trip isn't dropped mid-flight.
+      useTransactionActivityStore.getState().setSettlementOrPrintInFlight(true);
       try {
         if (PDF_PRINT_ENABLED) {
           const mintAndPrint = async () => {
@@ -73,6 +77,9 @@ export function usePrintReceipt() {
       } finally {
         printLockRef.current = false;
         setIsPrinting(false);
+        useTransactionActivityStore
+          .getState()
+          .setSettlementOrPrintInFlight(false);
       }
     },
     [connectionMode, haptics],

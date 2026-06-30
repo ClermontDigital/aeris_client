@@ -106,10 +106,22 @@ export function isMidTransaction(input: RoutingInputs): boolean {
 
 // A NAS is only a valid failover target when it's reachable AND its cert
 // identity has NOT failed the pin (§19.2 rule 5 — fail closed on mismatch).
-// 'unknown'/'unverified' are permitted for the prompt path in M1 (pinning is
+// 'unknown'/'unverified' are permitted for the PROMPT path in M1 (pinning is
 // not yet implemented — see drStore §22.5 Q7 TODO); 'mismatch' is hard-fail.
 function nasUsable(input: RoutingInputs): boolean {
   return input.nasReachable && input.nasCertTrust !== 'mismatch';
+}
+
+// M3-D BLOCKER-1 (client-team cert gate): the AUTO path must HARD-GATE on a
+// fully-verified cert posture. The M3 auto path bypasses the M2 confirm dialog
+// and silently re-auths with a CACHED password — so it must NEVER POST that
+// password to a NAS whose TLS identity is not proven. SPKI pinning (M2-G) is
+// deferred, so 'trusted' (the SAN/pin-verified target state — see CertTrust) is
+// NOT reachable yet → this gate makes AUTO-mode INERT until pinning ships, which
+// is the intended safe staging. The MANUAL (prompt) path is unaffected: it still
+// runs on 'unverified' via nasUsable() above and the M2 confirm dialog.
+function nasCertVerified(input: RoutingInputs): boolean {
+  return input.nasCertTrust === 'trusted';
 }
 
 // The §19.2 cascade — first match wins.
@@ -177,13 +189,21 @@ export function decideRouting(input: RoutingInputs): RoutingDecision {
   //   flag OFF (default / M2): return mode=current + promptFailover:true — the
   //     cashier confirms the switch in Settings, no auto-swap. IDENTICAL to the
   //     pre-M3 behaviour.
-  //   flag ON (M3-A, post §6): return mode='local' — auto-apply. The upstream
-  //     hysteresis (N consecutive cloud-unreachable) gates whether cloudReachable
-  //     is even false yet; nasUsable() still fails-closed on cert mismatch
-  //     (M-R3) and an unreachable NAS. Mid-transaction defer (rule 1) already
-  //     ran above, so an auto-swap never interrupts a sale.
+  //   flag ON (M3-A, post §6): return mode='local' — auto-apply, BUT ONLY when
+  //     the NAS cert is fully verified (nasCertVerified ⇒ certTrust==='trusted').
+  //     The upstream hysteresis (N consecutive cloud-unreachable) gates whether
+  //     cloudReachable is even false yet; nasUsable() still fails-closed on cert
+  //     mismatch (M-R3) and an unreachable NAS. Mid-transaction defer (rule 1)
+  //     already ran above, so an auto-swap never interrupts a sale. Flag on but
+  //     cert NOT 'trusted' ⇒ falls back to the M2 prompt (BLOCKER-1).
   if (!input.cloudReachable && nasUsable(input)) {
-    if (input.autoFailoverEnabled) {
+    // BLOCKER-1 cert hard-gate: AUTO requires a VERIFIED cert. With the flag on
+    // but the cert not yet 'trusted' (the current reality until SPKI pinning
+    // ships) we DELIBERATELY fall back to the M2 PROMPT — never silently
+    // re-auth a cached password onto a non-pinned NAS. This keeps the single-
+    // gate property (autoFailoverEnabled still decides PROMPT vs AUTO) while
+    // making AUTO inert until 'trusted' is reachable.
+    if (input.autoFailoverEnabled && nasCertVerified(input)) {
       return {
         mode: 'local',
         reason: 'outage-auto',

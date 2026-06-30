@@ -25,6 +25,7 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useProductCacheStore} from '../stores/productCacheStore';
+import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import type {StockAdjustmentReason} from '../types/api.types';
 
 // Mode mirrors the operator's mental model — "I counted N" vs "I broke 1".
@@ -124,6 +125,10 @@ const StockAdjustModal: React.FC<StockAdjustModalProps> = ({
     submitLockRef.current = true;
     setSubmitting(true);
     setError(null);
+    // BLOCKER-2 (§19.2 rule 1): a stock adjustment is an in-flight write the
+    // auto-failover swap must not drop mid-POST. Mark it so Rule 1 defers any
+    // auto-swap until the write completes.
+    useTransactionActivityStore.getState().setSettlementOrPrintInFlight(true);
     try {
       const result = await ApiClient.adjustStock({
         product_id: productId,
@@ -144,6 +149,7 @@ const StockAdjustModal: React.FC<StockAdjustModalProps> = ({
     } finally {
       setSubmitting(false);
       submitLockRef.current = false;
+      useTransactionActivityStore.getState().setSettlementOrPrintInFlight(false);
     }
   }, [canSubmit, delta, reason, productId, notes, haptics, onAdjusted, onClose, syncProducts]);
 
