@@ -38,6 +38,11 @@ export interface DrServedPayload {
   partner_local_url?: string | null;
   partner_local_url_reported_at?: string | null;
   routing_target?: RoutingDirective | null;
+  // M3-0 — carried by the dr.routing seam for M3-B (auto-failback, next agent)
+  // to consume. drStore PERSISTS these; it does NOT act on them (no failback
+  // logic here). Absent on the legacy test-only paths → left untouched.
+  failback_eligible?: boolean | null;
+  sync_queue_depth?: number | null;
 }
 
 // Cert-trust posture for the cached Direct endpoint (§18 / §22.5 Q7). Until
