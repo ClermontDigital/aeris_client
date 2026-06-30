@@ -35,17 +35,31 @@ export function useDrRoutingPoll(): void {
   useEffect(() => {
     if (!isAuthenticated || connectionMode !== 'relay') return;
 
-    const poll = () => {
-      // Best-effort; never throws (pollDrRouting swallows transport errors).
-      void useDrStore.getState().pollDrRouting();
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
+    const startIntervalOnce = () => {
+      if (interval || cancelled) return;
+      interval = setInterval(() => {
+        // Best-effort; never throws (pollDrRouting swallows transport errors).
+        void useDrStore.getState().pollDrRouting();
+      }, DR_ROUTING_POLL_MS);
     };
 
-    // Initial poll on mount/auth, then on the interval.
-    poll();
-    const interval = setInterval(poll, DR_ROUTING_POLL_MS);
+    // Discovery probe. Only begin steady-state polling if THIS deployment
+    // actually serves DR. A non-DR / cloud-only deployment 404s the action
+    // (pollDrRouting → false); we then stay silent — one probe per login (and
+    // per foreground), NOT a 60s fleet-wide 404. Enabling DR is a deploy event,
+    // so a re-login / next-foreground re-probe picks it up promptly.
+    void useDrStore
+      .getState()
+      .pollDrRouting()
+      .then(drServed => {
+        if (!cancelled && drServed) startIntervalOnce();
+      });
 
-    // Extra poll on background→foreground so a directive change during a
-    // backgrounded shift is picked up promptly on return.
+    // Re-probe on background→foreground: catches a directive change during a
+    // backgrounded shift AND re-discovers DR if it was just enabled.
     let backgrounded = false;
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
       if (state === 'background') {
@@ -54,12 +68,18 @@ export function useDrRoutingPoll(): void {
       }
       if (state === 'active' && backgrounded) {
         backgrounded = false;
-        poll();
+        void useDrStore
+          .getState()
+          .pollDrRouting()
+          .then(drServed => {
+            if (!cancelled && drServed) startIntervalOnce();
+          });
       }
     });
 
     return () => {
-      clearInterval(interval);
+      cancelled = true;
+      if (interval) clearInterval(interval);
       sub.remove();
     };
   }, [isAuthenticated, connectionMode]);

@@ -14,6 +14,7 @@ import { DirectClient } from './directClient';
 import { isLocalUrlSafeForCache } from './drUrlValidator';
 import { cloudReachability } from './cloudReachability';
 import { txnActivity } from './txnActivity';
+import { drState } from './drState';
 
 // relayBridge owns the transport client(s) and is the one place in the app
 // that knows the bearer token. The renderer issues calls via the
@@ -274,6 +275,21 @@ export function registerRelayBridgeIpc(): void {
         ok: false,
         code: 'PAYLOAD_TOO_LARGE',
         message: `payload ${size} bytes exceeds budget ${PAYLOAD_SIZE_BUDGET_BYTES}`,
+      };
+    }
+
+    // DR M3-E fail-closed (parity with mobile ApiClient.active): in Direct mode
+    // NEVER send the bearer to a NAS whose cert identity is a known MISMATCH.
+    // The auto-failover cascade's nasUsable gate already refuses to auto-switch
+    // to a mismatch'd host; this closes the bypass paths (manual switch /
+    // deep-link) at the dispatch boundary too. Currently inert — certTrust is
+    // only 'unverified'/'unknown' until SPKI pinning lands (§5) — defence-in-
+    // depth ahead of that.
+    if (isDirectMode() && drState.get().certTrust === 'mismatch') {
+      return {
+        ok: false,
+        code: 'CERT_MISMATCH',
+        message: 'on-prem server identity mismatch — refusing to connect',
       };
     }
 
