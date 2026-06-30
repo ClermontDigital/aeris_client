@@ -25,6 +25,7 @@ import {
 } from '../constants/theme';
 import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
+import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import {ProductImageUploadError} from '../services/ProductImageClient';
 import type {Product, ProductImageType} from '../types/api.types';
 
@@ -105,6 +106,10 @@ const ProductImagePicker: React.FC<Props> = ({
       uploadingRef.current = true;
       setUploading(true);
       setError(null);
+      // DR M3-A mid-tx parity: an image upload is an in-flight catalog write —
+      // flag it so an auto-failover defers the endpoint swap until it finishes
+      // (cleared in the finally). Inert until auto-failover is enabled + verified.
+      useTransactionActivityStore.getState().setSettlementOrPrintInFlight(true);
       try {
         const normalizedUri = await normalizeForUpload(fileUri);
         const product = await ApiClient.uploadProductImage(
@@ -135,6 +140,7 @@ const ProductImagePicker: React.FC<Props> = ({
       } finally {
         uploadingRef.current = false;
         if (mountedRef.current) setUploading(false);
+        useTransactionActivityStore.getState().setSettlementOrPrintInFlight(false);
       }
     },
     [productId, type, haptics, onUploaded],
