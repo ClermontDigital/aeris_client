@@ -9,6 +9,7 @@ import type {
   CustomerUpdateInput,
   DailySummary,
   DailyZReport,
+  DrRoutingPayload,
   PaginatedResponse,
   PaymentMethod,
   Product,
@@ -239,6 +240,64 @@ export class RelayClient {
   // wipe the session (proactive expired path) or simply log and retry later.
   async refreshToken(): Promise<AuthResponse> {
     return this.relayRpc<AuthResponse>(RELAY_ACTIONS.AUTH_REFRESH, {});
+  }
+
+  // --- DR (NAS warm-failover, M3-0) ---
+  // Fetch the deployment's cached DR routing state (option B delivery seam).
+  // Runs as ordinary authenticated user-traffic over the existing relay.
+  //
+  // GRACEFUL "no DR" CONTRACT (§3 guardrail 1): a flag-off / non-DR deployment
+  // either has no `dr` relay_service_config (gateway answers HTTP 404 with a
+  // non-envelope body → plain Error with .status=404) OR the route is
+  // unregistered and the deployment replies NOT_FOUND (envelope error). BOTH
+  // mean "no DR routing available" → return null so the caller falls back to
+  // the M2 manual path. We also map dr_enabled=false to null for the same
+  // reason. Any OTHER error (auth, timeout, malformed) propagates — a broken
+  // deployment must not be silently masked as "no DR".
+  async getDrRouting(): Promise<DrRoutingPayload | null> {
+    let raw: unknown;
+    try {
+      raw = await this.relayRpc<unknown>(RELAY_ACTIONS.DR_ROUTING, {});
+    } catch (err) {
+      // Deployment-404 (no `dr` service config) — non-envelope HTTP error.
+      const status = (err as {status?: number} | null)?.status;
+      if (status === 404) return null;
+      // Route-proxied not-found envelope (NOT_FOUND / not_found code).
+      if (isNotFound(err, 'relay')) return null;
+      throw err;
+    }
+    const payload = this.coerceDrRouting(raw);
+    if (!payload || !payload.dr_enabled) return null;
+    return payload;
+  }
+
+  // Defensive coercion of the dr.routing envelope `data` into the typed
+  // contract. A malformed body returns null (treated as "no DR"). Keeps the
+  // shape tolerant so an additive server-side field never crashes the client.
+  private coerceDrRouting(raw: unknown): DrRoutingPayload | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    const routingTarget = r.routing_target === 'local' ? 'local' : 'cloud';
+    return {
+      dr_enabled: r.dr_enabled === true,
+      routing_target: routingTarget,
+      partner_local_url:
+        typeof r.partner_local_url === 'string' && r.partner_local_url.length > 0
+          ? r.partner_local_url
+          : null,
+      partner_local_url_reported_at:
+        typeof r.partner_local_url_reported_at === 'string'
+          ? r.partner_local_url_reported_at
+          : null,
+      active_writer: r.active_writer === true,
+      failback_eligible: r.failback_eligible === true,
+      sync_queue_depth:
+        typeof r.sync_queue_depth === 'number' && Number.isFinite(r.sync_queue_depth)
+          ? r.sync_queue_depth
+          : 0,
+      served_at:
+        typeof r.served_at === 'string' ? r.served_at : new Date().toISOString(),
+    };
   }
 
   // --- Dashboard ---

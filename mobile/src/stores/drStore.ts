@@ -51,7 +51,26 @@ interface DrState extends PersistedDrState {
   // the §19.3 detail sheet.
   lastSyncAt: string | null;
 
+  // M3-0 — live signals from the dr.routing seam, persisted for M3-B
+  // (auto-failback, NEXT AGENT) to consume. NOT durable across cold start (a
+  // stale failback signal must never drive a swap on launch) and NOT acted on
+  // here — drStore only stores them.
+  //   failbackEligible — the deployment says cloud→on-prem failback is safe
+  //     (queue drained etc.). M3-B gates its cloud→cloud failback on this.
+  //   syncQueueDepth   — NAS→cloud reconcile backlog. M3-B must never failback
+  //     mid-drain (depth > 0).
+  failbackEligible: boolean;
+  syncQueueDepth: number;
+  // Whether the last dr.routing call found DR enabled on this deployment.
+  // false = no DR surface (404 / dr_enabled=false) → M2 manual path.
+  drEnabled: boolean;
+
   init: () => Promise<void>;
+  // M3-0 — fetch the deployment's DR routing state over the relay and feed it
+  // through the existing validate→probe→commit pipeline. 404 / dr_enabled=false
+  // is a graceful no-op (no DR surface; M2 manual path). Returns true when DR
+  // is enabled+served, false otherwise. Safe to call on a cadence post-login.
+  pollDrRouting: () => Promise<boolean>;
   // Entry point a response reader calls with whatever DR fields the gateway
   // response carried (partner_local_url / partner_local_url_reported_at /
   // routing_target). Validates + LAN-probes + caches.
@@ -149,6 +168,9 @@ export const useDrStore = create<DrState>((set, get) => ({
   cacheStatus: 'pending',
   certTrust: 'unknown',
   lastSyncAt: null,
+  failbackEligible: false,
+  syncQueueDepth: 0,
+  drEnabled: false,
 
   init: async () => {
     try {
@@ -163,6 +185,52 @@ export const useDrStore = create<DrState>((set, get) => ({
     } finally {
       set({isLoading: false});
     }
+  },
+
+  pollDrRouting: async () => {
+    // Lazy require to avoid the ApiClient↔drStore module-load cycle (ApiClient
+    // imports drStore at top for the M-R3 mismatch guard).
+    const ApiClient = require('../services/ApiClient').default as {
+      getDrRouting: () => Promise<{
+        dr_enabled: boolean;
+        routing_target: 'cloud' | 'local';
+        partner_local_url: string | null;
+        partner_local_url_reported_at: string | null;
+        failback_eligible: boolean;
+        sync_queue_depth: number;
+      } | null>;
+    };
+
+    let routing;
+    try {
+      routing = await ApiClient.getDrRouting();
+    } catch {
+      // Transport/auth error on the relay — leave last-known-good untouched
+      // (absence-is-not-a-clear) and report "no DR served this cycle". The
+      // cloud-reachability signal is driven separately by relay traffic.
+      return false;
+    }
+
+    // 404 / dr_enabled=false → no DR surface on this deployment. Mark
+    // drEnabled=false so the UI/orchestrator know to use the M2 manual path.
+    // Per §15-B2 we do NOT clear cachedLocalUrl on absence.
+    if (routing === null) {
+      set({drEnabled: false});
+      return false;
+    }
+
+    set({drEnabled: true});
+    // Feed the served fields through the EXISTING validate→probe→commit
+    // pipeline. partner_local_url is validated (isLocalUrlSafeForCache) +
+    // LAN-probed before it can become the Direct baseUrl.
+    await get().ingestServedPayload({
+      partner_local_url: routing.partner_local_url,
+      partner_local_url_reported_at: routing.partner_local_url_reported_at,
+      routing_target: routing.routing_target,
+      failback_eligible: routing.failback_eligible,
+      sync_queue_depth: routing.sync_queue_depth,
+    });
+    return true;
   },
 
   ingestServedPayload: async (payload, pairingWorkspaceCode) => {
@@ -190,6 +258,18 @@ export const useDrStore = create<DrState>((set, get) => ({
     // payload that simply didn't carry it).
     if (payload.routing_target === 'cloud' || payload.routing_target === 'local') {
       set({routingDirective: payload.routing_target});
+    }
+
+    // M3-0 — persist the M3-B (auto-failback) signals when present. Captured on
+    // every ingest regardless of local_url presence. NOT acted on here.
+    if (typeof payload.failback_eligible === 'boolean') {
+      set({failbackEligible: payload.failback_eligible});
+    }
+    if (
+      typeof payload.sync_queue_depth === 'number' &&
+      Number.isFinite(payload.sync_queue_depth)
+    ) {
+      set({syncQueueDepth: payload.sync_queue_depth});
     }
 
     const served = payload.partner_local_url;

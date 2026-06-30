@@ -430,3 +430,26 @@ export interface PaginatedResponse<T> {
     total: number;
   };
 }
+
+// M3-0 — the EXACT `dr.routing` relay-action contract (option B, §1). Served by
+// the Aeris2 deployment to its authenticated clients. A flag-off / non-DR
+// deployment 404s this action; RelayClient.getDrRouting() maps that to null
+// (clients fall back to the M2 manual path — never error). This shape is shared
+// (mobile + Electron); additive and backward-compatible.
+export interface DrRoutingPayload {
+  // Master gate from the deployment's side. false ⇒ no DR surface for this
+  // client (treat like a 404 — fall back to manual).
+  dr_enabled: boolean;
+  // The §19.1 routing directive (cloud=normal, local=operator cutover).
+  routing_target: 'cloud' | 'local';
+  // The DR partner NAS LAN address (validated server-side); null when none.
+  partner_local_url: string | null;
+  partner_local_url_reported_at: string | null;
+  // Whether the deployment currently considers itself the active writer.
+  active_writer: boolean;
+  // M3-B (auto-failback, next agent) consumes these two. Persisted by drStore;
+  // NOT acted on here.
+  failback_eligible: boolean;
+  sync_queue_depth: number;
+  served_at: string;
+}
