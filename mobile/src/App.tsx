@@ -44,6 +44,8 @@ import {useFailoverDetection} from './hooks/useFailoverDetection';
 import {useDrRoutingPoll} from './hooks/useDrRoutingPoll';
 import {useNasHealthProbe} from './hooks/useNasHealthProbe';
 import {useAutoFailover} from './hooks/useAutoFailover';
+import {useAutoFailback} from './hooks/useAutoFailback';
+import {useDrPresenceBeat} from './hooks/useDrPresenceBeat';
 import ApiClient from './services/ApiClient';
 import RootNavigator from './navigation/RootNavigator';
 import AppLockScreen from './screens/AppLockScreen';
@@ -165,8 +167,18 @@ const App: React.FC = () => {
   // M3-A — the flag-gated auto endpoint-swap orchestrator. No-op unless the
   // autoFailoverEnabled flag is ON (default OFF) AND the cascade returns
   // 'outage-auto' (cloud-unreachable-per-hysteresis + reachable validated NAS +
-  // cert-ok + not mid-transaction). Leaves the user at re-login (M3-C next).
+  // cert-ok + not mid-transaction). On success attempts a silent re-auth (M3-C).
   useAutoFailover();
+  // M3-B — the flag-gated auto-FAILBACK orchestrator (NAS→cloud). No-op unless
+  // autoFailoverEnabled is ON (default OFF) AND the cascade returns
+  // 'failback-ready' (cloud sustained ≥ hold window + real failbackEligible
+  // drain signal + not mid-transaction). Flag-off ⇒ failback stays M2 manual.
+  useAutoFailback();
+  // M3 — DR presence beat: while operating in Direct (NAS) mode + DR enabled,
+  // POST {device_id, mode} over the relay (the deployment proxies it to the
+  // gateway under its tenant key) so the live dr_presence count is real.
+  // Best-effort; zero requests for cloud-only clients.
+  useDrPresenceBeat();
   const isLocked = useAppLockStore(s => s.isLocked);
   const hasPin = useAppLockStore(s => s.hasPin);
   const lockInitialized = useAppLockStore(s => s.initialized);
