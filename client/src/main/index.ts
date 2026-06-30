@@ -5,6 +5,7 @@ import { initRelayBridge } from './relayBridge';
 import { initialize as initAuth } from './authManager';
 import { attachAutoLock } from './autoLock';
 import { initAutoUpdater, setRegisteredWindow } from './autoUpdater';
+import { failoverOrchestrator } from './failoverOrchestrator';
 import { logger } from './logger';
 
 // Single-instance lock — only one Aeris window across the app's lifetime.
@@ -34,6 +35,11 @@ app.whenReady().then(async () => {
   // Kick off auth restore (non-blocking). The renderer will read state
   // via auth:get-state and listen on auth:state-changed for updates.
   void initAuth();
+  // DR M3-E: start the failover orchestrator. It runs DARK by default —
+  // autoFailoverEnabled is OFF, so it only observes signals + publishes the
+  // advisory DR chip/banner state; it performs NO auto-swap and caches NO
+  // credentials until the flag is enabled (a separate, proof-gated event).
+  failoverOrchestrator.start();
   await loadRenderer(mainWindow);
   initAutoUpdater(mainWindow);
   logger.info('[main] window ready');
