@@ -1,4 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
+// DR M3: per-endpoint partition naming is a PURE function (no electron deps) so
+// the renderer can resolve the correct persistent partition for the active
+// mode + cashier without an IPC round-trip.
+const { partitionFor } = require('./dr-partition');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
@@ -66,6 +70,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // DR routing (cloud ↔ in-store/NAS)
   setRoutingMode: (mode) => ipcRenderer.invoke('set-routing-mode', mode),
   onRoutingModeChanged: (callback) => ipcRenderer.on('routing-mode-changed', (_event, ...args) => callback(...args)),
+  // DR M3: explicit per-endpoint logout (clears just that endpoint's partitions).
+  logoutEndpoint: (mode) => ipcRenderer.invoke('logout-endpoint', mode),
+  // DR M3: resolve the persistent webview partition for a mode + cashier id.
+  // Pure (no IPC) — used to set the webview partition per active endpoint.
+  partitionFor: (mode, sessionId) => partitionFor(mode, sessionId),
   
   // App restart function
   restartApp: () => ipcRenderer.invoke('restart-app'),
