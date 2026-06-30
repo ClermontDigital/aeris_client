@@ -8,9 +8,10 @@ import {
 } from '../shared-types/ipc';
 import { settingsStore } from './settingsStore';
 import { tokenStore } from './tokenStore';
-import { getRelayClient, setOnUnauthorized, applyAuthToken } from './relayBridge';
+import { getRelayClient, setOnUnauthorized, applyAuthToken, isDirectMode, getDirectClient } from './relayBridge';
 import { logger } from './logger';
 import { safeHandle } from './senderGuard';
+import { silentReauthStore } from './silentReauthStore';
 
 // authManager is the single source of truth for auth state in main.
 // Renderer mirrors this state via auth:get-state + auth:state-changed
@@ -172,6 +173,17 @@ export async function login(req: LoginRequest): Promise<AuthState> {
     // tokenless until its first dispatch).
     applyAuthToken(token);
 
+    // M3-C: cache the credentials for a future SILENT re-auth across an auto
+    // mode-switch. Hard-gated on autoFailoverEnabled inside save() — a default
+    // (flag-off) build writes NOTHING. Best-effort; a cache failure never
+    // blocks the login. Password is never logged.
+    try {
+      const flag = settingsStore.get().autoFailoverEnabled === true;
+      await silentReauthStore.save(flag, workspaceCode, email, password);
+    } catch (e) {
+      logger.warn('[authManager] credential cache failed (non-fatal)', e);
+    }
+
     setState({
       isAuthenticated: true,
       user: apiUser,
@@ -201,6 +213,13 @@ export async function logout(): Promise<AuthState> {
   }
   await clearSession();
   applyAuthToken(null);
+  // M3-C: explicit logout is the deliberate "I'm leaving" path — wipe the
+  // cached silent-reauth credential so nothing lingers (threat-model item 2).
+  try {
+    await silentReauthStore.clear();
+  } catch (e) {
+    logger.warn('[authManager] silent-reauth cache wipe failed', e);
+  }
   setState({
     isAuthenticated: false,
     user: null,
@@ -208,6 +227,83 @@ export async function logout(): Promise<AuthState> {
     errorKind: null,
   });
   return state;
+}
+
+// M3-C: silent re-auth across an auto mode-switch. The orchestrator has just
+// switched connectionMode + baseUrl and wiped the audience-specific bearer
+// (handleModeSwitch). This re-logs-in against the NOW-CURRENT edge using the
+// cached credentials so the cashier keeps working with no password prompt.
+//
+// Uses auth.login (NOT biometric — biometric needs a live token, which the
+// switch just wiped). Routes by the CURRENT connection mode: Direct mode posts
+// straight to the LAN deployment's /api/v1/auth/login; relay mode goes through
+// the gateway. On any failure we leave the deliberate-switch banner in place so
+// the cashier completes a normal manual login.
+//
+// Returns 'reauthed' on success, 'no-cred' when nothing usable is cached
+// (flag off / none saved / workspace mismatch), 'failed' on a login error.
+export async function silentReauth(): Promise<'reauthed' | 'no-cred' | 'failed'> {
+  const settings = settingsStore.get();
+  const enabled = settings.autoFailoverEnabled === true;
+  const workspaceCode = settings.workspaceCode ?? null;
+
+  // load() hard-gates on the flag + per-workspace scope; a flag-off build
+  // returns null (and proactively wipes), so this is a no-op by default.
+  const cred = await silentReauthStore.load(enabled, workspaceCode);
+  if (!cred) return 'no-cred';
+
+  try {
+    const direct = isDirectMode();
+    if (direct) {
+      getDirectClient().configure({ baseUrl: settings.baseUrl });
+    } else {
+      getRelayClient().configure({
+        relayUrl: settings.relayUrl,
+        workspaceCode: cred.workspaceCode,
+      });
+    }
+    const result = direct
+      ? await getDirectClient().login(cred.email, cred.password, 'aeris-client')
+      : await getRelayClient().login(cred.email, cred.password, 'aeris-client');
+
+    const token = result?.access_token;
+    if (!token) return 'failed';
+
+    const apiUser: AuthUserSnapshot | null = result.user
+      ? {
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name,
+          role: result.user.role,
+        }
+      : null;
+    const expiresAt = result.expires_at ?? null;
+
+    await persistSession(token, apiUser, expiresAt);
+    applyAuthToken(token);
+    // Re-cache for the NEXT switch (mirrors mobile's re-cache on login).
+    try {
+      await silentReauthStore.save(enabled, cred.workspaceCode, cred.email, cred.password);
+    } catch {
+      /* non-fatal */
+    }
+    setState({
+      isAuthenticated: true,
+      user: apiUser,
+      expiresAt,
+      // Clear the "sign in again" banner the mode-switch set.
+      errorKind: null,
+    });
+    logger.info('[authManager] silent re-auth ok', { direct });
+    return 'reauthed';
+  } catch (e) {
+    // Leave the deliberate-switch banner in place; the cashier logs in
+    // manually. Do NOT wipe the credential — a transient failure shouldn't
+    // permanently disable silent re-auth (a stale one is overwritten on the
+    // next successful manual login). Never surface the raw error / password.
+    logger.warn('[authManager] silent re-auth failed (falling back to manual)');
+    return 'failed';
+  }
 }
 
 export async function handleUnauthorized(): Promise<void> {
