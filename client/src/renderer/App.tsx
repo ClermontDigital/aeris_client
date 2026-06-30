@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useAppLockStore } from './stores/appLockStore';
+import { useDrStore } from './stores/drStore';
 import { Routes } from './router/Routes';
 import { Spinner } from './components/Spinner';
 import { COLORS } from './theme/tokens';
@@ -12,12 +13,14 @@ export function App(): React.ReactElement {
   const init = useAuthStore((s) => s.init);
   const initSettings = useSettingsStore((s) => s.init);
   const initLock = useAppLockStore((s) => s.init);
+  const initDr = useDrStore((s) => s.init);
 
   useEffect(() => {
     void init();
     void initSettings();
     void initLock();
-  }, [init, initSettings, initLock]);
+    void initDr();
+  }, [init, initSettings, initLock, initDr]);
 
   // Wait for BOTH auth AND lock state — otherwise ProtectedShell would
   // briefly see the default `isPinSet: false` for users who already

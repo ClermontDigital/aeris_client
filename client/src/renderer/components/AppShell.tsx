@@ -3,9 +3,13 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { UpdateBanner } from './UpdateBanner';
+import { FailoverBanner } from './FailoverBanner';
+import { useDrActivityReporter } from '../hooks/useDrActivityReporter';
 import { COLORS, SPACING } from '../theme/tokens';
 
 export function AppShell(): React.ReactElement {
+  // M3-E: report cart/screen to main so an auto-failover never fires mid-sale.
+  useDrActivityReporter();
   return (
     <div
       style={{
@@ -24,6 +28,7 @@ export function AppShell(): React.ReactElement {
         }}
       >
         <UpdateBanner />
+        <FailoverBanner />
         <TopBar />
         <main
           className="aeris-fade-in"
