@@ -47,6 +47,21 @@ export interface RoutingInputs {
   // signal; in M1 this is conservatively `true` since the NAS isn't yet
   // taking writes — failback is then gated on hysteresis alone).
   reconcileQueueDrained: boolean;
+
+  // --- M3-D: automated-failover master switch (rule 4 ONLY) ---
+  // The SINGLE gate that converts Rule 4 from a cashier PROMPT (M2 manual
+  // path) into an AUTO-APPLY cloud→on-prem swap. Default false everywhere.
+  //   false ⇒ Rule 4 returns promptFailover:true, mode=current (M2 behaviour,
+  //           proven identical by test). NOTHING ELSE in the cascade reads
+  //           this flag — flag-off is provably ≡ M2.
+  //   true  ⇒ Rule 4 returns mode='local' (auto-apply). The cloud-unreachable
+  //           hysteresis (N consecutive failures) lives upstream in
+  //           cloudReachableSustainedMs/cloudReachable producers + the M3-A
+  //           swap orchestrator; the cert/usability fail-closed guard
+  //           (nasUsable) still applies here.
+  // Default-undefined coerces to false (see useRoutingDecision wiring) so an
+  // input constructed without it is the M2 path.
+  autoFailoverEnabled?: boolean;
 }
 
 // Why a decision was reached — drives copy + telemetry + the §19.3 sub-reason.
@@ -55,6 +70,7 @@ export type RoutingReason =
   | 'directive-local'
   | 'cloud-primary'
   | 'outage-prompt'
+  | 'outage-auto'
   | 'degraded-fail-closed'
   | 'failback-hold'
   | 'failback-ready';
@@ -153,9 +169,28 @@ export function decideRouting(input: RoutingInputs): RoutingDecision {
     };
   }
 
-  // Rule 4 — cloud unreachable + NAS usable → outage failover. Phase 1 PROMPTS
-  // the cashier rather than auto-switching.
+  // Rule 4 — cloud unreachable + NAS usable → outage failover.
+  //
+  // M3-D SINGLE GATE: the autoFailoverEnabled flag decides PROMPT vs AUTO here
+  // and ONLY here. Everything else in the cascade is flag-independent, so
+  // "flag-off ≡ M2 manual prompt" is a one-line invariant (test-covered).
+  //   flag OFF (default / M2): return mode=current + promptFailover:true — the
+  //     cashier confirms the switch in Settings, no auto-swap. IDENTICAL to the
+  //     pre-M3 behaviour.
+  //   flag ON (M3-A, post §6): return mode='local' — auto-apply. The upstream
+  //     hysteresis (N consecutive cloud-unreachable) gates whether cloudReachable
+  //     is even false yet; nasUsable() still fails-closed on cert mismatch
+  //     (M-R3) and an unreachable NAS. Mid-transaction defer (rule 1) already
+  //     ran above, so an auto-swap never interrupts a sale.
   if (!input.cloudReachable && nasUsable(input)) {
+    if (input.autoFailoverEnabled) {
+      return {
+        mode: 'local',
+        reason: 'outage-auto',
+        promptFailover: false,
+        deferred: false,
+      };
+    }
     return {
       mode: input.currentMode,
       reason: 'outage-prompt',

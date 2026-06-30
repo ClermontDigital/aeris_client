@@ -49,6 +49,11 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
   const connectionMode = useSettingsStore(
     s => s.settings.connectionMode ?? 'relay',
   );
+  // M3-D — the single auto-failover gate. Default OFF: an undefined flag is
+  // the M2 manual-prompt path. Read here and threaded into the pure cascade.
+  const autoFailoverEnabled = useSettingsStore(
+    s => s.settings.autoFailoverEnabled ?? false,
+  );
 
   const activeScreen = useTransactionActivityStore(s => s.activeScreen);
   const saleInFlight = useTransactionActivityStore(s => s.saleInFlight);
@@ -100,6 +105,7 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
       // drained, so failback is gated on hysteresis alone (Phase 2 wires the
       // real reconcile-queue signal here).
       reconcileQueueDrained: true,
+      autoFailoverEnabled,
     };
 
     const decision = decideRouting(inputs);
@@ -107,6 +113,7 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
   }, [
     cartItemCount,
     connectionMode,
+    autoFailoverEnabled,
     activeScreen,
     saleInFlight,
     settlementOrPrintInFlight,

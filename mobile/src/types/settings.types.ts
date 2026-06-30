@@ -23,4 +23,12 @@ export interface Settings {
   // is actually in use for this client OR when this flag is explicitly set.
   // Remove the gate once the gateway presence contract ships (§22.5 Q10).
   presenceBeaconEnabled?: boolean;
+  // M3-D — client-side AUTOMATED failover master switch. Default OFF (and
+  // OFF everywhere — no deployment auto-enables; §3 guardrail 2). When false
+  // the §19.2 routing cascade behaves EXACTLY as the M2 manual path: Rule 4
+  // PROMPTS the cashier to switch in Settings and never auto-applies. When
+  // true (post §6 proof-gate, per-deployment) Rule 4 AUTO-APPLIES the
+  // cloud→on-prem swap under the M3-A hysteresis/cert guards. This is the
+  // SINGLE place activation is gated — see routingDecisionService.decideRouting.
+  autoFailoverEnabled?: boolean;
 }
