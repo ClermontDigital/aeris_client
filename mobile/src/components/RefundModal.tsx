@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import Modal from 'react-native-modal';
 import * as Crypto from 'expo-crypto';
-import {RefundError} from '@aeris/shared';
+import {RefundError, RelayError} from '@aeris/shared';
 import EyebrowLabel from './EyebrowLabel';
 import PillButton from './PillButton';
 import ErrorBanner from './ErrorBanner';
@@ -332,6 +332,23 @@ const RefundModal: React.FC<RefundModalProps> = ({
       onRefunded(response);
       onClose();
     } catch (e) {
+      // Aeris2 DR gate (§9.2 cloud-origin refund block) surfaces as a
+      // RelayError on the envelope with code=DR_FAILOVER_CLOUD_ORIGIN_REFUND_BLOCKED.
+      // Map to our own copy — the server message intentionally varies and
+      // we don't want it echoed unstyled into the modal. Caught BEFORE
+      // RefundError because the envelope-level error throws as RelayError
+      // (not RefundError) and would otherwise fall through to the generic
+      // "check connection" branch.
+      if (
+        e instanceof RelayError &&
+        e.code === 'DR_FAILOVER_CLOUD_ORIGIN_REFUND_BLOCKED'
+      ) {
+        haptics.error();
+        setError(
+          'Cloud-origin sales can’t be refunded during on-prem failover.',
+        );
+        return;
+      }
       if (e instanceof RefundError) {
         if (e.kind === 'conflict') {
           // Stale idempotency key — sheet closes (next open mints a fresh
