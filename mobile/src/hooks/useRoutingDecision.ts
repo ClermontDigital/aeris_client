@@ -68,6 +68,18 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
   const cacheStatus = useDrStore(s => s.cacheStatus);
   const certTrust = useDrStore(s => s.certTrust);
   const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
+  // M3-B — the REAL failback drain signal from the dr.routing seam. The
+  // deployment computes `failback_eligible` server-side as
+  // `drained && no open conflicts` (the dr.readiness / DR-status surface) and
+  // delivers it over the relay; drStore persists it as `failbackEligible`.
+  // This replaces the Wave-1 hardcoded `reconcileQueueDrained: true` stub so
+  // Rule 6 never fails back while the NAS→cloud outbox is still draining or a
+  // conflict is open. `drEnabled` lets us distinguish "DR served, not yet
+  // eligible" (gate the failback) from "no DR surface at all" (no signal —
+  // fall back to the M1 hysteresis-only behaviour so a non-DR / pre-seam
+  // deployment is unchanged).
+  const failbackEligible = useDrStore(s => s.failbackEligible);
+  const drEnabled = useDrStore(s => s.drEnabled);
   // M3-A — live continuous NAS reachability from the health-probe loop. null =
   // not probed yet (treated as reachable, like cloud's null cold-start rule);
   // false = the probe positively failed → NAS unusable for failover.
@@ -111,10 +123,14 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
       nasCertTrust: certTrust,
       currentMode,
       cloudReachableSustainedMs,
-      // M1 NAS isn't taking writes yet → no outbox to drain → conservatively
-      // drained, so failback is gated on hysteresis alone (Phase 2 wires the
-      // real reconcile-queue signal here).
-      reconcileQueueDrained: true,
+      // M3-B — the real reconcile-queue drain signal. When DR is served on this
+      // deployment (drEnabled), gate failback on the deployment's
+      // `failbackEligible` (server-side `drained && no open conflicts`) so we
+      // NEVER fail back mid-drain or with an open conflict. When DR is NOT
+      // served (no seam / non-DR deployment, drEnabled=false), there is no NAS
+      // outbox to drain so we keep the M1 behaviour (drained ⇒ failback gated on
+      // the cloud-sustained hysteresis alone) — flag-off / non-DR is unchanged.
+      reconcileQueueDrained: drEnabled ? failbackEligible : true,
       autoFailoverEnabled,
     };
 
@@ -132,6 +148,8 @@ export function useRoutingDecision(): UseRoutingDecisionResult {
     cacheStatus,
     certTrust,
     cachedLocalUrl,
+    failbackEligible,
+    drEnabled,
     nasProbeReachable,
     cloudReachable,
     reachableSinceMs,
