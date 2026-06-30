@@ -28,7 +28,7 @@ jest.mock('../../stores/authStore', () => ({
 jest.mock('../SilentReauthCredentialStore', () => ({
   SilentReauthCredentialStore: {
     load: (...a: unknown[]) => mockLoad(...a),
-    recordFailure: (...a: unknown[]) => mockRecordFailure(...a),
+    recordFailure: () => mockRecordFailure(),
   },
 }));
 // ApiClient is imported by silentReauth (unused on these paths) — stub it so no
