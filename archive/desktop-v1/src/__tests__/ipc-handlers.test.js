@@ -344,9 +344,9 @@ describe('IPCHandlers', () => {
       const result = await ipcHandlers.logoutEndpoint({}, 'cloud');
 
       expect(result.success).toBe(true);
-      // Cloud partitions cleared...
-      expect(session.fromPartition).toHaveBeenCalledWith('persist:cloud');
-      expect(session.fromPartition).toHaveBeenCalledWith(`persist:cloud:user-${idA}`);
+      // Cloud partitions cleared (legacy names — preserved for backward-compat)...
+      expect(session.fromPartition).toHaveBeenCalledWith('persist:main');
+      expect(session.fromPartition).toHaveBeenCalledWith(`persist:user-${idA}`);
       // ...NAS partitions must NOT be touched (a cloud logout must not wipe NAS).
       expect(session.fromPartition).not.toHaveBeenCalledWith('persist:nas');
       expect(session.fromPartition).not.toHaveBeenCalledWith(`persist:nas:user-${idA}`);

@@ -37,23 +37,31 @@
 // only reaches a partition by an explicit, confirmed manual toggle.
 
 // Resolve the persistent partition name for a given routing mode + optional
-// per-cashier session id. Mirrors the legacy naming so existing warm sessions
-// in `persist:main` / `persist:user-${id}` are not silently orphaned for the
-// CLOUD endpoint (cloud is the historical default).
+// per-cashier session id.
 //
-//   mode 'cloud', no session  -> 'persist:cloud'
-//   mode 'cloud', session id   -> 'persist:cloud:user-${id}'
-//   mode 'local', no session  -> 'persist:nas'
+// BACKWARD-COMPAT (critical for a live, already-installed pilot register):
+// the CLOUD endpoint REUSES THE LEGACY PARTITION NAMES, so an existing install's
+// warm cloud session survives the update with NO one-time re-login. Cloud is the
+// historical default and day-to-day mode, so the common case is seamless.
+// Only the NAS endpoint gets a new partition namespace — and NAS sessions never
+// persisted before (the old model cleared on every switch), so there is nothing
+// to orphan there.
+//
+//   mode 'cloud', no session  -> 'persist:main'        (legacy single webview partition)
+//   mode 'cloud', session id   -> 'persist:user-${id}'  (legacy per-cashier partition)
+//   mode 'local', no session  -> 'persist:nas'         (new — NAS never persisted before)
 //   mode 'local', session id   -> 'persist:nas:user-${id}'
 //
 // `sessionId` is null/undefined when multi-user session management is disabled
 // (single shared till), giving the base per-endpoint partition.
 function partitionFor(mode, sessionId) {
-  const endpoint = mode === 'local' ? 'nas' : 'cloud';
-  if (sessionId === null || sessionId === undefined || sessionId === '') {
-    return `persist:${endpoint}`;
+  const hasSession = !(sessionId === null || sessionId === undefined || sessionId === '');
+  if (mode === 'local') {
+    return hasSession ? `persist:nas:user-${sessionId}` : 'persist:nas';
   }
-  return `persist:${endpoint}:user-${sessionId}`;
+  // CLOUD (and any unknown mode → safe default) keeps the legacy names so
+  // existing warm sessions are NOT orphaned on update.
+  return hasSession ? `persist:user-${sessionId}` : 'persist:main';
 }
 
 // Every partition that belongs to ONE endpoint (mode), across all cashiers.

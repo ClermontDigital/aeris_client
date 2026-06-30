@@ -1011,15 +1011,17 @@
         </div>
 
         <!-- Main content area -->
-        <!-- DR M3: default partition is the cloud endpoint (persist:cloud).
-             applyActivePartition() repoints/recreates this to the NAS partition
-             (persist:nas) in in-store mode and to per-cashier partitions when
-             session management is on. Cloud and NAS sessions stay isolated. -->
+        <!-- DR M3: default partition is the cloud endpoint, which REUSES THE
+             LEGACY name persist:main so an existing install's warm cloud session
+             survives the update with no re-login. applyActivePartition()
+             repoints/recreates this to the NAS partition (persist:nas) in
+             in-store mode and to per-cashier partitions when session management
+             is on. Cloud and NAS sessions stay isolated. -->
         <webview
             id="content-frame"
             class="content-frame"
             src="http://aeris.local"
-            partition="persist:cloud">
+            partition="persist:main">
         </webview>
         
         <!-- Loading overlay -->

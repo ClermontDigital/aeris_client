@@ -11,46 +11,48 @@ const {
 } = require('../dr-partition');
 
 describe('partitionFor', () => {
-  test('cloud mode, no cashier → persist:cloud', () => {
-    expect(partitionFor('cloud', null)).toBe('persist:cloud');
-    expect(partitionFor('cloud', undefined)).toBe('persist:cloud');
-    expect(partitionFor('cloud', '')).toBe('persist:cloud');
+  // CLOUD reuses the LEGACY names (persist:main / persist:user-<id>) so an
+  // existing install's warm cloud session survives the update with no re-login.
+  test('cloud mode, no cashier → persist:main (legacy, preserved)', () => {
+    expect(partitionFor('cloud', null)).toBe('persist:main');
+    expect(partitionFor('cloud', undefined)).toBe('persist:main');
+    expect(partitionFor('cloud', '')).toBe('persist:main');
   });
 
   test('local (in-store) mode, no cashier → persist:nas', () => {
     expect(partitionFor('local', null)).toBe('persist:nas');
   });
 
-  test('cloud mode, per-cashier → persist:cloud:user-<id>', () => {
-    expect(partitionFor('cloud', 'abc')).toBe('persist:cloud:user-abc');
+  test('cloud mode, per-cashier → persist:user-<id> (legacy, preserved)', () => {
+    expect(partitionFor('cloud', 'abc')).toBe('persist:user-abc');
   });
 
   test('local mode, per-cashier → persist:nas:user-<id>', () => {
     expect(partitionFor('local', 'abc')).toBe('persist:nas:user-abc');
   });
 
-  test('unknown mode falls back to the cloud endpoint (safe default)', () => {
-    expect(partitionFor('something-else', null)).toBe('persist:cloud');
+  test('unknown mode falls back to the cloud endpoint (legacy persist:main)', () => {
+    expect(partitionFor('something-else', null)).toBe('persist:main');
   });
 
   test('ISOLATION: the same cashier gets DIFFERENT partitions per endpoint', () => {
     const cloud = partitionFor('cloud', 'cashier-1');
     const nas = partitionFor('local', 'cashier-1');
     expect(cloud).not.toBe(nas);
-    // Neither name is a prefix collision of the other endpoint's.
-    expect(cloud.startsWith('persist:cloud')).toBe(true);
+    // The NAS partition is a distinct namespace; the cloud one never carries it.
     expect(nas.startsWith('persist:nas')).toBe(true);
+    expect(cloud.includes('nas')).toBe(false);
   });
 });
 
 describe('partitionsForEndpoint', () => {
   test('with no cashiers, returns just the base endpoint partition', () => {
-    expect(partitionsForEndpoint('cloud')).toEqual(['persist:cloud']);
+    expect(partitionsForEndpoint('cloud')).toEqual(['persist:main']);
     expect(partitionsForEndpoint('local', [])).toEqual(['persist:nas']);
   });
 
   test('includes every per-cashier partition for that ONE endpoint', () => {
-    expect(partitionsForEndpoint('nas' === 'nas' ? 'local' : 'local', ['a', 'b'])).toEqual([
+    expect(partitionsForEndpoint('local', ['a', 'b'])).toEqual([
       'persist:nas',
       'persist:nas:user-a',
       'persist:nas:user-b',
@@ -67,8 +69,8 @@ describe('allPartitions (full / handover logout)', () => {
   test('covers BOTH endpoints for every cashier', () => {
     const all = allPartitions(['a']);
     expect(all).toEqual([
-      'persist:cloud',
-      'persist:cloud:user-a',
+      'persist:main',
+      'persist:user-a',
       'persist:nas',
       'persist:nas:user-a',
     ]);
