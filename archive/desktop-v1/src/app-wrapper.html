@@ -1011,11 +1011,15 @@
         </div>
 
         <!-- Main content area -->
-        <webview 
-            id="content-frame" 
+        <!-- DR M3: default partition is the cloud endpoint (persist:cloud).
+             applyActivePartition() repoints/recreates this to the NAS partition
+             (persist:nas) in in-store mode and to per-cashier partitions when
+             session management is on. Cloud and NAS sessions stay isolated. -->
+        <webview
+            id="content-frame"
             class="content-frame"
             src="http://aeris.local"
-            partition="persist:main">
+            partition="persist:cloud">
         </webview>
         
         <!-- Loading overlay -->
@@ -1098,14 +1102,21 @@
             updateRoutingModeChip(currentSettings.routingMode || 'cloud');
         }
 
-        // DR routing: reflect the active mode in the toolbar chip.
-        function updateRoutingModeChip(mode) {
+        // DR routing: reflect the active mode in the toolbar chip. `isAuto` marks
+        // a switch that the M3 auto-failover orchestrator performed (distinct
+        // copy + an "(auto)" suffix) vs an operator's manual toggle.
+        function updateRoutingModeChip(mode, isAuto = false) {
             const chip = document.getElementById('routing-mode-chip');
             if (!chip) return;
             const isLocal = mode === 'local';
+            let label = isLocal ? '🏪 In-store ' : '☁️ Cloud ';
+            if (isAuto) label = (isLocal ? '🏪 In-store (auto) ' : '☁️ Cloud (auto) ');
             chip.firstChild
-                ? (chip.childNodes[0].nodeValue = isLocal ? '🏪 In-store ' : '☁️ Cloud ')
-                : (chip.textContent = isLocal ? '🏪 In-store' : '☁️ Cloud');
+                ? (chip.childNodes[0].nodeValue = label)
+                : (chip.textContent = label.trim());
+            // Tint the chip amber when we're on an auto in-store failover so the
+            // cashier sees this is an outage state, not a deliberate choice.
+            chip.style.color = (isAuto && isLocal) ? '#b45309' : '';
         }
 
         // DR routing: confirm-then-switch between cloud and in-store/NAS modes.
@@ -1152,18 +1163,51 @@
             // reloads the webview and shows a toast.
         }
         
+        // DR M3: resolve + apply the PER-ENDPOINT persistent partition for the
+        // active mode (+ active cashier) onto the content-frame webview. A
+        // webview's partition is immutable once it has navigated, so when it
+        // differs we recreate the element. This is what lets cloud and NAS each
+        // keep their own warm login (no clear-on-switch) while staying isolated.
+        function applyActivePartition() {
+            const mode = currentSettings.routingMode || 'cloud';
+            let sessionId = null;
+            try {
+                if (currentSettings.enableSessionManagement !== false && window.__activeSessionId) {
+                    sessionId = window.__activeSessionId;
+                }
+            } catch (e) { /* default to shared-till partition */ }
+            const desired = window.electronAPI.partitionFor(mode, sessionId);
+
+            let contentFrame = document.getElementById('content-frame');
+            if (contentFrame && contentFrame.getAttribute('partition') !== desired) {
+                // Recreate the webview so the new partition takes effect.
+                const fresh = document.createElement('webview');
+                fresh.id = 'content-frame';
+                fresh.className = 'content-frame';
+                fresh.setAttribute('partition', desired);
+                const parent = contentFrame.parentNode;
+                parent.removeChild(contentFrame);
+                parent.appendChild(fresh);
+                setupWebviewHandlers(fresh);
+                contentFrame = fresh;
+            }
+            return contentFrame;
+        }
+
         function loadMainApp() {
-            const contentFrame = document.getElementById('content-frame');
+            // DR M3: ensure the webview is on the partition for the active
+            // endpoint (cloud↔NAS isolation, per-endpoint warm sessions).
+            const contentFrame = applyActivePartition();
             const loadingOverlay = document.getElementById('loading-overlay');
             const errorOverlay = document.getElementById('error-overlay');
-            
+
             // Keep loading overlay hidden
             loadingOverlay.classList.add('hidden');
             errorOverlay.style.display = 'none';
-            
+
             // Clear any existing session/cache data by forcing a fresh load
             contentFrame.src = 'about:blank';
-            
+
             // Wait a moment then load the actual URL to ensure clean start
             setTimeout(() => {
                 contentFrame.src = currentUrl + '?t=' + Date.now(); // Add timestamp to prevent caching
@@ -2390,9 +2434,16 @@
             console.log(`Resetting browser for user ${session.name}`);
             console.log(`Target URL: ${targetUrl}`);
             
-            // Create a completely new webview element with unique partition
+            // Track the active cashier so applyActivePartition / a routing-mode
+            // switch resolves the right per-endpoint+cashier partition.
+            window.__activeSessionId = session.id;
+
+            // Create a completely new webview element with unique partition.
+            // DR M3: partition is now PER-ENDPOINT (cloud vs NAS) AND per-cashier,
+            // so the same cashier has isolated cloud / in-store logins.
             const newWebview = document.createElement('webview');
-            const partitionName = `persist:user-${session.id}`;
+            const mode = currentSettings.routingMode || 'cloud';
+            const partitionName = window.electronAPI.partitionFor(mode, session.id);
             
             // Copy all attributes from original webview
             newWebview.id = 'content-frame';
@@ -2600,16 +2651,30 @@
         });
 
         // DR routing: the active target changed in the main process — reload the
-        // webview in place against the new URL (the web session was cleared in
-        // main, so the user re-authenticates).
-        window.electronAPI.onRoutingModeChanged(({ mode, targetUrl }) => {
+        // webview against the new URL. Per-endpoint partitions mean the session
+        // is NOT cleared: the target endpoint's own partition loads (warm session
+        // ⇒ no re-login; empty ⇒ that endpoint's login screen).
+        //
+        // `trigger` distinguishes an M3 AUTO switch from a manual one so we can
+        // show distinct copy. Auto is only ever emitted when `drAutoFailover` is
+        // on — flag-off ⇒ only manual triggers, exactly as today.
+        window.electronAPI.onRoutingModeChanged(({ mode, targetUrl, trigger }) => {
             currentUrl = targetUrl;
             currentSettings.routingMode = mode;
-            updateRoutingModeChip(mode);
+            updateRoutingModeChip(mode, trigger === 'auto');
             loadMainApp();
-            showNotification(
-                mode === 'local' ? 'Switched to in-store mode' : 'Switched to cloud mode'
-            );
+            if (trigger === 'auto') {
+                showNotification(
+                    mode === 'local'
+                        ? 'Cloud unreachable — switched to in-store server automatically'
+                        : 'Cloud is back — switched to cloud automatically',
+                    mode === 'local' ? 'error' : 'success'
+                );
+            } else {
+                showNotification(
+                    mode === 'local' ? 'Switched to in-store mode' : 'Switched to cloud mode'
+                );
+            }
         });
 
         // Note: toolbar actions are handled by the message listener above (line ~1368)

@@ -40,6 +40,7 @@ describe('IPCHandlers', () => {
       baseUrl: 'http://aeris.local',
       localUrl: '',
       routingMode: 'cloud',
+      drAutoFailover: false,
       autoStart: false,
       enableSessionManagement: true,
       sessionTimeout: 30
@@ -70,10 +71,36 @@ describe('IPCHandlers', () => {
         baseUrl: 'http://test.local',
         localUrl: expect.any(String),
         routingMode: expect.any(String),
+        drAutoFailover: expect.any(Boolean),
         autoStart: true,
         enableSessionManagement: expect.any(Boolean),
         sessionTimeout: expect.any(Number)
       });
+    });
+
+    test('getSettings should default drAutoFailover to false (ships dark)', async () => {
+      const settings = await ipcHandlers.getSettings();
+      expect(settings.drAutoFailover).toBe(false);
+    });
+
+    test('saveSettings persists drAutoFailover and coerces to a strict boolean', async () => {
+      await ipcHandlers.saveSettings({}, {
+        baseUrl: defaultConfig.baseUrl,
+        drAutoFailover: true,
+        autoStart: false,
+        enableSessionManagement: true,
+        sessionTimeout: 30
+      });
+      expect(mockStore.get('drAutoFailover')).toBe(true);
+
+      // A missing/garbage flag value can never accidentally enable it.
+      await ipcHandlers.saveSettings({}, {
+        baseUrl: defaultConfig.baseUrl,
+        autoStart: false,
+        enableSessionManagement: true,
+        sessionTimeout: 30
+      });
+      expect(mockStore.get('drAutoFailover')).toBe(false);
     });
 
     test('getSettings should return defaults when no settings exist', async () => {
@@ -239,11 +266,7 @@ describe('IPCHandlers', () => {
       expect(result.error).toBe('No valid in-store (NAS) URL configured');
     });
 
-    test("setRoutingMode should switch to 'local', set the store, clear the persist:main partition session, and emit", async () => {
-      const { session } = require('electron');
-      const clearStorageData = jest.fn(() => Promise.resolve());
-      session.fromPartition.mockReturnValue({ clearStorageData });
-
+    test("setRoutingMode should switch to 'local', set the store, and emit (manual trigger)", async () => {
       mockStore.set('localUrl', 'https://192.168.1.10');
 
       const result = await ipcHandlers.setRoutingMode({}, 'local');
@@ -251,21 +274,39 @@ describe('IPCHandlers', () => {
       expect(result.success).toBe(true);
       expect(result.mode).toBe('local');
       expect(result.targetUrl).toBe('https://192.168.1.10');
+      expect(result.trigger).toBe('manual');
       expect(mockStore.get('routingMode')).toBe('local');
-      // The auth state lives in the `persist:main` partition session, NOT the
-      // main window's default session. That partition must be the one cleared.
-      expect(session.fromPartition).toHaveBeenCalledWith('persist:main');
-      expect(clearStorageData).toHaveBeenCalledWith(
-        expect.objectContaining({
-          storages: expect.arrayContaining(['cookies', 'localstorage', 'indexdb'])
-        })
-      );
-      // The default (main window) session must NOT be the clear target.
-      expect(mockMainWindow.webContents.session.clearStorageData).not.toHaveBeenCalled();
-      // Renderer notified.
+      // Renderer notified with the trigger so it can choose manual vs auto copy.
       expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
         'routing-mode-changed',
-        { mode: 'local', targetUrl: 'https://192.168.1.10' }
+        { mode: 'local', targetUrl: 'https://192.168.1.10', trigger: 'manual' }
+      );
+    });
+
+    // PER-ENDPOINT PARTITIONS (M3 owner decision): a routing-mode switch MUST
+    // NOT clear any partition. Cloud and NAS each keep their own warm session so
+    // an auto-failover during an outage doesn't dump the cashier to a login
+    // wall. (Explicit logout is what clears — see logoutEndpoint below.)
+    test('setRoutingMode does NOT clear any partition session on switch', async () => {
+      const { session } = require('electron');
+      const clearStorageData = jest.fn(() => Promise.resolve());
+      session.fromPartition.mockReturnValue({ clearStorageData });
+
+      mockStore.set('localUrl', 'https://192.168.1.10');
+      await ipcHandlers.setRoutingMode({}, 'local');
+
+      expect(session.fromPartition).not.toHaveBeenCalled();
+      expect(clearStorageData).not.toHaveBeenCalled();
+      expect(mockMainWindow.webContents.session.clearStorageData).not.toHaveBeenCalled();
+    });
+
+    test("setRoutingMode forwards an 'auto' trigger to the renderer", async () => {
+      mockStore.set('localUrl', 'https://192.168.1.10');
+      const result = await ipcHandlers.setRoutingMode({}, 'local', 'auto');
+      expect(result.trigger).toBe('auto');
+      expect(mockMainWindow.webContents.send).toHaveBeenCalledWith(
+        'routing-mode-changed',
+        expect.objectContaining({ mode: 'local', trigger: 'auto' })
       );
     });
 
@@ -279,11 +320,17 @@ describe('IPCHandlers', () => {
       expect(result.targetUrl).toBe(defaultConfig.baseUrl);
       expect(mockStore.get('routingMode')).toBe('cloud');
     });
+  });
 
-    test("setRoutingMode should clear EVERY per-cashier persist:user-<id> partition (multi-cashier)", async () => {
+  describe('DR Per-endpoint Logout Handler', () => {
+    test('logoutEndpoint rejects an invalid mode', async () => {
+      const result = await ipcHandlers.logoutEndpoint({}, 'sideways');
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Invalid routing mode');
+    });
+
+    test("logoutEndpoint clears ONLY the cloud endpoint's partitions (isolation)", async () => {
       const { session } = require('electron');
-      // Track a distinct clearStorageData spy per partition name so we can
-      // assert each cashier's partition (not just persist:main) was wiped.
       const cleared = {};
       session.fromPartition.mockImplementation((name) => {
         const clearStorageData = jest.fn(() => Promise.resolve());
@@ -291,44 +338,28 @@ describe('IPCHandlers', () => {
         return { clearStorageData };
       });
 
-      // Multi-cashier mode ON + a couple of REAL sessions so getAllSessions()
-      // returns them (the prior test stubbed []). These id-keyed partitions are
-      // where each cashier's auth state lives.
       mockStore.set('enableSessionManagement', true);
-      mockStore.set('localUrl', 'https://192.168.1.10');
       const idA = mockSessionManager.createSession('Alice', '1234');
-      const idB = mockSessionManager.createSession('Bob', '5678');
-      expect(mockSessionManager.getAllSessions()).toHaveLength(2);
 
-      const result = await ipcHandlers.setRoutingMode({}, 'local');
+      const result = await ipcHandlers.logoutEndpoint({}, 'cloud');
 
       expect(result.success).toBe(true);
-      // persist:main AND each per-cashier partition must be cleared.
-      expect(session.fromPartition).toHaveBeenCalledWith('persist:main');
-      expect(session.fromPartition).toHaveBeenCalledWith(`persist:user-${idA}`);
-      expect(session.fromPartition).toHaveBeenCalledWith(`persist:user-${idB}`);
-      const expectStorages = expect.objectContaining({
-        storages: expect.arrayContaining([
-          'cookies',
-          'localstorage',
-          'indexdb',
-        ]),
-      });
-      expect(cleared['persist:main']).toHaveBeenCalledWith(expectStorages);
-      expect(cleared[`persist:user-${idA}`]).toHaveBeenCalledWith(expectStorages);
-      expect(cleared[`persist:user-${idB}`]).toHaveBeenCalledWith(expectStorages);
+      // Cloud partitions cleared...
+      expect(session.fromPartition).toHaveBeenCalledWith('persist:cloud');
+      expect(session.fromPartition).toHaveBeenCalledWith(`persist:cloud:user-${idA}`);
+      // ...NAS partitions must NOT be touched (a cloud logout must not wipe NAS).
+      expect(session.fromPartition).not.toHaveBeenCalledWith('persist:nas');
+      expect(session.fromPartition).not.toHaveBeenCalledWith(`persist:nas:user-${idA}`);
     });
 
     // GUARD: every key passed to clearStorageData MUST be a member of Electron's
     // ClearStorageDataOptions.storages union. Chromium SILENTLY IGNORES unknown
-    // keys, so a misspelling (e.g. the Electron quirk 'indexdb' typo'd as
-    // 'indexeddb', or the non-member 'sessionstorage') no-ops at runtime with no
-    // error. This test fails loudly if an invalid key is ever reintroduced.
-    // Source of truth: electron/electron.d.ts ClearStorageDataOptions.storages
-    // (Electron 28.3.3).
-    test('setRoutingMode passes ONLY valid Electron clearStorageData storage keys', async () => {
+    // keys, so a misspelling (the Electron quirk 'indexdb' typo'd as 'indexeddb',
+    // or the non-member 'sessionstorage') no-ops at runtime with no error. This
+    // test fails loudly if an invalid key is ever reintroduced.
+    // Source: electron/electron.d.ts ClearStorageDataOptions.storages (28.3.3).
+    test('logoutEndpoint passes ONLY valid Electron clearStorageData storage keys', async () => {
       const { session } = require('electron');
-      // Exact valid set from electron.d.ts (Electron 28.3.3).
       const VALID_ELECTRON_STORAGES = new Set([
         'cookies',
         'filesystem',
@@ -348,17 +379,13 @@ describe('IPCHandlers', () => {
         }),
       }));
 
-      mockStore.set('localUrl', 'https://192.168.1.10');
-      const result = await ipcHandlers.setRoutingMode({}, 'local');
+      const result = await ipcHandlers.logoutEndpoint({}, 'local');
       expect(result.success).toBe(true);
 
-      // Must have actually requested some storages to clear...
       expect(capturedKeys.length).toBeGreaterThan(0);
-      // ...and every one of them must be a real Electron enum member.
       for (const key of capturedKeys) {
         expect(VALID_ELECTRON_STORAGES.has(key)).toBe(true);
       }
-      // And the IndexedDB clear specifically must use the quirk spelling.
       expect(capturedKeys).toContain('indexdb');
       expect(capturedKeys).not.toContain('indexeddb');
     });
@@ -674,10 +701,13 @@ describe('IPCHandlers', () => {
       expect(registeredChannels).toContain('print-page');
       expect(registeredChannels).toContain('navigate');
       expect(registeredChannels).toContain('show-confirm-dialog');
+      expect(registeredChannels).toContain('set-routing-mode');
+      expect(registeredChannels).toContain('logout-endpoint');
 
-      // Verify all major handlers are registered (27 total in IPCHandlers:
-      // 26 original + set-routing-mode for DR warm-failover)
-      expect(mockIpcMain.handle.mock.calls.length).toBe(27);
+      // Verify all major handlers are registered (28 total in IPCHandlers:
+      // 26 original + set-routing-mode (DR warm-failover) + logout-endpoint
+      // (DR M3 per-endpoint logout)).
+      expect(mockIpcMain.handle.mock.calls.length).toBe(28);
     });
   });
 
