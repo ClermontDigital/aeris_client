@@ -12,6 +12,7 @@ import { getRelayClient, setOnUnauthorized, applyAuthToken, isDirectMode, getDir
 import { logger } from './logger';
 import { safeHandle } from './senderGuard';
 import { silentReauthStore } from './silentReauthStore';
+import { drState } from './drState';
 
 // authManager is the single source of truth for auth state in main.
 // Renderer mirrors this state via auth:get-state + auth:state-changed
@@ -220,6 +221,15 @@ export async function logout(): Promise<AuthState> {
   } catch (e) {
     logger.warn('[authManager] silent-reauth cache wipe failed', e);
   }
+  // LOW (deployment-team): reset the in-memory DR routing state on explicit
+  // logout so a cached LAN URL / stale drained signal from the prior session
+  // doesn't linger into the next login (cosmetic — the chip/orchestrator
+  // re-derive from a clean slate). Best-effort.
+  try {
+    drState.reset();
+  } catch (e) {
+    logger.warn('[authManager] drState reset failed', e);
+  }
   setState({
     isAuthenticated: false,
     user: null,
@@ -298,9 +308,17 @@ export async function silentReauth(): Promise<'reauthed' | 'no-cred' | 'failed'>
     return 'reauthed';
   } catch (e) {
     // Leave the deliberate-switch banner in place; the cashier logs in
-    // manually. Do NOT wipe the credential — a transient failure shouldn't
-    // permanently disable silent re-auth (a stale one is overwritten on the
-    // next successful manual login). Never surface the raw error / password.
+    // manually. A single transient failure shouldn't permanently disable silent
+    // re-auth, so we don't wipe immediately — but a genuinely-stale credential
+    // (e.g. a server-side password change) would otherwise leave a permanently-
+    // dead cache. The TTL counter wipes it after MAX_SILENT_REAUTH_FAILURES
+    // consecutive failures; a successful manual login resets it + re-caches.
+    // Never surface the raw error / password.
+    try {
+      await silentReauthStore.recordFailure();
+    } catch {
+      /* non-fatal */
+    }
     logger.warn('[authManager] silent re-auth failed (falling back to manual)');
     return 'failed';
   }

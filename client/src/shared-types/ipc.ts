@@ -83,6 +83,9 @@ export type RelayErrorCode =
   | 'PAYLOAD_TOO_LARGE'
   | 'BAD_REQUEST'
   | 'SERVER'
+  // DR M3-E fail-closed: relayBridge refuses to dispatch to a NAS whose cert
+  // identity is a known mismatch (defence-in-depth ahead of SPKI pinning).
+  | 'CERT_MISMATCH'
   | 'UNKNOWN';
 
 // --- auth -------------------------------------------------------------------

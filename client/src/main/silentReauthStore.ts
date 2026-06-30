@@ -49,6 +49,12 @@ import { logger } from './logger';
 // =====================================================================
 
 const CRED_KEY = 'cred';
+const FAIL_COUNT_KEY = 'failCount';
+// TTL (mobile parity): a server-side password change leaves the cached
+// credential permanently stale. Wipe the cache after N CONSECUTIVE silent-
+// reauth failures so the cashier falls back to a manual login (which re-caches
+// a fresh credential) rather than re-trying a dead credential forever.
+export const MAX_SILENT_REAUTH_FAILURES = 3;
 
 export interface CachedCredential {
   workspaceCode: string;
@@ -59,6 +65,8 @@ export interface CachedCredential {
 interface SilentReauthSchema {
   // safeStorage-encrypted JSON blob (base64) of CachedCredential, or null.
   cred: string | null;
+  // Consecutive silent-reauth failure counter for the TTL.
+  failCount: number;
 }
 
 // Lazy — see tokenStore.ts (electron-store v10 needs app.getName() at
@@ -68,7 +76,7 @@ function getStore(): Store<SilentReauthSchema> {
   if (!_store) {
     _store = new Store<SilentReauthSchema>({
       name: 'aeris-silent-reauth',
-      defaults: { cred: null },
+      defaults: { cred: null, failCount: 0 },
     });
   }
   return _store;
@@ -93,6 +101,18 @@ const rawSet = (value: string | null): void =>
   (getStore() as unknown as { set: (k: string, v: unknown) => void }).set(
     CRED_KEY,
     value,
+  );
+
+const rawGetFailCount = (): number => {
+  const v = (getStore() as unknown as { get: (k: string) => unknown }).get(
+    FAIL_COUNT_KEY,
+  );
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0;
+};
+const rawSetFailCount = (n: number): void =>
+  (getStore() as unknown as { set: (k: string, v: unknown) => void }).set(
+    FAIL_COUNT_KEY,
+    n,
   );
 
 function normWorkspace(code: string | null | undefined): string {
@@ -142,6 +162,8 @@ export const silentReauthStore = {
         .encryptString(JSON.stringify(cred))
         .toString('base64');
       rawSet(encrypted);
+      // Fresh known-good credential — reset the TTL failure counter.
+      await this.resetFailures();
     } catch (e) {
       // Keychain write failed — silent re-auth simply won't be available.
       logger.warn('[silentReauth] credential encrypt/write failed', e);
@@ -195,6 +217,40 @@ export const silentReauthStore = {
       rawSet(null);
     } catch {
       // Ignored — opportunistic wipe.
+    }
+    await this.resetFailures();
+  },
+
+  // Record a silent-reauth FAILURE. After MAX_SILENT_REAUTH_FAILURES
+  // consecutive failures the cached (stale) credential is wiped so a server-
+  // side password change doesn't leave a permanently-dead cache. A subsequent
+  // manual login re-caches a fresh credential. Returns true when wiped.
+  async recordFailure(): Promise<boolean> {
+    let count = 0;
+    try {
+      count = rawGetFailCount();
+    } catch {
+      count = 0;
+    }
+    count += 1;
+    if (count >= MAX_SILENT_REAUTH_FAILURES) {
+      await this.clear();
+      return true;
+    }
+    try {
+      rawSetFailCount(count);
+    } catch {
+      // Best-effort — a counter write miss just delays the TTL by one cycle.
+    }
+    return false;
+  },
+
+  // Reset the consecutive-failure counter (on a successful save / wipe).
+  async resetFailures(): Promise<void> {
+    try {
+      rawSetFailCount(0);
+    } catch {
+      // Ignored — opportunistic.
     }
   },
 
