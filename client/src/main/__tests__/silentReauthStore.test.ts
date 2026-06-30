@@ -1,6 +1,9 @@
 import { safeStorage } from 'electron';
 import StoreMock from 'electron-store';
-import { silentReauthStore } from '../silentReauthStore';
+import {
+  silentReauthStore,
+  MAX_SILENT_REAUTH_FAILURES,
+} from '../silentReauthStore';
 
 // M3-C credential cache — the security-critical invariants:
 //   - NOTHING cached when the flag is OFF (default build holds zero creds).
@@ -78,5 +81,30 @@ describe('silentReauthStore', () => {
       }) as unknown as { get: (k: string) => unknown }
     ).get('cred') as string;
     expect(stored).not.toContain('sekret');
+  });
+
+  describe('failure TTL', () => {
+    test('wipes the cached credential after N CONSECUTIVE silent-reauth failures', async () => {
+      await silentReauthStore.save(true, 'shop-a', 'cashier@x.com', 'pw');
+      expect(await silentReauthStore.load(true, 'shop-a')).not.toBeNull();
+
+      for (let i = 0; i < MAX_SILENT_REAUTH_FAILURES - 1; i++) {
+        expect(await silentReauthStore.recordFailure()).toBe(false);
+        expect(await silentReauthStore.load(true, 'shop-a')).not.toBeNull();
+      }
+      // The Nth consecutive failure crosses the threshold and wipes the cache.
+      expect(await silentReauthStore.recordFailure()).toBe(true);
+      expect(await silentReauthStore.load(true, 'shop-a')).toBeNull();
+    });
+
+    test('a successful save() RESETS the failure counter', async () => {
+      await silentReauthStore.save(true, 'shop-a', 'cashier@x.com', 'pw');
+      await silentReauthStore.recordFailure();
+      await silentReauthStore.recordFailure();
+      // Fresh save resets the counter — a single later failure must NOT wipe.
+      await silentReauthStore.save(true, 'shop-a', 'cashier@x.com', 'pw2');
+      expect(await silentReauthStore.recordFailure()).toBe(false);
+      expect(await silentReauthStore.load(true, 'shop-a')).not.toBeNull();
+    });
   });
 });

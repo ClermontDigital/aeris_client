@@ -98,6 +98,16 @@ function nasUsable(input: RoutingInputs): boolean {
   return input.nasReachable && input.nasCertTrust !== 'mismatch';
 }
 
+// M3-D BLOCKER-1 parity (mobile): the AUTO path must HARD-GATE on a fully-
+// verified cert. The auto path silently re-auths a CACHED password against the
+// new edge — it must NEVER target a NAS whose TLS identity isn't proven. SPKI
+// pinning is deferred, so 'trusted' (the verified target state) is unreachable
+// today ⇒ AUTO is INERT until pinning ships. The MANUAL (prompt) path still
+// runs on 'unverified' via nasUsable() + the confirm dialog.
+function nasCertVerified(input: RoutingInputs): boolean {
+  return input.nasCertTrust === 'trusted';
+}
+
 // The §19.2 cascade — first match wins. Logic is identical to mobile.
 export function decideRouting(input: RoutingInputs): RoutingDecision {
   // Rule 1 — mid-transaction: defer any switch until complete/aborted.
@@ -154,7 +164,11 @@ export function decideRouting(input: RoutingInputs): RoutingDecision {
   // M3-D SINGLE GATE: autoFailoverEnabled decides PROMPT vs AUTO here and ONLY
   // here. flag OFF (default / M2) ⇒ prompt; flag ON ⇒ auto-apply.
   if (!input.cloudReachable && nasUsable(input)) {
-    if (input.autoFailoverEnabled) {
+    // BLOCKER-1 cert hard-gate (mobile parity): AUTO requires a VERIFIED cert.
+    // Flag on but cert not 'trusted' (the current reality until SPKI pinning)
+    // ⇒ fall back to the M2 PROMPT — never silently re-auth onto a non-pinned
+    // NAS. Single-gate property preserved; AUTO inert until 'trusted'.
+    if (input.autoFailoverEnabled && nasCertVerified(input)) {
       return {
         mode: 'local',
         reason: 'outage-auto',

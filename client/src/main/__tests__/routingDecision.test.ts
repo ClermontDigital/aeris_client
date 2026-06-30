@@ -77,17 +77,48 @@ describe('routingDecision cascade', () => {
       expect(d.mode).toBe('cloud'); // stays on current mode — M2 behaviour
     });
 
-    test('flag ON: cloud down + NAS usable -> AUTO local', () => {
+    test('flag ON + cert VERIFIED ("trusted"): cloud down + NAS usable -> AUTO local', () => {
       const d = decideRouting(
         base({
           cloudReachable: false,
           nasReachable: true,
+          nasCertTrust: 'trusted',
           autoFailoverEnabled: true,
         }),
       );
       expect(d.reason).toBe('outage-auto');
       expect(d.promptFailover).toBe(false);
       expect(d.mode).toBe('local');
+    });
+
+    // BLOCKER-1 parity: AUTO hard-gates on a verified cert. Until SPKI pinning
+    // ships 'trusted' is unreachable ⇒ AUTO is inert, falling back to the M2
+    // PROMPT (never silently re-auth a cached password onto a non-pinned NAS).
+    test('flag ON but cert UNVERIFIED -> falls back to the M2 PROMPT, not auto (BLOCKER-1)', () => {
+      const d = decideRouting(
+        base({
+          cloudReachable: false,
+          nasReachable: true,
+          nasCertTrust: 'unverified',
+          autoFailoverEnabled: true,
+        }),
+      );
+      expect(d.reason).toBe('outage-prompt');
+      expect(d.promptFailover).toBe(true);
+      expect(d.mode).toBe('cloud');
+    });
+
+    test('flag ON but cert UNKNOWN -> also falls back to the M2 PROMPT', () => {
+      const d = decideRouting(
+        base({
+          cloudReachable: false,
+          nasReachable: true,
+          nasCertTrust: 'unknown',
+          autoFailoverEnabled: true,
+        }),
+      );
+      expect(d.reason).toBe('outage-prompt');
+      expect(d.promptFailover).toBe(true);
     });
 
     test('fail-closed: NAS cert mismatch -> offline regardless of the flag', () => {
