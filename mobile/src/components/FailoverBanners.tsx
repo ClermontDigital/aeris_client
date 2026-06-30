@@ -5,6 +5,7 @@ import {useCloudReachabilityStore} from '../stores/cloudReachabilityStore';
 import {useFailoverAbortStore} from '../stores/failoverAbortStore';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useDrStore} from '../stores/drStore';
+import {useRoutingDecision} from '../hooks/useRoutingDecision';
 
 // FailoverBanners — the thin, non-blocking DR banners that pin under the
 // chrome tongue. Source of truth: §14.7 Q9 (cloud-unreachable) + §17.4.
@@ -31,6 +32,10 @@ export function FailoverBanners(): React.ReactElement | null {
   const nasUnavailable = useFailoverAbortStore(s => s.nasUnavailable);
   const cachedLocalUrl = useDrStore(s => s.cachedLocalUrl);
   const provisioned = cachedLocalUrl != null;
+  // M3 polish — when an auto-swap is being held back by Rule 1 (a write is in
+  // flight), surface that the switch is pending so a mid-tx defer doesn't read
+  // as a hang. `deferred && reason==='outage-auto'` is exactly that state.
+  const {deferred, reason} = useRoutingDecision();
 
   // Most severe — only meaningful on a provisioned deployment (cloud-only
   // deployments have no NAS to be "unreachable").
@@ -41,6 +46,22 @@ export function FailoverBanners(): React.ReactElement | null {
         accessibilityRole="alert">
         <Text style={styles.abortText} numberOfLines={2}>
           On-prem server unreachable. Check the server and try again.
+        </Text>
+      </View>
+    );
+  }
+
+  // M3 polish — an auto-failover is QUEUED but Rule 1 is deferring it because a
+  // sale/settlement/write is still in flight. Reassure the cashier the switch
+  // will happen the moment the transaction completes (so it doesn't read as a
+  // hang). Sits above the steady cloud-unreachable advisory.
+  if (deferred && reason === 'outage-auto') {
+    return (
+      <View
+        style={[styles.banner, styles.cloudBanner]}
+        accessibilityRole="alert">
+        <Text style={styles.cloudText} numberOfLines={2}>
+          Cloud unreachable. Will switch to on-prem mode after this sale.
         </Text>
       </View>
     );

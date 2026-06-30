@@ -48,6 +48,15 @@ import {SecureStorage} from './StorageService';
 // =====================================================================
 
 const CRED_KEY = 'aeris_silent_reauth_cred';
+// Consecutive-failure counter key. A server-side password change leaves the
+// cached credential permanently stale; without a TTL the silent-reauth path
+// would re-try the dead credential on every future switch. We wipe the cache
+// after N CONSECUTIVE silent-reauth failures so the cashier falls back to a
+// manual login (which re-caches a fresh credential) rather than a dead cache.
+const FAIL_COUNT_KEY = 'aeris_silent_reauth_failcount';
+// Small N — a couple of transient network failures shouldn't nuke the cache,
+// but a genuinely-changed password is cleared promptly.
+export const MAX_SILENT_REAUTH_FAILURES = 3;
 
 export interface CachedCredential {
   workspaceCode: string;
@@ -94,6 +103,9 @@ export const SilentReauthCredentialStore = {
     const cred: CachedCredential = {workspaceCode: ws, email, password};
     try {
       await SecureStorage.setItem(CRED_KEY, JSON.stringify(cred));
+      // A fresh credential (manual login or post-switch re-cache) resets the
+      // consecutive-failure TTL counter — this is a known-good credential now.
+      await this.resetFailures();
     } catch {
       // Keychain write failed — silent re-auth simply won't be available;
       // the cashier falls back to the normal login screen. Never surfaced.
@@ -148,6 +160,44 @@ export const SilentReauthCredentialStore = {
       await SecureStorage.removeItem(CRED_KEY);
     } catch {
       // Ignored — opportunistic wipe.
+    }
+    await this.resetFailures();
+  },
+
+  // Record a silent-reauth FAILURE. After MAX_SILENT_REAUTH_FAILURES
+  // consecutive failures we wipe the cached credential (TTL) so a stale
+  // credential — e.g. after a server-side password change — doesn't leave a
+  // permanently-dead cache. A subsequent manual login re-caches a fresh one.
+  // Returns true when the threshold was hit and the credential was wiped.
+  async recordFailure(): Promise<boolean> {
+    let count = 0;
+    try {
+      const raw = await SecureStorage.getItem(FAIL_COUNT_KEY);
+      const parsed = raw != null ? Number(raw) : 0;
+      count = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    } catch {
+      count = 0;
+    }
+    count += 1;
+    if (count >= MAX_SILENT_REAUTH_FAILURES) {
+      // Threshold reached — wipe the dead credential and the counter.
+      await this.clear();
+      return true;
+    }
+    try {
+      await SecureStorage.setItem(FAIL_COUNT_KEY, String(count));
+    } catch {
+      // Best-effort — a counter write miss just delays the TTL by one cycle.
+    }
+    return false;
+  },
+
+  // Reset the consecutive-failure counter (on a successful save / wipe).
+  async resetFailures(): Promise<void> {
+    try {
+      await SecureStorage.removeItem(FAIL_COUNT_KEY);
+    } catch {
+      // Ignored — opportunistic.
     }
   },
 };
