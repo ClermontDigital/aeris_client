@@ -1,6 +1,6 @@
 {
   "name": "aeris-client",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "private": true,
   "description": "Aeris v2 — relay-native Electron client. Successor to archive/desktop-v1.",
   "homepage": "https://github.com/ClermontDigital/aeris_client",

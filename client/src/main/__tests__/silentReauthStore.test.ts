@@ -72,9 +72,11 @@ describe('silentReauthStore', () => {
     const arg = (safeStorage.encryptString as jest.Mock).mock.calls[0][0] as string;
     expect(arg).toContain('sekret'); // the plaintext goes INTO encryptString...
     // ...and what lands in the store is the encrypted base64, not the password.
-    const stored = new StoreMock<{ cred: string | null }>({
-      name: 'aeris-silent-reauth',
-    }).get('cred') as string;
+    const stored = (
+      new StoreMock<{ cred: string | null }>({
+        name: 'aeris-silent-reauth',
+      }) as unknown as { get: (k: string) => unknown }
+    ).get('cred') as string;
     expect(stored).not.toContain('sekret');
   });
 });
