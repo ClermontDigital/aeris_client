@@ -17,6 +17,7 @@ class IPCHandlers {
       baseUrl: this.store.get('baseUrl', this.defaultConfig.baseUrl),
       localUrl: this.store.get('localUrl', this.defaultConfig.localUrl),
       routingMode: this.store.get('routingMode', this.defaultConfig.routingMode),
+      drAutoFailover: this.store.get('drAutoFailover', this.defaultConfig.drAutoFailover),
       autoStart: this.store.get('autoStart', this.defaultConfig.autoStart),
       enableSessionManagement: this.store.get('enableSessionManagement', this.defaultConfig.enableSessionManagement),
       sessionTimeout: this.store.get('sessionTimeout', this.defaultConfig.sessionTimeout)
@@ -66,6 +67,9 @@ class IPCHandlers {
 
     this.store.set('baseUrl', settings.baseUrl);
     this.store.set('localUrl', settings.localUrl || '');
+    // DR M3: persist the auto-failover flag (default OFF). Strict boolean coerce
+    // so a missing/garbage value can never accidentally enable it.
+    this.store.set('drAutoFailover', settings.drAutoFailover === true);
     this.store.set('autoStart', settings.autoStart);
     this.store.set('enableSessionManagement', settings.enableSessionManagement);
     this.store.set('sessionTimeout', settings.sessionTimeout);
@@ -457,7 +461,18 @@ class IPCHandlers {
 
   // DR routing-mode switch (cloud ↔ in-store/NAS). Reload-in-place, NOT a
   // restart — does not use the needsRestart path.
-  async setRoutingMode(event, mode) {
+  //
+  // PER-ENDPOINT PARTITIONS (M3 owner decision — replaces clear-all-on-switch):
+  // cloud and NAS keep SEPARATE persistent partitions, so we DO NOT clear
+  // storage on a switch. The target endpoint's own partition loads — a warm
+  // session keeps the cashier selling through an outage; an empty one shows that
+  // endpoint's login. Cloud and NAS partitions are isolated (neither leaks into
+  // the other). Explicit logout (logoutEndpoint) is what clears a partition.
+  //
+  // `trigger` ('manual' default | 'auto') is passed through to the renderer in
+  // the routing-mode-changed payload so the UI can show auto-specific copy. The
+  // M3 auto-swap orchestrator (main.js) reuses THIS method — no forked switch.
+  async setRoutingMode(event, mode, trigger = 'manual') {
     try {
       if (mode !== 'cloud' && mode !== 'local') {
         return { success: false, error: 'Invalid routing mode' };
@@ -476,41 +491,43 @@ class IPCHandlers {
 
       const targetUrl = this.getActiveTargetUrl();
 
-      // Clear the webview web session(s) so the user re-authenticates against
-      // the new target. The POS webview that holds auth state lives in the
-      // `persist:main` partition (NOT the main window's default session), and
-      // per-cashier webviews live in `persist:user-${id}`. We must clear those
-      // partition sessions explicitly — clearing mainWindow.webContents.session
-      // would only clear the unused default session and leave the prior (cloud)
-      // token/localStorage intact, defeating the re-auth guarantee (M-R8 / §15-2).
-      // Do NOT touch electron-store PIN/cashier identities (the per-cashier model).
-      const { session } = require('electron');
-      const partitions = ['persist:main'];
-      if (this.store.get('enableSessionManagement', this.defaultConfig.enableSessionManagement)) {
-        // Enumerate every per-cashier partition so a switch clears all of them.
-        for (const s of this.sessionManager.getAllSessions()) {
-          partitions.push(`persist:user-${s.id}`);
-        }
+      const mainWindow = this.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('routing-mode-changed', { mode, targetUrl, trigger });
       }
-      // Storages MUST be members of Electron's Session.clearStorageData enum
-      // (electron.d.ts ClearStorageDataOptions.storages): cookies | filesystem |
-      // indexdb | localstorage | shadercache | websql | serviceworkers |
-      // cachestorage. NOTE the Electron quirk: it is 'indexdb' (no second 'e').
-      // Unknown keys are SILENTLY IGNORED by Chromium, so a typo no-ops.
-      // 'sessionstorage' is NOT a member of this enum in Electron 28 and cannot
-      // be cleared via this API; sessionStorage is per-renderer and is dropped
-      // when the partition's pages are reloaded on the routing-mode switch.
+
+      return { success: true, mode, targetUrl, trigger };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // DR M3: explicit per-endpoint logout. Clears ONLY the partitions belonging to
+  // `mode` (across all cashiers), so logging out of NAS does not wipe the cloud
+  // session and vice-versa — preserving the per-endpoint isolation the new
+  // partition model relies on. This is the deliberate replacement for the old
+  // blanket clear-on-switch re-auth guarantee.
+  async logoutEndpoint(event, mode) {
+    try {
+      if (mode !== 'cloud' && mode !== 'local') {
+        return { success: false, error: 'Invalid routing mode' };
+      }
+      const { partitionsForEndpoint } = require('./dr-partition');
+      const { session } = require('electron');
+      let sessionIds = [];
+      if (this.store.get('enableSessionManagement', this.defaultConfig.enableSessionManagement)) {
+        sessionIds = this.sessionManager.getAllSessions().map((s) => s.id);
+      }
+      const partitions = partitionsForEndpoint(mode, sessionIds);
+      // Storages MUST be members of Electron's Session.clearStorageData enum.
+      // NOTE the Electron quirk: it is 'indexdb' (no second 'e'). Unknown keys
+      // are SILENTLY IGNORED by Chromium. 'sessionstorage' is not a member and
+      // is dropped on the partition's page reload anyway.
       const storages = ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'];
       await Promise.all(
         partitions.map((p) => session.fromPartition(p).clearStorageData({ storages }))
       );
-
-      const mainWindow = this.getMainWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('routing-mode-changed', { mode, targetUrl });
-      }
-
-      return { success: true, mode, targetUrl };
+      return { success: true, mode, cleared: partitions };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -558,6 +575,7 @@ class IPCHandlers {
 
     // DR routing
     ipcMain.handle('set-routing-mode', this.setRoutingMode.bind(this));
+    ipcMain.handle('logout-endpoint', this.logoutEndpoint.bind(this));
   }
 }
 

@@ -7,6 +7,13 @@ console.log('Loaded electron module: Object Version:', app ? app.getVersion() : 
 const path = require('path');
 const Store = require('electron-store');
 const SessionManager = require('./session-manager');
+const {
+  ReachabilityTracker,
+  decideAutoAction,
+  PROBE_INTERVAL_MS,
+  FAILBACK_CLOUD_HOLD_MS,
+} = require('./dr-failover-monitor');
+const { partitionFor } = require('./dr-partition');
 
 const store = new Store();
 const sessionManager = new SessionManager(store);
@@ -16,6 +23,15 @@ let settingsWindow;
 let sessionSwitcherWindow;
 let sessionCleanupInterval = null;
 
+// DR M3 (DARK by default). Reachability trackers + the probe interval handle.
+// These stay dormant unless the `drAutoFailover` flag is on — no probe traffic,
+// no auto-swap when off (see startDrFailoverMonitor / probeEndpoints).
+const cloudReachability = new ReachabilityTracker();
+const nasReachability = new ReachabilityTracker();
+let drProbeInterval = null;
+// Re-entrancy guard so an in-flight auto-switch isn't triggered twice.
+let drAutoSwapInFlight = false;
+
 // Default configuration
 const defaultConfig = {
   baseUrl: 'http://aeris.local:8000',
@@ -24,6 +40,10 @@ const defaultConfig = {
   // target. Empty until the operator configures + validates a LAN address.
   localUrl: '',
   routingMode: 'cloud',
+  // DR M3 automated failover. DARK by default — flag OFF ≡ today's behaviour
+  // (manual cloud↔in-store toggle only, no health probing, no auto-swap).
+  // Turning this on is a separate, proof-gated event (see PROJECT_DR_M3_BUILD_PLAN).
+  drAutoFailover: false,
   autoStart: false,
   enableSessionManagement: true,
   sessionTimeout: 30, // minutes
@@ -406,6 +426,7 @@ ipcMain.handle('get-settings', () => {
     baseUrl: store.get('baseUrl', defaultConfig.baseUrl),
     localUrl: store.get('localUrl', defaultConfig.localUrl),
     routingMode: store.get('routingMode', defaultConfig.routingMode),
+    drAutoFailover: store.get('drAutoFailover', defaultConfig.drAutoFailover),
     autoStart: store.get('autoStart', defaultConfig.autoStart),
     enableSessionManagement: store.get('enableSessionManagement', defaultConfig.enableSessionManagement),
     sessionTimeout: store.get('sessionTimeout', defaultConfig.sessionTimeout)
@@ -446,10 +467,17 @@ ipcMain.handle('save-settings', (event, settings) => {
 
   store.set('baseUrl', settings.baseUrl);
   store.set('localUrl', settings.localUrl || '');
+  // DR M3: persist the auto-failover flag (default OFF). Coerce to a strict
+  // boolean so a missing/garbage value can never accidentally enable it.
+  store.set('drAutoFailover', settings.drAutoFailover === true);
   store.set('autoStart', settings.autoStart);
   store.set('enableSessionManagement', settings.enableSessionManagement);
   store.set('sessionTimeout', settings.sessionTimeout);
-  
+
+  // DR M3: (re)start or stop the health monitor to match the flag. With the
+  // flag off this tears the probe timer down entirely — ZERO probe traffic.
+  syncDrFailoverMonitor();
+
   // Handle auto-start
   app.setLoginItemSettings({
     openAtLogin: settings.autoStart
@@ -861,66 +889,217 @@ ipcMain.handle('update-session-activity', async () => {
   return { success: true };
 });
 
-// DR routing-mode switch (cloud ↔ in-store/NAS). This is a reload-in-place, NOT
-// a restart — it does NOT go through the needsRestart path.
+// DR routing-mode switch core (cloud ↔ in-store/NAS). Reload-in-place, NOT a
+// restart. Shared by the manual IPC handler and the M3 auto-swap orchestrator
+// so there is exactly ONE switch implementation (no forked switch logic).
+//
+// `trigger` is 'manual' (default) or 'auto' — only affects the
+// routing-mode-changed payload so the renderer can distinguish auto vs manual
+// copy. The per-endpoint partition model (dr-partition.js) means we DO NOT clear
+// the target's session on switch: each endpoint keeps its own login so a cashier
+// with a warm in-store session keeps selling through an outage. See dr-partition
+// for the security note (isolation + explicit-logout-still-clears).
+async function performRoutingModeSwitch(mode, { trigger = 'manual' } = {}) {
+  if (mode !== 'cloud' && mode !== 'local') {
+    return { success: false, error: 'Invalid routing mode' };
+  }
+
+  // Fail closed: refuse to switch to in-store mode unless a valid LAN target is
+  // already stored. (Applies to BOTH manual and auto — auto additionally gates
+  // on this in decideAutoAction, this is defence-in-depth.)
+  if (mode === 'local') {
+    const localUrl = store.get('localUrl', defaultConfig.localUrl);
+    const { isLocalUrlSafeForCache } = require('./dr-url-validator');
+    if (!localUrl || !isLocalUrlSafeForCache(localUrl)) {
+      return { success: false, error: 'No valid in-store (NAS) URL configured' };
+    }
+  }
+
+  store.set('routingMode', mode);
+  const targetUrl = getActiveTargetUrl();
+
+  // PER-ENDPOINT PARTITIONS (M3 owner decision — replaces clear-all-on-switch).
+  // We deliberately DO NOT clear storage here: the target endpoint loads its own
+  // persistent partition (persist:cloud[:user-id] / persist:nas[:user-id]).
+  // A warm session there = no re-login; an empty one = that endpoint's login
+  // screen. Cloud and NAS partitions are isolated, so neither leaks into the
+  // other. Explicit LOGOUT (logout-endpoint IPC) is what clears a partition.
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('routing-mode-changed', { mode, targetUrl, trigger });
+  }
+
+  return { success: true, mode, targetUrl, trigger };
+}
+
+// DR routing-mode switch (manual). Reload-in-place, NOT a restart.
 ipcMain.handle('set-routing-mode', async (event, mode) => {
   try {
-    if (mode !== 'cloud' && mode !== 'local') {
-      return { success: false, error: 'Invalid routing mode' };
-    }
-
-    // Fail closed: refuse to switch to in-store mode unless a valid LAN target
-    // is already stored.
-    if (mode === 'local') {
-      const localUrl = store.get('localUrl', defaultConfig.localUrl);
-      const { isLocalUrlSafeForCache } = require('./dr-url-validator');
-      if (!localUrl || !isLocalUrlSafeForCache(localUrl)) {
-        return { success: false, error: 'No valid in-store (NAS) URL configured' };
-      }
-    }
-
-    store.set('routingMode', mode);
-
-    const targetUrl = getActiveTargetUrl();
-
-    // Clear the webview web session(s) so the user re-authenticates against the
-    // new target. The POS webview that holds auth state lives in the
-    // `persist:main` partition (NOT the main window's default session), and
-    // per-cashier webviews live in `persist:user-${id}`. We must clear those
-    // partition sessions explicitly — clearing mainWindow.webContents.session
-    // would only clear the unused default session and leave the prior (cloud)
-    // token/localStorage intact, defeating the re-auth guarantee (M-R8 / §15-2).
-    // Do NOT touch electron-store PIN/cashier identities (the per-cashier model).
-    const { session } = require('electron');
-    const partitions = ['persist:main'];
-    if (store.get('enableSessionManagement', defaultConfig.enableSessionManagement)) {
-      // Enumerate every per-cashier partition so a switch clears all of them.
-      for (const s of sessionManager.getAllSessions()) {
-        partitions.push(`persist:user-${s.id}`);
-      }
-    }
-    // Storages MUST be members of Electron's Session.clearStorageData enum
-    // (electron.d.ts ClearStorageDataOptions.storages): cookies | filesystem |
-    // indexdb | localstorage | shadercache | websql | serviceworkers |
-    // cachestorage. NOTE the Electron quirk: it is 'indexdb' (no second 'e').
-    // Unknown keys are SILENTLY IGNORED by Chromium, so a typo no-ops.
-    // 'sessionstorage' is NOT a member of this enum in Electron 28 and cannot
-    // be cleared via this API; sessionStorage is per-renderer and is dropped
-    // when the partition's pages are reloaded on the routing-mode switch.
-    const storages = ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'];
-    await Promise.all(
-      partitions.map((p) => session.fromPartition(p).clearStorageData({ storages }))
-    );
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('routing-mode-changed', { mode, targetUrl });
-    }
-
-    return { success: true, mode, targetUrl };
+    return await performRoutingModeSwitch(mode, { trigger: 'manual' });
   } catch (error) {
     return { success: false, error: error.message };
   }
 });
+
+// DR M3: explicit logout for ONE endpoint (the partitions belonging to the
+// given mode, across all cashiers). This REPLACES the blanket clear-on-switch
+// re-auth guarantee with a deliberate, isolation-preserving clear: logging out
+// of NAS must NOT wipe the cloud session and vice-versa. Storages list matches
+// the Electron clearStorageData enum (note the 'indexdb' quirk — no 2nd 'e').
+ipcMain.handle('logout-endpoint', async (event, mode) => {
+  try {
+    if (mode !== 'cloud' && mode !== 'local') {
+      return { success: false, error: 'Invalid routing mode' };
+    }
+    const { partitionsForEndpoint } = require('./dr-partition');
+    const { session } = require('electron');
+    let sessionIds = [];
+    if (store.get('enableSessionManagement', defaultConfig.enableSessionManagement)) {
+      sessionIds = sessionManager.getAllSessions().map((s) => s.id);
+    }
+    const partitions = partitionsForEndpoint(mode, sessionIds);
+    const storages = ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage'];
+    await Promise.all(
+      partitions.map((p) => session.fromPartition(p).clearStorageData({ storages }))
+    );
+    return { success: true, mode, cleared: partitions };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// --- DR M3 health monitor + auto-swap orchestrator (DARK by default) --------
+
+// Unauthenticated reachability probe. Any HTTP answer (even non-2xx) = the box
+// answered = REACHABLE. A transport error / timeout = unreachable. We never send
+// auth, never parse a body — we only care that something on the other end
+// spoke. Uses Electron's net.request (respects system proxy/cert config) with a
+// hard timeout so a black-holed endpoint reports a transport failure promptly.
+function probeEndpoint(baseUrl) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (reachable) => {
+      if (settled) return;
+      settled = true;
+      resolve(reachable);
+    };
+    let url;
+    try {
+      // Aeris2 serves GET /health (and /up) unauthenticated.
+      url = new URL('/health', baseUrl).toString();
+    } catch {
+      return done(false);
+    }
+    try {
+      const { net } = require('electron');
+      const request = net.request({ method: 'GET', url });
+      const timer = setTimeout(() => {
+        try { request.abort(); } catch { /* ignore */ }
+        done(false); // timeout = transport failure
+      }, 5000);
+      request.on('response', () => {
+        clearTimeout(timer);
+        done(true); // any HTTP status = reachable
+      });
+      request.on('error', () => {
+        clearTimeout(timer);
+        done(false); // DNS/connect/TLS error = transport failure
+      });
+      request.end();
+    } catch {
+      done(false);
+    }
+  });
+}
+
+// One probe tick: probe BOTH endpoints, feed the hysteresis trackers, then run
+// the single decision site and act on it. Only ever called by the interval that
+// startDrFailoverMonitor sets up (and that interval only runs when the flag is
+// on), so there is NO probe traffic at all when the flag is off.
+async function runDrProbeTick() {
+  // Re-check the flag every tick — defence in depth so a stale interval can
+  // never act after the flag is turned off.
+  if (store.get('drAutoFailover', defaultConfig.drAutoFailover) !== true) {
+    return;
+  }
+
+  const baseUrl = store.get('baseUrl', defaultConfig.baseUrl);
+  const localUrl = store.get('localUrl', defaultConfig.localUrl);
+
+  const cloudOk = await probeEndpoint(baseUrl);
+  cloudOk ? cloudReachability.reportSuccess() : cloudReachability.reportTransportFailure();
+
+  // Only probe the NAS if a LAN target is configured; otherwise it can never be
+  // a failover target and we skip the traffic.
+  if (localUrl) {
+    const nasOk = await probeEndpoint(localUrl);
+    nasOk ? nasReachability.reportSuccess() : nasReachability.reportTransportFailure();
+  } else {
+    nasReachability.reset();
+  }
+
+  await maybeAutoSwap();
+}
+
+// THE single auto-swap decision + action site. Pure decision in
+// decideAutoAction; this thin wrapper supplies the live snapshot and invokes the
+// SHARED switch (performRoutingModeSwitch) — it never forks the switch logic.
+async function maybeAutoSwap() {
+  if (drAutoSwapInFlight) return;
+
+  const { isLocalUrlSafeForCache } = require('./dr-url-validator');
+  const localUrl = store.get('localUrl', defaultConfig.localUrl);
+
+  const decision = decideAutoAction({
+    enabled: store.get('drAutoFailover', defaultConfig.drAutoFailover) === true,
+    currentMode: store.get('routingMode', defaultConfig.routingMode),
+    cloudReachable: cloudReachability.reachable,
+    nasReachable: nasReachability.reachable,
+    localUrlValid: !!localUrl && isLocalUrlSafeForCache(localUrl),
+    cloudSustainedMs: cloudReachability.reachableSustainedMs(),
+    failbackHoldMs: FAILBACK_CLOUD_HOLD_MS,
+  });
+
+  if (decision.action === 'none') return;
+
+  drAutoSwapInFlight = true;
+  try {
+    await performRoutingModeSwitch(decision.mode, { trigger: 'auto' });
+  } finally {
+    drAutoSwapInFlight = false;
+  }
+}
+
+// Start the probe interval iff the flag is on. Idempotent. Resets the trackers
+// on (re)start so a fresh enable doesn't act on stale state.
+function startDrFailoverMonitor() {
+  if (drProbeInterval) return;
+  cloudReachability.reset();
+  nasReachability.reset();
+  drProbeInterval = setInterval(() => {
+    runDrProbeTick().catch((e) => console.error('DR probe tick failed:', e.message));
+  }, PROBE_INTERVAL_MS);
+}
+
+// Stop the probe interval and clear reachability state — NO probe traffic after.
+function stopDrFailoverMonitor() {
+  if (drProbeInterval) {
+    clearInterval(drProbeInterval);
+    drProbeInterval = null;
+  }
+  cloudReachability.reset();
+  nasReachability.reset();
+}
+
+// Reconcile the monitor with the current flag value. Called at startup and
+// whenever settings change.
+function syncDrFailoverMonitor() {
+  if (store.get('drAutoFailover', defaultConfig.drAutoFailover) === true) {
+    startDrFailoverMonitor();
+  } else {
+    stopDrFailoverMonitor();
+  }
+}
 
 // App event handlers. Skipped under the unit-test harness so requiring this
 // module to exercise the pure helpers (isNavigationAllowed) doesn't spin up a
@@ -947,6 +1126,10 @@ app.whenReady().then(() => {
   createMainWindow();
   createMenu();
   initializeSessionManager();
+
+  // DR M3: start the health monitor iff `drAutoFailover` is on (default OFF ⇒
+  // no probe traffic, no auto-swap — flag-off ≡ today).
+  syncDrFailoverMonitor();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -980,11 +1163,22 @@ app.on('before-quit', () => {
     sessionCleanupInterval = null;
   }
 
+  // DR M3: tear down the health probe timer.
+  stopDrFailoverMonitor();
+
   // Ensure cleanup happens before quit
   sessionManager.cleanup();
 });
 
 // Exported for unit testing of the will-navigate cross-target security
 // boundary. Not used by the running app (the listener calls the in-scope fn).
-module.exports = { isNavigationAllowed };
+// The DR monitor primitives are re-exported from their own modules so callers
+// can unit-test them without loading the Electron app shell.
+module.exports = {
+  isNavigationAllowed,
+  // Re-exports for convenience / discoverability (pure, tested in their own specs).
+  ReachabilityTracker,
+  decideAutoAction,
+  partitionFor,
+};
 
