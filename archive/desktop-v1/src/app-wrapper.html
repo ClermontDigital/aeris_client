@@ -1593,8 +1593,29 @@
                     } catch (error) {
                         console.log('Could not trigger logout:', error);
                     }
+
+                    // DR M3 (per-endpoint sessions): the Laravel /logout above
+                    // invalidates the SERVER session, but the local webview
+                    // partition's cookies/localStorage/IndexedDB (incl. any
+                    // "remember me" cookie) SURVIVE — the old clear-all-on-switch
+                    // that used to wipe them is gone. On a shared till that would
+                    // leave a logged-out cashier's session warm in the partition.
+                    // Honour the "explicit logout clears" promise: wipe THIS
+                    // endpoint's partition storage. Endpoint-scoped — a cloud
+                    // logout must NOT wipe a NAS session (per-endpoint isolation).
+                    // Deferred briefly so the Laravel logout POST + redirect can
+                    // settle first (clearing mid-POST could 419 the server logout;
+                    // the local wipe is the authoritative local sign-out either way).
+                    setTimeout(() => {
+                        window.electronAPI.getSettings()
+                            .then((settings) => {
+                                const mode = (settings && settings.routingMode) || 'cloud';
+                                return window.electronAPI.logoutEndpoint(mode);
+                            })
+                            .catch((error) => console.log('Could not clear endpoint partition on logout:', error));
+                    }, 800);
                     break;
-                    
+
                 case 'check-update':
                     handleUpdateCheck();
                     break;
