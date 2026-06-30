@@ -255,12 +255,46 @@ describe('decideRouting — M3-D auto-failover flag gate (Rule 4)', () => {
     expect(d.mode).toBe('cloud');
   });
 
-  it('flag ON ⇒ Rule 4 AUTO-APPLIES the on-prem swap (mode=local, no prompt)', () => {
-    const d = decideRouting(outage({autoFailoverEnabled: true}));
+  it('flag ON + cert VERIFIED ("trusted") ⇒ Rule 4 AUTO-APPLIES the on-prem swap (mode=local, no prompt)', () => {
+    const d = decideRouting(
+      outage({autoFailoverEnabled: true, nasCertTrust: 'trusted'}),
+    );
     expect(d.reason).toBe('outage-auto');
     expect(d.mode).toBe('local');
     expect(d.promptFailover).toBe(false);
     expect(d.deferred).toBe(false);
+  });
+
+  // BLOCKER-1 — the AUTO path must HARD-GATE on a verified cert. Until SPKI
+  // pinning ships, 'trusted' is unreachable ⇒ AUTO is inert and we fall back to
+  // the M2 PROMPT (never silently re-auth a cached password onto a non-pinned
+  // NAS). 'unverified' is the CURRENT reality, so this is the live behaviour.
+  it('flag ON but cert UNVERIFIED ⇒ falls back to the M2 PROMPT, NOT auto (BLOCKER-1)', () => {
+    const d = decideRouting(
+      outage({autoFailoverEnabled: true, nasCertTrust: 'unverified'}),
+    );
+    expect(d.reason).toBe('outage-prompt');
+    expect(d.promptFailover).toBe(true);
+    expect(d.mode).toBe('cloud'); // holds current — no silent auto-swap
+    expect(d.deferred).toBe(false);
+  });
+
+  it('flag ON but cert UNKNOWN ⇒ also falls back to the M2 PROMPT, not auto', () => {
+    const d = decideRouting(
+      outage({autoFailoverEnabled: true, nasCertTrust: 'unknown'}),
+    );
+    expect(d.reason).toBe('outage-prompt');
+    expect(d.promptFailover).toBe(true);
+    expect(d.mode).toBe('cloud');
+  });
+
+  it('flag OFF + cert "trusted" ⇒ STILL the M2 prompt (the flag alone, not cert, opts into AUTO)', () => {
+    const d = decideRouting(
+      outage({autoFailoverEnabled: false, nasCertTrust: 'trusted'}),
+    );
+    expect(d.reason).toBe('outage-prompt');
+    expect(d.promptFailover).toBe(true);
+    expect(d.mode).toBe('cloud');
   });
 
   it('flag ON but NAS cert MISMATCH ⇒ STILL fail-closed (never auto-swap to a spoofed host)', () => {
@@ -287,6 +321,48 @@ describe('decideRouting — M3-D auto-failover flag gate (Rule 4)', () => {
     expect(d.deferred).toBe(true);
     expect(d.reason).toBe('mid-transaction-defer');
     expect(d.mode).toBe('cloud'); // never switch mid-sale, even auto
+  });
+
+  // BLOCKER-2 — the auto-swap must defer on ANY in-flight write, not just a
+  // sale. With a verified cert + flag on (so the swap would otherwise auto-
+  // apply), each write signal independently holds the swap until it clears.
+  it('flag ON + verified ⇒ DEFERS the auto-swap while a STOCK adjust is in flight', () => {
+    const d = decideRouting(
+      outage({
+        autoFailoverEnabled: true,
+        nasCertTrust: 'trusted',
+        settlementOrPrintInFlight: true, // StockAdjustModal raises this
+      }),
+    );
+    expect(d.deferred).toBe(true);
+    expect(d.reason).toBe('mid-transaction-defer');
+    expect(d.mode).toBe('cloud');
+  });
+
+  it('flag ON + verified ⇒ DEFERS the auto-swap while a CUSTOMER write is in flight', () => {
+    const d = decideRouting(
+      outage({
+        autoFailoverEnabled: true,
+        nasCertTrust: 'trusted',
+        accountWriteInFlight: true, // CustomerEditScreen raises this
+      }),
+    );
+    expect(d.deferred).toBe(true);
+    expect(d.reason).toBe('mid-transaction-defer');
+    expect(d.mode).toBe('cloud');
+  });
+
+  it('flag ON + verified ⇒ DEFERS the auto-swap while a SETTLEMENT/print is in flight', () => {
+    const d = decideRouting(
+      outage({
+        autoFailoverEnabled: true,
+        nasCertTrust: 'trusted',
+        settlementOrPrintInFlight: true, // usePrintReceipt raises this
+      }),
+    );
+    expect(d.deferred).toBe(true);
+    expect(d.reason).toBe('mid-transaction-defer');
+    expect(d.mode).toBe('cloud');
   });
 
   it('flag ON but cloud still reachable ⇒ no failover at all (stays cloud)', () => {

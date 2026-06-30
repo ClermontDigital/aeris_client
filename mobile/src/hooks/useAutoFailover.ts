@@ -15,7 +15,9 @@ import {attemptSilentReauth} from '../services/silentReauth';
 //   - the cloud is unreachable per the cloudReachabilityStore hysteresis
 //     (UNREACHABLE_AFTER_FAILURES consecutive transport failures), AND
 //   - a validated NAS target is currently reachable (live health probe), AND
-//   - certTrust !== 'mismatch' (fail-closed — M-R3), AND
+//   - certTrust === 'trusted' (BLOCKER-1 cert hard-gate — the AUTO path silently
+//     re-auths a cached password, so it must NEVER target a non-pinned NAS;
+//     'trusted' is unreachable until SPKI pinning ships ⇒ AUTO is inert), AND
 //   - we are NOT mid-transaction (Rule 1 defers above auto-swap).
 // Flag OFF ⇒ the cascade returns 'outage-prompt' instead and this hook is a
 // no-op — flag-off is provably ≡ the M2 manual prompt path.
@@ -62,6 +64,13 @@ export function useAutoFailover(): void {
 
     const target = useDrStore.getState().cachedLocalUrl;
     if (!target) return; // nasUsable should guarantee this, but be safe.
+    // BLOCKER-1 belt-and-braces: never silently re-auth a CACHED password onto
+    // a NAS whose cert isn't fully verified. The cascade already requires
+    // certTrust==='trusted' to return 'outage-auto', but re-assert it here at
+    // the side-effecting boundary so a future cascade change can't regress the
+    // silent-reauth-on-unpinned-host invariant. Until SPKI pinning ships,
+    // 'trusted' is unreachable ⇒ this path is inert.
+    if (useDrStore.getState().certTrust !== 'trusted') return;
 
     swappedRef.current = true;
 
