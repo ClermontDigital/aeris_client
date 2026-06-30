@@ -287,7 +287,17 @@ export class RelayClient {
     mode: 'cloud' | 'local';
   }): Promise<boolean> {
     try {
-      await this.relayRpc(RELAY_ACTIONS.DR_PRESENCE, beat);
+      // Wire-vocabulary map (cross-repo contract): the client routing vocab is
+      // 'local' (on-LAN / Direct) vs 'cloud', but the Aeris2 dr.presence registry
+      // + validator speak 'direct' vs 'cloud' (DrPresenceRegistry::MODE_DIRECT,
+      // RoutingController validate `in:direct,cloud`). Without this map a real
+      // beat sends mode='local' → 422 → swallowed → the live dr_presence count
+      // never increments. Map at the boundary so the server accepts it.
+      const mode = beat.mode === 'local' ? 'direct' : 'cloud';
+      await this.relayRpc(RELAY_ACTIONS.DR_PRESENCE, {
+        device_id: beat.device_id,
+        mode,
+      });
       return true;
     } catch {
       // Silent no-op on ANY failure (404/405 flag-off, NOT_FOUND, transport).

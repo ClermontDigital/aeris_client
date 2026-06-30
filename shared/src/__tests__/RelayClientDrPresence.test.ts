@@ -43,13 +43,27 @@ describe('RelayClient.reportDrPresence — DR presence beat (M3)', () => {
     client.setAuthToken('user-bearer');
   });
 
-  it('returns true on a clean relay round-trip and posts dr.presence {device_id, mode}', async () => {
+  it('maps client mode "local" → server wire "direct" (cross-repo contract)', async () => {
+    // The Aeris2 dr.presence validator accepts in:direct,cloud and the registry
+    // keys on MODE_DIRECT='direct'. The client's routing vocab is 'local' (Direct/
+    // on-LAN). reportDrPresence MUST translate 'local'→'direct' on the wire, else
+    // every real beat 422s and the live dr_presence count stays 0.
     fetchMock.mockResolvedValueOnce(envelope({recorded: true}));
     await expect(client.reportDrPresence(beat)).resolves.toBe(true);
     const [, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(init?.body as string);
     expect(body.action).toBe('dr.presence');
-    expect(body.params).toEqual({device_id: 'dev-1', mode: 'local'});
+    expect(body.params).toEqual({device_id: 'dev-1', mode: 'direct'});
+  });
+
+  it('maps client mode "cloud" → server wire "cloud"', async () => {
+    fetchMock.mockResolvedValueOnce(envelope({recorded: true}));
+    await expect(
+      client.reportDrPresence({device_id: 'dev-1', mode: 'cloud'}),
+    ).resolves.toBe(true);
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init?.body as string);
+    expect(body.params).toEqual({device_id: 'dev-1', mode: 'cloud'});
   });
 
   it('best-effort: a deployment-404 (flag-off, no `dr` service) → false, never throws', async () => {
