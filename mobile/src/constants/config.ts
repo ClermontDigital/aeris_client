@@ -28,6 +28,10 @@ export const DEFAULT_CONFIG = {
   // re-authenticate after every app kill. Surfaced as a "Keep me signed in"
   // checkbox on LoginScreen.
   keepSignedIn: true,
+  // M3-D — automated client failover ships DARK. Default OFF on every build;
+  // never auto-enabled by any deployment (§3 guardrail 2). Flipping this on is
+  // a separate, proof-gated (§6) per-deployment event.
+  autoFailoverEnabled: false,
 };
 
 export const STORAGE_KEYS = {
