@@ -420,7 +420,7 @@ export default function CustomerDetailScreen() {
           }
           if (customer.last_purchase_date) {
             const formatted = formatShortDate(customer.last_purchase_date);
-            if (formatted !== '—') {
+            if (formatted !== '') {
               termRows.push({label: 'Last purchase', value: formatted});
             }
           }
@@ -626,7 +626,7 @@ const ContactRow: React.FC<{
             value ? styles.contactValueLink : styles.contactValueEmpty,
           ]}
           numberOfLines={1}>
-          {value || '—'}
+          {value || ''}
         </Text>
       </View>
       {onPress ? (

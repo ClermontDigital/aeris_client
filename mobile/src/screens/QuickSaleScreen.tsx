@@ -50,6 +50,7 @@ export default function QuickSaleScreen() {
     isSyncing,
     syncProducts,
     searchLocal,
+    lastSyncError,
   } = useProductCacheStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -456,6 +457,18 @@ export default function QuickSaleScreen() {
 
       {/* Category Pills */}
       {renderCategoryPills()}
+
+      {/* Catalogue-sync failure — surfaces the previously-silent lastSyncError
+          so the operator can see why the product grid + category pills went
+          empty. Tap to retry. Previously this was a console.warn only. */}
+      {lastSyncError && cachedProducts.length === 0 ? (
+        <View style={styles.errorWrap}>
+          <ErrorBanner
+            message={`Couldn't refresh catalogue: ${lastSyncError}`}
+            onRetry={() => void syncProducts()}
+          />
+        </View>
+      ) : null}
 
       {/* Error */}
       {error ? (
