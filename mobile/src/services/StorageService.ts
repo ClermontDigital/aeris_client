@@ -18,12 +18,29 @@ function xorBytes(input: Uint8Array, key: string): Uint8Array {
   return result;
 }
 
+// Convert a byte array to a Latin1 string in fixed-size chunks. The obvious
+// `String.fromCharCode(...bytes)` spread blows the native call stack for any
+// payload past ~10K bytes on Hermes — which is exactly what happens the moment
+// the product catalogue grows into the hundreds. Symptom is a silent
+// syncProducts failure ("Maximum call stack size exceeded"), which then reads
+// as "POS category pills empty" + "Items Low/Out counters stuck". Chunking at
+// 8192 bytes stays well under the arg-count limit while still being fast.
+const LATIN1_CHUNK = 8192;
+function bytesToLatin1(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += LATIN1_CHUNK) {
+    const chunk = bytes.subarray(i, i + LATIN1_CHUNK);
+    out += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return out;
+}
+
 function encryptValue(value: string, key: string): string {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(value);
   const xored = xorBytes(bytes, key);
-  // Convert bytes to Latin1 string for btoa (all values 0-255, safe)
-  return btoa(String.fromCharCode(...xored));
+  // Convert bytes to Latin1 string for btoa (all values 0-255, safe).
+  return btoa(bytesToLatin1(xored));
 }
 
 function decryptValue(encoded: string, key: string): string {
