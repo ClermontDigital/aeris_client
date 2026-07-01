@@ -9,6 +9,12 @@ export const RELAY_ACTIONS = {
   PRODUCTS_BARCODE: 'products.barcode',
   PRODUCTS_DETAIL: 'products.detail',
   PRODUCTS_CATEGORIES: 'products.categories',
+  // Suppliers list — the mobile item-edit "supplier" picker feeds off this.
+  // Aeris2 exposes GET /api/v1/products/suppliers (see routes/api.php:97).
+  // Marketplace dispatcher may not route this yet — RelayClient.getSuppliers
+  // returns [] on 404 / not_found so the picker gracefully degrades to
+  // "supplier selection unavailable" until the gateway ships the mapping.
+  PRODUCTS_SUPPLIERS: 'products.suppliers',
   POS_PAYMENT_METHODS: 'pos.payment-methods',
   SALE_CREATE: 'sale.create',
   TRANSACTIONS_LIST: 'transactions.list',

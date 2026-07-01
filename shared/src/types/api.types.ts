@@ -58,6 +58,10 @@ export interface Product {
   // hold opaque proxy URLs. Optional so older/normalized shapes stay valid.
   featured_image?: string | null;
   gallery_images?: string[];
+  // Supplier the product belongs to. Optional because older deployments +
+  // ProductResource variants that don't eager-load the relation omit it;
+  // ProductEditScreen's supplier picker falls back to "None" when null.
+  supplier_id?: number | null;
   is_active: boolean;
 }
 
@@ -90,6 +94,16 @@ export interface ProductVariant {
 }
 
 export interface Category {
+  id: number;
+  name: string;
+}
+
+// Aeris2 exposes suppliers via ProductController::getSuppliers, which returns
+// `{id, name}` where `name` is aliased from the Supplier model's
+// `company_name` server-side (ProductController.php:643-651). Keeping the
+// wire shape tight — id + name — avoids drift the peer review flagged when
+// the client typed a `company_name` field the server never sends.
+export interface Supplier {
   id: number;
   name: string;
 }

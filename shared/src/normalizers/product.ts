@@ -51,6 +51,17 @@ export function normalizeProduct(input: unknown): Product {
         (v): v is string => typeof v === 'string' && v !== '',
       )
     : [];
+  // Supplier is optional on the wire. ProductResource may surface it as a
+  // flat `supplier_id`, or nested under `supplier: {id, ...}` when the
+  // relation is loaded — read both. Falls to undefined when neither is
+  // present so the ProductEdit picker treats it as "unspecified".
+  const supplierRaw = raw.supplier as Record<string, unknown> | null | undefined;
+  const supplierId =
+    raw.supplier_id !== undefined && raw.supplier_id !== null
+      ? asNumber(raw.supplier_id)
+      : supplierRaw && supplierRaw.id !== undefined && supplierRaw.id !== null
+        ? asNumber(supplierRaw.id)
+        : undefined;
   return {
     id: asNumber(raw.id),
     name: asString(raw.name),
@@ -69,6 +80,7 @@ export function normalizeProduct(input: unknown): Product {
         : null,
     featured_image: featuredImage,
     gallery_images: galleryImages,
+    ...(supplierId !== undefined ? {supplier_id: supplierId} : {}),
     is_active: isActive,
   };
 }
@@ -85,17 +97,22 @@ export function normalizeProductDetail(input: unknown): ProductDetail {
   const stockLevels = Array.isArray(raw.stock_levels)
     ? (raw.stock_levels as ProductDetail['stock_levels'])
     : [];
-  // Pull track_stock from the server when it's actually included on the
-  // wire (Aeris2 ProductResource exposes it as a boolean). Server may
-  // also send numeric 1/0 (older deployments / direct DB pass-through) —
-  // coerce via Boolean() so both shapes land as a real bool. Leave
-  // undefined when the server omits it so ProductEdit's stock-heuristic
-  // fallback can run instead of mis-claiming `false`.
+  // Pull the "does this item track inventory?" flag from the wire.
+  //
+  // Aeris2's Product model has BOTH a `track_stock` and a `track_inventory`
+  // column (Product.php:39,40,116,117); the ProductResource sometimes
+  // exposes one, the other, both, or (worst case) neither. When neither is
+  // present the caller must NOT infer `false` from a stock heuristic —
+  // sold-out-but-tracked is a real state and the heuristic was flipping
+  // that toggle off incorrectly. Server model default is `true`
+  // (Product.php:90); leave undefined here and let ProductEdit fall back
+  // to `true` explicitly rather than the stock-derived heuristic.
+  const rawTrack = raw.track_stock ?? raw.track_inventory;
   const trackStock =
-    typeof raw.track_stock === 'boolean'
-      ? raw.track_stock
-      : typeof raw.track_stock === 'number'
-        ? Boolean(raw.track_stock)
+    typeof rawTrack === 'boolean'
+      ? rawTrack
+      : typeof rawTrack === 'number'
+        ? Boolean(rawTrack)
         : undefined;
   return {
     ...base,
