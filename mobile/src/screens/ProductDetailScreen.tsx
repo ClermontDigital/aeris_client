@@ -326,7 +326,7 @@ export default function ProductDetailScreen() {
                     color={COLORS.textMuted}
                     style={styles.metaIcon}
                   />
-                  <Text style={styles.meta}>{product.sku || '—'}</Text>
+                  <Text style={styles.meta}>{product.sku || ''}</Text>
                 </View>
                 {/* Barcode number intentionally omitted here — the actual
                     rendered barcode below already exposes the value, so
@@ -533,7 +533,7 @@ export default function ProductDetailScreen() {
             {recentSales.map((s, idx) => {
               const ts = new Date(s.created_at);
               const dateStr = isNaN(ts.getTime())
-                ? '—'
+                ? ''
                 : ts.toLocaleDateString(undefined, {
                     month: 'short',
                     day: 'numeric',
@@ -613,7 +613,7 @@ export default function ProductDetailScreen() {
                 ]}>
                 <View style={styles.variantLeft}>
                   <Text style={styles.variantName}>{v.name}</Text>
-                  <Text style={styles.variantSku}>{v.sku || '—'}</Text>
+                  <Text style={styles.variantSku}>{v.sku || ''}</Text>
                 </View>
                 <View style={styles.variantRight}>
                   <Text style={styles.variantPrice}>

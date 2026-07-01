@@ -139,7 +139,7 @@ export function ProductDetailScreen(): React.ReactElement {
           >
             <h2 style={{ margin: 0, fontSize: FONT_SIZE.lg, color: COLORS.text }}>Details</h2>
             <Field label="SKU" value={data.sku} />
-            <Field label="Barcode" value={data.barcode ?? '—'} />
+            <Field label="Barcode" value={data.barcode ?? ''} />
             <Field label="Stock on hand" value={formatNumber(data.stock_on_hand)} />
             <Field label="Status" value={data.is_active ? 'Active' : 'Inactive'} />
           </section>

@@ -154,7 +154,7 @@ const CustomersScreen: React.FC = () => {
           {item.name || '(unnamed)'}
         </Text>
         <Text style={styles.rowMeta} numberOfLines={1}>
-          {[item.email, item.phone].filter(Boolean).join(' · ') || '—'}
+          {[item.email, item.phone].filter(Boolean).join(' · ') || ''}
         </Text>
       </View>
       <View style={styles.rowRight}>

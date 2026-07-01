@@ -112,7 +112,7 @@ export function ModeDetailSheet({visible, onClose}: Props): React.ReactElement {
           <EyebrowLabel>On-prem server</EyebrowLabel>
           {provisioned ? (
             <>
-              <Row label="Address" value={maskedUrl ?? '—'} />
+              <Row label="Address" value={maskedUrl ?? ''} />
               <Row label="Last sync" value={formatLastSync(lastSyncAt)} />
               <Row
                 label="Identity"

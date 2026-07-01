@@ -107,7 +107,7 @@ export default function CustomerPickerScreen() {
           {item.name || '(unnamed)'}
         </Text>
         <Text style={styles.rowMeta} numberOfLines={1}>
-          {[item.email, item.phone].filter(Boolean).join(' · ') || '—'}
+          {[item.email, item.phone].filter(Boolean).join(' · ') || ''}
         </Text>
       </View>
       <Icon
