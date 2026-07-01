@@ -40,6 +40,7 @@ import type {
   ProductCreateInput,
   ProductDetail,
   ProductUpdateInput,
+  Supplier,
 } from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 
@@ -66,6 +67,7 @@ const EMPTY_FORM = {
   trackStock: true,
   stockOnHand: '0',
   categoryId: null as number | null,
+  supplierId: null as number | null,
 };
 
 type FormState = typeof EMPTY_FORM;
@@ -156,6 +158,12 @@ const ProductEditScreen: React.FC = () => {
     null,
   );
   const [categories, setCategories] = useState<Category[]>([]);
+  // Suppliers list — fetched in parallel with categories on mount. Empty when
+  // the deployment (or the marketplace dispatcher) hasn't wired the action;
+  // the picker gracefully hides its options + shows a "not available" hint
+  // rather than an error state.
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
   // Current product image URL in edit mode. Hydrated from the loaded detail
   // and updated in place when ProductImagePicker reports a successful upload,
   // so the card reflects the new photo without waiting for a re-fetch.
@@ -212,14 +220,19 @@ const ProductEditScreen: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const [cats, detail] = await Promise.all([
+        const [cats, sups, detail] = await Promise.all([
           ApiClient.getCategories(),
+          // getSuppliers swallows NOT_FOUND → []; treat any other throw as a
+          // non-blocking soft-fail so the form still loads (categories are the
+          // required field, suppliers are optional).
+          ApiClient.getSuppliers().catch(() => [] as Supplier[]),
           isEdit && productId !== null
             ? ApiClient.getProductDetail(productId)
             : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setCategories(cats);
+        setSuppliers(sups);
         if (detail) {
           setOriginalDetail(detail);
           setCurrentImageUrl(detail.featured_image ?? detail.image_url ?? null);
@@ -231,17 +244,25 @@ const ProductEditScreen: React.FC = () => {
             costPriceDollars: centsToDollarsString(detail.cost_cents),
             taxRate: String(detail.tax_rate ?? 10),
             // Prefer the server's own track_stock flag when present
-            // (ProductResource exposes it as a boolean). Fall back to a
-            // stock-derived heuristic on older deployments that omit the
-            // field. The old "infer from stock" branch was incorrectly
-            // turning the toggle OFF for products where tracking was on
-            // but stock currently sat at zero (e.g. all sold through).
+            // (ProductResource may expose track_stock OR track_inventory;
+            // the shared normalizer collapses both to one boolean). When
+            // NEITHER is present (some ProductResource variants omit both)
+            // default to `true` — this mirrors the Aeris2 Product model
+            // default (Product.php:90). The previous "sold-out ⇒ off"
+            // heuristic was flipping the toggle off for legitimately-
+            // tracked-but-sold-out items.
             trackStock:
-              typeof detail.track_stock === 'boolean'
-                ? detail.track_stock
-                : detail.stock_on_hand > 0 || detail.stock_levels.length > 0,
+              typeof detail.track_stock === 'boolean' ? detail.track_stock : true,
             stockOnHand: String(detail.stock_on_hand ?? 0),
             categoryId: detail.category_id,
+            // supplier_id on the wire (nullable). If the loaded product has
+            // a supplier the picker hydrates with it selected; otherwise the
+            // "None" slot is picked.
+            supplierId:
+              typeof (detail as {supplier_id?: number | null}).supplier_id ===
+              'number'
+                ? (detail as {supplier_id: number}).supplier_id
+                : null,
           });
         }
       } catch (e) {
@@ -262,11 +283,13 @@ const ProductEditScreen: React.FC = () => {
   // attempt populates the errors map.
   const isValid = useMemo(() => {
     if (!form.name.trim()) return false;
-    // SKU is NEVER validated user-side. On EDIT it's read-only (hydrated
-    // from server). On CREATE it's auto-generated client-side from the
-    // barcode (or a short UUID) at submit time — the user never types
-    // an SKU, so the "already in use" server error class can't be
-    // triggered from this form.
+    // SKU is now editable in both modes.
+    //  - EDIT: the field is required — the server rejects an empty SKU and
+    //    a blank one would break search / reports / receipts.
+    //  - CREATE: empty is fine; the save flow auto-generates one at submit
+    //    time (barcode-derived or UUID), so the button can enable without
+    //    the user typing anything into SKU.
+    if (isEdit && !form.sku.trim()) return false;
     const cents = dollarsToCents(form.basePriceDollars);
     if (cents === null || cents <= 0) return false;
     // category_id is required server-side (Rule::exists on the FK). The
@@ -283,7 +306,9 @@ const ProductEditScreen: React.FC = () => {
   const runValidation = useCallback((): boolean => {
     const errs: typeof fieldErrors = {};
     if (!form.name.trim()) errs.name = 'Name is required';
-    // SKU validation removed — see isValid above.
+    // SKU validation — required on edit (server rejects empty); optional on
+    // create (auto-generated at submit time).
+    if (isEdit && !form.sku.trim()) errs.sku = 'SKU is required';
     const cents = dollarsToCents(form.basePriceDollars);
     if (cents === null) errs.basePrice = 'Price is required';
     else if (cents <= 0) errs.basePrice = 'Price must be greater than zero';
@@ -318,12 +343,30 @@ const ProductEditScreen: React.FC = () => {
     // Client-side pre-check against the cached catalog. The server is
     // the source of truth, but the barcode guard turns a confusing
     // server-side "already in use" round-trip into an immediate, clearly
-    // labelled error. SKU is NEVER pre-checked here because:
-    //  - CREATE: the SKU is auto-generated below with its own cache
-    //    collision retry (see `resolvedSku` block in handleSubmit).
-    //  - EDIT: SKU is read-only, never changed from the loaded value,
-    //    and never sent in the update patch. There's nothing to clash
-    //    against.
+    // labelled error. SKU is now editable in both modes and gets its own
+    // pre-check when the user has actually changed it:
+    //  - CREATE user-typed: checked below in the `resolvedSku` block.
+    //  - EDIT: check here when the SKU differs from the loaded value.
+    if (isEdit && originalDetail) {
+      const trimmedSku = form.sku.trim();
+      const origSku = (originalDetail.sku ?? '').trim();
+      if (trimmedSku && trimmedSku !== origSku) {
+        const skuClash = cachedProducts.some(
+          p =>
+            typeof p?.sku === 'string' &&
+            p.sku.toLowerCase() === trimmedSku.toLowerCase() &&
+            p.id !== productId,
+        );
+        if (skuClash) {
+          haptics.error();
+          setFieldErrors(p => ({
+            ...p,
+            sku: 'This SKU is already in use on another item.',
+          }));
+          return;
+        }
+      }
+    }
     const trimmedBarcode = form.barcode.trim();
     const barcodeUnchanged =
       isEdit && originalDetail
@@ -371,33 +414,55 @@ const ProductEditScreen: React.FC = () => {
       //  - EDIT: form.sku is the loaded server value (input field is
       //    read-only). Used for the diff comparison; never sent in the
       //    update patch (server validator misbehaves on update).
-      //  - CREATE: auto-generate client-side. Prefer barcode-derived
-      //    (stable + identifies the product), fall back to a short UUID
-      //    suffix. Loop-with-collision-check against the cached catalog
-      //    to avoid a doomed round-trip when the derived value already
-      //    exists. ProductCreateInput.sku is required by the server.
+      //  - CREATE: prefer the user-typed value if they entered one (with a
+      //    cache-collision pre-check that surfaces a clear field-level error
+      //    instead of a confusing server-side "already in use"). Otherwise
+      //    auto-generate — prefer barcode-derived (stable + identifies the
+      //    product), fall back to a short UUID suffix, with cache-clash
+      //    retry so a duplicate-derived value doesn't ship. ProductCreateInput.sku
+      //    is required by the server.
       let resolvedSku = form.sku.trim();
       if (!isEdit) {
-        let candidate = generateAutoSku(form.barcode);
-        let attempts = 0;
-        // Walk the cache for an unused SKU. UUID collisions are
-        // astronomically rare; barcode-derived collisions happen when
-        // the same physical item is re-added (which is the user's
-        // problem to resolve via the existing item's edit screen, but
-        // we still don't want to crash the form). Cap at 5 retries
-        // before giving up and shipping the candidate to the server.
-        while (
-          attempts < 5 &&
-          cachedProducts.some(
+        if (resolvedSku) {
+          // User typed one. Pre-check against the cached catalog so a clash
+          // surfaces as a field-level error rather than a server round-trip.
+          const skuClash = cachedProducts.some(
             p =>
               typeof p?.sku === 'string' &&
-              p.sku.toLowerCase() === candidate.toLowerCase(),
-          )
-        ) {
-          attempts += 1;
-          candidate = generateAutoSku(undefined); // force UUID path on retry
+              p.sku.toLowerCase() === resolvedSku.toLowerCase(),
+          );
+          if (skuClash) {
+            haptics.error();
+            setFieldErrors(p => ({
+              ...p,
+              sku: 'This SKU is already in use. Enter a different one, or leave blank to auto-generate.',
+            }));
+            submitLockRef.current = false;
+            setSaving(false);
+            useTransactionActivityStore
+              .getState()
+              .setSettlementOrPrintInFlight(false);
+            return;
+          }
+        } else {
+          // Auto-generate. Walk the cache for an unused derived value. UUID
+          // collisions are astronomically rare; barcode-derived collisions
+          // happen when the same physical item is re-added. Cap at 5 retries.
+          let candidate = generateAutoSku(form.barcode);
+          let attempts = 0;
+          while (
+            attempts < 5 &&
+            cachedProducts.some(
+              p =>
+                typeof p?.sku === 'string' &&
+                p.sku.toLowerCase() === candidate.toLowerCase(),
+            )
+          ) {
+            attempts += 1;
+            candidate = generateAutoSku(undefined); // force UUID path on retry
+          }
+          resolvedSku = candidate;
         }
-        resolvedSku = candidate;
       }
 
       const input: ProductCreateInput = {
@@ -408,6 +473,14 @@ const ProductEditScreen: React.FC = () => {
         ...(form.barcode.trim() ? {barcode: form.barcode.trim()} : {}),
         ...(costCents !== null ? {cost_price_cents: costCents} : {}),
         ...(Number.isFinite(taxRate) ? {tax_rate: taxRate} : {}),
+        // supplier_id is optional. Send explicit null when the user cleared
+        // it (edit flow) so the server unsets the relation; omit entirely on
+        // create when "None" is selected so the server default applies.
+        ...(form.supplierId !== null
+          ? {supplier_id: form.supplierId}
+          : isEdit && originalDetail && originalDetail.supplier_id != null
+            ? {supplier_id: null}
+            : {}),
         track_stock: trackStock,
         ...(!isEdit && trackStock && !Number.isNaN(stockQty)
           ? {stock_quantity: stockQty}
@@ -428,13 +501,15 @@ const ProductEditScreen: React.FC = () => {
         if (originalDetail) {
           const orig = originalDetail;
           if (input.name !== (orig.name ?? '').trim()) patch.name = input.name;
-          // SKU is never sent in an update patch. SKUs are product-specific
-          // identifiers managed by the core system — the in-app UI renders
-          // the SKU field read-only on edit (see the SKU input above), so
-          // by definition it can't have been edited here. Omitting it also
-          // sidesteps the known server-side `unique:products,sku`
-          // validator that doesn't reliably exclude the current row on
-          // update.
+          // SKU is editable on edit. Include it in the patch ONLY when the
+          // user actually changed it — sending an unchanged SKU trips the
+          // server's `unique:products,sku` validator (which doesn't reliably
+          // exclude the current row on update) with a false-positive 422.
+          // Keeping the "only-when-changed" rule sidesteps that bug for the
+          // common "I'm only changing the barcode" workflow.
+          if (input.sku !== (orig.sku ?? '').trim()) {
+            patch.sku = input.sku;
+          }
           if (input.category_id !== orig.category_id) {
             patch.category_id = input.category_id;
           }
@@ -457,6 +532,10 @@ const ProductEditScreen: React.FC = () => {
             input.tax_rate !== orig.tax_rate
           ) {
             patch.tax_rate = input.tax_rate;
+          }
+          const origSupplierId = orig.supplier_id ?? null;
+          if (form.supplierId !== origSupplierId) {
+            patch.supplier_id = form.supplierId;
           }
         } else {
           // No baseline — defensive fall-through to the old "send everything"
@@ -488,15 +567,25 @@ const ProductEditScreen: React.FC = () => {
       haptics.error();
       const msg = e instanceof Error ? e.message : 'Failed to save item';
       const lower = msg.toLowerCase();
-      // Smart routing: if the server complains about a field we did NOT
-      // send in the patch, the message is bogus (server-side validator
-      // bug — known to mislabel a BARCODE conflict as an SKU error on
-      // update). Reframe so the user understands the actual likely
-      // cause is the field they just edited.
-      const sentSku = lastSentPatchRef.current?.sku !== undefined;
+      // Smart routing:
+      //  - CREATE always sends SKU (required by the server). A server-side
+      //    422 sku.unique here means our cache pre-check missed a race
+      //    (two devices creating concurrently) — surface as a field-level
+      //    error on the SKU input so the user can fix it inline.
+      //  - EDIT sends SKU only when the user actually changed it. If the
+      //    server complains about SKU but we DIDN'T send one, the message is
+      //    bogus (historic server-side validator bug that mislabels a
+      //    BARCODE conflict as an SKU error on update) — reframe as barcode.
+      const sentSku = !isEdit || lastSentPatchRef.current?.sku !== undefined;
       const sentBarcode = lastSentPatchRef.current?.barcode !== undefined;
       const looksLikeSkuError = lower.includes('sku');
       const looksLikeBarcodeError = lower.includes('barcode');
+      // "Already in use" / "unique" / "already been taken" are the common
+      // 422 phrasings across the Aeris2 validators.
+      const looksLikeUniqueViolation =
+        lower.includes('already') ||
+        lower.includes('unique') ||
+        lower.includes('taken');
       if (looksLikeSkuError && !sentSku && sentBarcode) {
         // Server said "SKU" but we sent a barcode-only patch. Treat as
         // a barcode conflict (the actual likely cause) and show under
@@ -505,7 +594,14 @@ const ProductEditScreen: React.FC = () => {
           'That barcode is already in use on another item. Try a different barcode or open the existing item.',
         );
       } else if (looksLikeSkuError && sentSku) {
-        setFieldErrors(p => ({...p, sku: msg}));
+        // Prefer the friendlier phrasing on a unique-violation flavour;
+        // otherwise pass the server text through.
+        setFieldErrors(p => ({
+          ...p,
+          sku: looksLikeUniqueViolation
+            ? 'This SKU is already in use. Enter a different one, or leave blank to auto-generate.'
+            : msg,
+        }));
       } else if (looksLikeBarcodeError) {
         setError(msg);
       } else {
@@ -543,6 +639,19 @@ const ProductEditScreen: React.FC = () => {
     form.categoryId === null
       ? 'None'
       : categories.find(c => c.id === form.categoryId)?.name ?? 'Unknown';
+
+  // Server aliases company_name → name on the wire, so `s.name` IS the
+  // display label — no fallback chain needed.
+  const supplierLabel = (s: Supplier): string => s.name;
+  const selectedSupplierName =
+    form.supplierId === null
+      ? 'None'
+      : supplierLabel(
+          suppliers.find(s => s.id === form.supplierId) ?? {
+            id: 0,
+            name: 'Unknown',
+          },
+        );
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
@@ -587,23 +696,32 @@ const ProductEditScreen: React.FC = () => {
             <View style={styles.field}>
               <Text style={styles.label}>SKU</Text>
               <TextInput
-                style={[styles.input, styles.inputReadOnly]}
+                style={styles.input}
                 value={form.sku}
-                editable={false}
+                onChangeText={t => {
+                  set('sku', t);
+                  if (fieldErrors.sku)
+                    setFieldErrors(p => ({...p, sku: undefined}));
+                }}
                 placeholder={
-                  isEdit ? '' : 'Auto-generated when saved'
+                  isEdit ? '' : 'Optional — leave blank to auto-generate'
                 }
                 placeholderTextColor={COLORS.inputPlaceholder}
+                autoCapitalize="none"
+                autoCorrect={false}
                 accessibilityLabel={
                   isEdit
-                    ? `SKU ${form.sku}. Read-only — set by the system.`
-                    : 'SKU. Auto-generated when saved.'
+                    ? `SKU ${form.sku}. Editable.`
+                    : 'SKU. Optional — leave blank to auto-generate.'
                 }
               />
+              {fieldErrors.sku ? (
+                <Text style={styles.fieldError}>{fieldErrors.sku}</Text>
+              ) : null}
               <Text style={styles.hint}>
                 {isEdit
-                  ? "SKU is set by the system and can't be changed from the app."
-                  : "SKU is generated automatically when the item is saved."}
+                  ? 'SKU is the item identifier used in reports and receipts.'
+                  : 'Enter your own SKU, or leave blank and one will be generated when you save.'}
               </Text>
             </View>
             <View style={styles.field}>
@@ -876,6 +994,71 @@ const ProductEditScreen: React.FC = () => {
             {fieldErrors.category ? (
               <Text style={styles.fieldError}>{fieldErrors.category}</Text>
             ) : null}
+          </View>
+
+          <View style={styles.section}>
+            <EyebrowLabel>Supplier</EyebrowLabel>
+            {suppliers.length > 0 ? (
+              <>
+                <TouchableOpacity
+                  style={styles.pickerRow}
+                  onPress={() => {
+                    haptics.light();
+                    setSupplierPickerOpen(o => !o);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Supplier: ${selectedSupplierName}. Tap to change.`}>
+                  <Text style={styles.pickerValue}>{selectedSupplierName}</Text>
+                  <Icon
+                    name={supplierPickerOpen ? 'chevron-down' : 'chevron-forward'}
+                    size={18}
+                    color={COLORS.textMuted}
+                  />
+                </TouchableOpacity>
+                {supplierPickerOpen ? (
+                  <View style={styles.pickerList}>
+                    <TouchableOpacity
+                      style={[
+                        styles.pickerItem,
+                        form.supplierId === null && styles.pickerItemActive,
+                      ]}
+                      onPress={() => {
+                        haptics.selection();
+                        set('supplierId', null);
+                        setSupplierPickerOpen(false);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="No supplier">
+                      <Text style={styles.pickerItemText}>None</Text>
+                    </TouchableOpacity>
+                    {suppliers.map(s => (
+                      <TouchableOpacity
+                        key={s.id}
+                        style={[
+                          styles.pickerItem,
+                          form.supplierId === s.id && styles.pickerItemActive,
+                        ]}
+                        onPress={() => {
+                          haptics.selection();
+                          set('supplierId', s.id);
+                          setSupplierPickerOpen(false);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Supplier ${supplierLabel(s)}`}>
+                        <Text style={styles.pickerItemText}>
+                          {supplierLabel(s)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <Text style={styles.hint}>
+                No suppliers to choose from — you can add one in Aeris and it
+                will appear here.
+              </Text>
+            )}
           </View>
 
           <View style={styles.actions}>

@@ -11,6 +11,11 @@ export const API_ENDPOINTS = {
   PRODUCTS_SEARCH: '/api/v1/products/search',
   PRODUCTS_BARCODE: '/api/v1/products/barcode',
   PRODUCTS_CATEGORIES: '/api/v1/products/categories',
+  // Aeris2's suppliers list (routes/api.php:97 → ProductController::getSuppliers).
+  // DirectClient talks straight to the deployment, so this always works when
+  // available; the relay path (RelayClient.getSuppliers) swallows NOT_FOUND
+  // when the marketplace dispatcher hasn't wired the action yet.
+  PRODUCTS_SUPPLIERS: '/api/v1/products/suppliers',
   SALES_LIST: '/api/v1/sales',
   CUSTOMERS_LIST: '/api/v1/customers',
   CUSTOMERS_SEARCH: '/api/v1/customers/search',
