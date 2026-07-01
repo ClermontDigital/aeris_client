@@ -20,7 +20,7 @@ import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constan
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
-import type {ProductDetail, Sale} from '../types/api.types';
+import type {ProductDetail, Sale, Supplier} from '../types/api.types';
 import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
 import {useHeaderBackStore} from '../stores/headerBackStore';
@@ -68,6 +68,29 @@ export default function ProductDetailScreen() {
   // request to "show recent sales for this item". The section copy says
   // "Recent transactions" (not "for this item") to stay honest.
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
+  // Suppliers list — fetched once so we can render a name pill next to the
+  // category pill when the product has a supplier_id. Best-effort: if the
+  // marketplace dispatcher hasn't wired products.suppliers yet the list
+  // stays empty and the supplier pill just doesn't render (no error state).
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await ApiClient.getSuppliers();
+        if (!cancelled) setSuppliers(list);
+      } catch {
+        // Non-blocking; the pill just doesn't render.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const supplierName =
+    typeof product?.supplier_id === 'number'
+      ? suppliers.find(s => s.id === product.supplier_id)?.name ?? null
+      : null;
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -332,6 +355,17 @@ export default function ProductDetailScreen() {
                 <Text style={styles.categoryPillText}>
                   {product.category_name}
                 </Text>
+              </View>
+            ) : null}
+            {supplierName ? (
+              <View style={styles.categoryPill}>
+                <Icon
+                  name="cube-outline"
+                  size={12}
+                  color={COLORS.text}
+                  style={styles.metaIcon}
+                />
+                <Text style={styles.categoryPillText}>{supplierName}</Text>
               </View>
             ) : null}
             <View style={styles.stockPill}>
