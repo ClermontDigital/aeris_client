@@ -319,7 +319,7 @@ const ItemsScreen: React.FC = () => {
           {item.name}
         </Text>
         <Text style={styles.rowMeta}>
-          {item.sku || '—'}
+          {item.sku || ''}
           {item.category_name ? ` · ${item.category_name}` : ''}
         </Text>
       </View>
@@ -431,9 +431,9 @@ const ItemsScreen: React.FC = () => {
 
       {(() => {
         const totalStr = String(stats.total);
-        const lowStr = stats.lowStock === null ? '—' : String(stats.lowStock);
+        const lowStr = stats.lowStock == null ? '' : String(stats.lowStock);
         const outStr =
-          stats.outOfStock === null ? '—' : String(stats.outOfStock);
+          stats.outOfStock == null ? '' : String(stats.outOfStock);
         const fs = pickStatRowFontSize([totalStr, lowStr, outStr]);
         return (
           <View style={[styles.statsStrip, tabletColumnCap]}>

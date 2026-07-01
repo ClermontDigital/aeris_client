@@ -142,9 +142,9 @@ export function CustomerDetailScreen(): React.ReactElement {
             <h2 style={{ margin: 0, marginBottom: SPACING.sm, fontSize: FONT_SIZE.lg, color: COLORS.text }}>
               Contact
             </h2>
-            <Field label="Email" value={data.email ?? '—'} />
-            <Field label="Phone" value={data.phone ?? '—'} />
-            <Field label="Mobile" value={data.mobile ?? '—'} />
+            <Field label="Email" value={data.email ?? ''} />
+            <Field label="Phone" value={data.phone ?? ''} />
+            <Field label="Mobile" value={data.mobile ?? ''} />
           </section>
 
           {data.addresses && data.addresses.length > 0 ? (

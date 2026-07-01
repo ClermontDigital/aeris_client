@@ -14,6 +14,49 @@ import { formatCents, formatNumber } from '../utils/format';
 
 const PER_PAGE = 20;
 
+// Table column header with click-to-sort + active-direction indicator.
+// Preserves the alignment convention (numeric columns render right-aligned
+// with the arrow rendered inline after the label).
+function SortableHeader({
+  label,
+  align,
+  active,
+  dir,
+  onClick,
+}: {
+  label: string;
+  align: 'left' | 'right';
+  active: boolean;
+  dir: 'asc' | 'desc';
+  onClick: () => void;
+}): React.ReactElement {
+  const arrow = active ? (dir === 'asc' ? ' ↑' : ' ↓') : '';
+  return (
+    <th
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      style={{
+        textAlign: align,
+        fontSize: FONT_SIZE.sm,
+        cursor: 'pointer',
+        userSelect: 'none',
+        color: active ? COLORS.crimson : COLORS.text,
+      }}
+    >
+      {label}
+      {arrow}
+    </th>
+  );
+}
+
 function ProductThumb({ url, alt }: { url: string | null; alt: string }): React.ReactElement {
   if (url) {
     return (
@@ -68,6 +111,38 @@ export function ItemsScreen(): React.ReactElement {
   const meta = data?.meta;
   const lastPage = meta?.last_page ?? 1;
   const isEmpty = !loading && products.length === 0 && !errorCode;
+
+  // Column sort state. Client-side sort over the visible page — the server
+  // paginates by name by default; this lets the operator reorder rows in-place
+  // without re-fetching. Reset when the query params change so pagination /
+  // search don't carry a stale sort into a fresh dataset.
+  type SortKey = 'name' | 'sku' | 'price_cents' | 'stock_on_hand';
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const toggleSort = (key: SortKey): void => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+  const sortedProducts = useMemo(() => {
+    if (!sortKey) return products;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const copy = [...products];
+    copy.sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return av.localeCompare(bv) * dir;
+      }
+      const an = typeof av === 'number' ? av : 0;
+      const bn = typeof bv === 'number' ? bv : 0;
+      return (an - bn) * dir;
+    });
+    return copy;
+  }, [products, sortKey, sortDir]);
 
   // Stat-strip metrics derived from the visible page; revisit when the
   // relay surfaces aggregated meta in B3.
@@ -152,14 +227,38 @@ export function ItemsScreen(): React.ReactElement {
             <thead>
               <tr style={{ background: COLORS.creamLight, color: COLORS.text }}>
                 <th style={{ width: 56, textAlign: 'left' }} aria-label="Image" />
-                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>Name</th>
-                <th style={{ textAlign: 'left', fontSize: FONT_SIZE.sm }}>SKU</th>
-                <th style={{ textAlign: 'right', fontSize: FONT_SIZE.sm }}>Price</th>
-                <th style={{ textAlign: 'right', fontSize: FONT_SIZE.sm }}>Stock</th>
+                <SortableHeader
+                  label="Name"
+                  align="left"
+                  active={sortKey === 'name'}
+                  dir={sortDir}
+                  onClick={() => toggleSort('name')}
+                />
+                <SortableHeader
+                  label="SKU"
+                  align="left"
+                  active={sortKey === 'sku'}
+                  dir={sortDir}
+                  onClick={() => toggleSort('sku')}
+                />
+                <SortableHeader
+                  label="Price"
+                  align="right"
+                  active={sortKey === 'price_cents'}
+                  dir={sortDir}
+                  onClick={() => toggleSort('price_cents')}
+                />
+                <SortableHeader
+                  label="Stock"
+                  align="right"
+                  active={sortKey === 'stock_on_hand'}
+                  dir={sortDir}
+                  onClick={() => toggleSort('stock_on_hand')}
+                />
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => (
+              {sortedProducts.map((p) => (
                 <tr
                   key={p.id}
                   role="button"
