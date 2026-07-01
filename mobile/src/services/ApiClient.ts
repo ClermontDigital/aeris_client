@@ -213,6 +213,7 @@ export class ApiClient {
   getProductDetail = (...args: Parameters<RelayClient['getProductDetail']>) =>
     this.active.getProductDetail(...args);
   getCategories = () => this.active.getCategories();
+  getSuppliers = () => this.active.getSuppliers();
   getPaymentMethods = () => this.active.getPaymentMethods();
 
   // --- Inventory ---

@@ -26,6 +26,7 @@ import type {
   StockAdjustment,
   StockAdjustmentInput,
   StockSnapshot,
+  Supplier,
 } from '../types/api.types';
 import {
   emptyPage,
@@ -482,6 +483,26 @@ export class RelayClient {
     return withReadRetry(async () => {
       const result = await this.relayRpc<unknown>(RELAY_ACTIONS.PRODUCTS_CATEGORIES, {});
       return unwrapList<Category>(result);
+    });
+  }
+
+  // Suppliers list — feeds the item-edit "supplier" picker on mobile.
+  // Aeris2 exposes GET /api/v1/products/suppliers; the marketplace dispatcher
+  // may not route this action yet, so we swallow NOT_FOUND and return an empty
+  // list. The picker treats [] as "supplier selection unavailable in this
+  // build" rather than an error state.
+  async getSuppliers(): Promise<Supplier[]> {
+    return withReadRetry(async () => {
+      try {
+        const result = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.PRODUCTS_SUPPLIERS,
+          {},
+        );
+        return unwrapList<Supplier>(result);
+      } catch (err) {
+        if (isNotFound(err, 'relay')) return [];
+        throw err;
+      }
     });
   }
 

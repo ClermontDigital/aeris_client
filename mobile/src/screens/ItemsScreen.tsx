@@ -198,7 +198,13 @@ const ItemsScreen: React.FC = () => {
   // synced yet we fall back to the loaded-pages count so the tiles aren't
   // permanently blank; the cacheReady flag adapts copy so the operator
   // knows whether the number is preliminary.
-  const cacheReady = cachedProducts.length > 0 && cacheLastSynced !== null;
+  // The stats source is the FULL cached catalog (populated by syncProducts
+  // after all pages load — see productCacheStore.ts:104-127). If we have any
+  // rows, the counts are authoritative — we don't need cacheLastSynced to also
+  // be truthy. Requiring both was the bug: a legacy cache restored without a
+  // timestamp (or a first-run where products land before the timestamp is
+  // persisted) left the Low / Out tiles stuck on an em-dash forever.
+  const cacheReady = cachedProducts.length > 0;
   const stats = useMemo(() => {
     // DEFENSIVE: belt-and-braces. cachedProducts is already nullish-
     // coalesced at the selector boundary, but the for-of loop below

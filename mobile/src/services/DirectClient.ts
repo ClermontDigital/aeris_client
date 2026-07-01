@@ -42,6 +42,7 @@ import type {
   StockAdjustment,
   StockAdjustmentInput,
   StockSnapshot,
+  Supplier,
 } from '../types/api.types';
 import {
   API_ENDPOINTS,
@@ -303,6 +304,21 @@ export class DirectClient {
     return withReadRetry(async () => {
       const result = await this.get<unknown>(API_ENDPOINTS.PRODUCTS_CATEGORIES);
       return unwrapList<Category>(result);
+    });
+  }
+
+  async getSuppliers(): Promise<Supplier[]> {
+    return withReadRetry(async () => {
+      try {
+        const result = await this.get<unknown>(API_ENDPOINTS.PRODUCTS_SUPPLIERS);
+        return unwrapList<Supplier>(result);
+      } catch (e) {
+        // Symmetric with RelayClient.getSuppliers: swallow NOT_FOUND so any
+        // future consumer (PO screen, catalog filters) doesn't hard-crash on
+        // an older deployment that hasn't shipped the endpoint yet.
+        if (isNotFound(e, 'direct')) return [];
+        throw e;
+      }
     });
   }
 
