@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
@@ -46,10 +47,6 @@ import type {ItemsStackParamList} from '../types/navigation.types';
 
 type Nav = NativeStackNavigationProp<ItemsStackParamList, 'ProductEdit'>;
 type Route = RouteProp<ItemsStackParamList, 'ProductEdit'>;
-
-// Tax-rate quick picks — 10% is the AU GST default; "0" covers GST-free
-// items (e.g. fresh produce). Operator can override via the free input.
-const TAX_RATE_PRESETS = [0, 5, 10, 15] as const;
 
 // Default form values surfaced on first paint in create mode. Edit mode
 // hydrates from getProductDetail; until that resolves we keep these so the
@@ -840,46 +837,9 @@ const ProductEditScreen: React.FC = () => {
                 />
               </View>
             </View>
-            <View style={styles.field}>
-              <Text style={styles.label}>Tax rate (%)</Text>
-              <View style={styles.taxChipsRow}>
-                {TAX_RATE_PRESETS.map(preset => {
-                  const active = String(preset) === form.taxRate.trim();
-                  return (
-                    <TouchableOpacity
-                      key={preset}
-                      style={[
-                        styles.taxChip,
-                        active && styles.taxChipActive,
-                      ]}
-                      onPress={() => {
-                        haptics.selection();
-                        set('taxRate', String(preset));
-                      }}
-                      accessibilityRole="button"
-                      accessibilityState={{selected: active}}
-                      accessibilityLabel={`Tax rate ${preset} percent`}>
-                      <Text
-                        style={[
-                          styles.taxChipText,
-                          active && styles.taxChipTextActive,
-                        ]}>
-                        {preset}%
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                <TextInput
-                  style={[styles.input, styles.taxInput]}
-                  value={form.taxRate}
-                  onChangeText={t => set('taxRate', t)}
-                  keyboardType="decimal-pad"
-                  placeholder="10"
-                  placeholderTextColor={COLORS.inputPlaceholder}
-                  accessibilityLabel="Custom tax rate"
-                />
-              </View>
-            </View>
+            {/* Tax rate is fixed at 10% (AU GST). Not user-editable — the
+                form state stays hardcoded at '10' and the save flow sends it
+                unchanged. See EMPTY_FORM. */}
           </View>
 
           <View style={styles.section}>
@@ -943,6 +903,11 @@ const ProductEditScreen: React.FC = () => {
               ]}
               onPress={() => {
                 haptics.light();
+                // Dismiss the on-screen keyboard so it doesn't cover the
+                // expanded picker list. The list renders below the row and
+                // was landing under the keyboard when a text field above
+                // still had focus.
+                Keyboard.dismiss();
                 setCategoryPickerOpen(o => !o);
                 if (fieldErrors.category)
                   setFieldErrors(p => ({...p, category: undefined}));
@@ -1004,6 +969,9 @@ const ProductEditScreen: React.FC = () => {
                   style={styles.pickerRow}
                   onPress={() => {
                     haptics.light();
+                    // Same keyboard-dismiss as the category picker above —
+                    // the expanded list otherwise lands under the keyboard.
+                    Keyboard.dismiss();
                     setSupplierPickerOpen(o => !o);
                   }}
                   accessibilityRole="button"
@@ -1175,31 +1143,6 @@ const styles = StyleSheet.create({
     marginRight: SPACING.sm,
   },
   priceInput: {flex: 1},
-  taxChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.xs + 2,
-    alignItems: 'center',
-  },
-  taxChip: {
-    minHeight: 36,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: BORDER_RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.inputBorder,
-    backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  taxChipActive: {borderColor: COLORS.crimson, backgroundColor: COLORS.crimson},
-  taxChipText: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.medium,
-  },
-  taxChipTextActive: {color: COLORS.white},
-  taxInput: {width: 80, minHeight: 36, paddingVertical: SPACING.xs + 2},
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
