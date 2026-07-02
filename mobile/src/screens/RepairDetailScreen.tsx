@@ -19,9 +19,11 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
+import PillButton from '../components/PillButton';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
+import {useAuthStore} from '../stores/authStore';
 import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useNavHistoryStore, type CrumbTab} from '../stores/navHistoryStore';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
@@ -59,7 +61,7 @@ function formatDateTime(iso: string | null | undefined): string {
 }
 
 // Local mirror of the RepairsListScreen colour map. Kept inline rather
-// than exported so we don't churn the list screen just for T6 — a shared
+// than exported so we don't churn the list screen just for T6 - a shared
 // StatusChip primitive is a follow-up cleanup candidate (see codebase
 // audit in the T6 planning notes).
 function getRepairStatusColor(status: RepairStatus): string {
@@ -123,6 +125,26 @@ function formatDollars(v: number | null | undefined): string {
   return '$' + v.toFixed(2);
 }
 
+// Deployment sitrep permission for the "Notify customer" action row entry.
+// The User shape in shared/src/types/api.types.ts does not yet declare a
+// `permissions` array; the deployment team owes an AuthResponse extension
+// that surfaces the Sanctum ability list (see the DR-M3 sitrep). We read
+// it defensively via a soft cast so a login response that DOES carry the
+// array lights the button up automatically, and a login response that
+// doesn't leaves the button hidden - the safe posture. Server is still
+// the source of truth; this UI gate is just a kindness so cashiers
+// without the ability don't see a button they'd 403 on. Mirrors the
+// SaleDetailScreen role-check pattern (server enforces, client hints).
+function userHasPermission(
+  user: {permissions?: unknown} | null | undefined,
+  perm: string,
+): boolean {
+  if (!user) return false;
+  const perms = (user as {permissions?: unknown}).permissions;
+  if (!Array.isArray(perms)) return false;
+  return perms.some(p => typeof p === 'string' && p === perm);
+}
+
 const RepairDetailScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const route = useRoute<RepairDetailRouteProp>();
@@ -132,6 +154,18 @@ const RepairDetailScreen: React.FC = () => {
     ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
     : null;
   const {id: repairId} = route.params;
+
+  // Pull the current user for the action-row permission gate on
+  // "Notify customer". Kept above the early-return guards per
+  // feedback_hooks_above_early_returns. The soft cast to
+  // `{permissions?: unknown}` is because the shared User type doesn't
+  // yet declare a `permissions` array - see the userHasPermission
+  // comment for the deployment-side contract this anticipates.
+  const user = useAuthStore(s => s.user);
+  const canNotifyCustomer = userHasPermission(
+    user as unknown as {permissions?: unknown} | null,
+    'send-manual-notification',
+  );
 
   // ---------------- state (all hooks live ABOVE the early-return guards
   // per feedback_hooks_above_early_returns; a post-guard hook crashes
@@ -189,7 +223,7 @@ const RepairDetailScreen: React.FC = () => {
   }, [load]);
 
   // Refetch on tab focus so a status change made on a sibling screen (T7)
-  // surfaces immediately. Skip the very first focus — the mount effect
+  // surfaces immediately. Skip the very first focus - the mount effect
   // above already covers the initial load. Mirrors RepairsListScreen.
   const didInitialFetchRef = useRef(false);
   useFocusEffect(
@@ -232,7 +266,7 @@ const RepairDetailScreen: React.FC = () => {
     (id: number) => {
       haptics.light();
       const currentTab = getCurrentTab();
-      // Local push when the Customers stack is already hosting us —
+      // Local push when the Customers stack is already hosting us -
       // avoids a cross-tab flicker.
       if (currentTab === 'Customers') {
         (
@@ -296,7 +330,7 @@ const RepairDetailScreen: React.FC = () => {
   // Surface the Back button in the shared brand header while focused.
   // beforeRemove handles the slot cleanup with an identity-matched clearIf
   // so the revealed screen's own handler never gets wiped (the v1.3.70
-  // race fix — see SaleDetailScreen / ProductDetailScreen comments).
+  // race fix - see SaleDetailScreen / ProductDetailScreen comments).
   const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
   const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
   useFocusEffect(
@@ -380,7 +414,7 @@ const RepairDetailScreen: React.FC = () => {
   }
 
   // ---------------- derived display values (rendered only when repair is
-  // present — plain locals, not hooks, so they don't affect hook count) ---
+  // present - plain locals, not hooks, so they don't affect hook count) ---
   const customer = repair.customer;
   const customerLine = customer?.name ?? 'Walk-in / Unspecified';
   const priorityShown =
@@ -632,8 +666,69 @@ const RepairDetailScreen: React.FC = () => {
           )}
         </View>
 
+        {/* -------- Action row (T7 part C) --------
+            Sits after History so the timeline reads as context for the
+            actions the operator is about to take. Horizontal wrap of
+            PillButtons (SaleDetailScreen keeps a vertical stack of
+            TouchableOpacity, but PillButton is the brand-spec primitive
+            per §10 and RepairEdit / RepairStatusChange are true peer
+            actions here - a wrap row reads as a single toolbar rather
+            than a stack of single-choice CTAs).
+
+            Order matches the operator's typical decision flow:
+              1. "Change status" - the most common repair-board mutation.
+              2. "Edit"           - device / customer / notes tweaks.
+              3. "Notify customer" - send a manual update (gated on the
+                                     server-side send-manual-notification
+                                     ability; T7 stub Alert only, real
+                                     multi-channel dialog is deferred per
+                                     the DR-M3 plan).
+
+            NOTE: no Checkout button here - that action lands in T8, which
+            wires the "cash the repair out into a sale" flow. Explicit
+            slot marker below so the T8 branch can drop it in without a
+            layout re-audit. */}
+        <View style={styles.actions}>
+          <PillButton
+            label="Change status"
+            variant="solid"
+            onPress={() => {
+              navigation.navigate('RepairStatusChange', {id: repair.id});
+            }}
+            accessibilityLabel="Change status"
+            style={styles.actionBtn}
+          />
+          <PillButton
+            label="Edit"
+            variant="secondary"
+            onPress={() => {
+              navigation.navigate('RepairEdit', {id: repair.id});
+            }}
+            accessibilityLabel="Edit repair"
+            style={styles.actionBtn}
+          />
+          {canNotifyCustomer ? (
+            <PillButton
+              label="Notify customer"
+              variant="tertiary"
+              onPress={() => {
+                Alert.alert(
+                  'Notify customer',
+                  'Customer notifications ship in a later release.',
+                );
+              }}
+              accessibilityLabel="Notify customer"
+              style={styles.actionBtn}
+            />
+          ) : null}
+          {/* T8 slot - Checkout / "Complete & cash out" PillButton lands
+              here. Intentionally omitted from T7 part C so the checkout
+              flow (sale materialisation + payment sheet) is shipped as a
+              single, testable unit rather than a half-wired stub. */}
+        </View>
+
         {/* Back lives in the shared brand header (top-left of the chrome)
-            via useHeaderBackStore above. Action affordances land in T7/T8. */}
+            via useHeaderBackStore above. */}
       </ScrollView>
     </SafeAreaView>
   );
@@ -660,7 +755,7 @@ const styles = StyleSheet.create({
   },
   linkText: {color: COLORS.accent, fontSize: FONT_SIZE.md},
 
-  // Card primitive — same shape as SaleDetailScreen. A shared SectionCard
+  // Card primitive - same shape as SaleDetailScreen. A shared SectionCard
   // extraction is a codebase-wide follow-up; T6 stays scope-tight and
   // inlines the pattern.
   card: {
@@ -799,9 +894,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: BORDER_RADIUS.full,
   },
-  // Part items consume stock — dusty blue reads as informational.
+  // Part items consume stock - dusty blue reads as informational.
   itemTypeChipPart: {backgroundColor: COLORS.blue},
-  // Labor is time-based, no stock — navy reads as "operator-attention".
+  // Labor is time-based, no stock - navy reads as "operator-attention".
   itemTypeChipLabor: {backgroundColor: COLORS.navy},
   itemTypeText: {
     color: COLORS.white,
@@ -889,6 +984,23 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     marginTop: SPACING.xs,
     fontStyle: 'italic',
+  },
+
+  // Action row - horizontal wrap so long labels ("Notify customer") don't
+  // squeeze the primary CTA on narrow devices. Small gap keeps the row
+  // reading as a single toolbar rather than a stack of buttons.
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  actionBtn: {
+    // Let the pill hug its label rather than stretching - the wrap row
+    // handles overflow. flexShrink:0 prevents the label from being
+    // truncated when a third button (Notify customer) is present.
+    flexShrink: 0,
   },
 });
 

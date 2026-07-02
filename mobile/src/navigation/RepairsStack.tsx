@@ -1,32 +1,12 @@
 import React from 'react';
-import {View, Text, StyleSheet} from 'react-native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {COLORS, FONT_FAMILY, FONT_SIZE, SPACING} from '../constants/theme';
 import type {RepairsStackParamList} from '../types/navigation.types';
 import RepairsListScreen from '../screens/RepairsListScreen';
 import RepairDetailScreen from '../screens/RepairDetailScreen';
+import RepairStatusChangeSheet from '../screens/RepairStatusChangeSheet';
+import RepairEditScreen from '../screens/RepairEditScreen';
 
 const Stack = createNativeStackNavigator<RepairsStackParamList>();
-
-// T4 stubs kept for the screens T7 will replace. RepairsListScreen shipped
-// in T5, RepairDetailScreen shipped in T6 (read-only render, action row
-// lands in T7 / T8). Component NAMES on the stub set below must remain
-// stable so the stack registration doesn't churn when the real screens
-// land.
-const StubScreen: React.FC<{label: string}> = ({label}) => (
-  <View style={styles.stub}>
-    <Text style={styles.stubTitle}>Repairs</Text>
-    <Text style={styles.stubBody}>{label}</Text>
-    <Text style={styles.stubHint}>Coming in T7</Text>
-  </View>
-);
-
-const RepairEditScreen: React.FC = () => (
-  <StubScreen label="Create or edit repair" />
-);
-const RepairStatusChangeScreen: React.FC = () => (
-  <StubScreen label="Change repair status" />
-);
 
 const RepairsStack: React.FC = () => (
   <Stack.Navigator
@@ -52,37 +32,10 @@ const RepairsStack: React.FC = () => (
         "drilled into another screen". */}
     <Stack.Screen
       name="RepairStatusChange"
-      component={RepairStatusChangeScreen}
+      component={RepairStatusChangeSheet}
       options={{presentation: 'formSheet'}}
     />
   </Stack.Navigator>
 );
-
-const styles = StyleSheet.create({
-  stub: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: SPACING.lg,
-  },
-  stubTitle: {
-    color: COLORS.text,
-    fontSize: FONT_SIZE.xxl,
-    fontFamily: FONT_FAMILY.bold,
-    marginBottom: SPACING.sm,
-  },
-  stubBody: {
-    color: COLORS.textLight,
-    fontSize: FONT_SIZE.lg,
-    fontFamily: FONT_FAMILY.medium,
-    marginBottom: SPACING.xs,
-  },
-  stubHint: {
-    color: COLORS.textMuted,
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.regular,
-  },
-});
 
 export default RepairsStack;
