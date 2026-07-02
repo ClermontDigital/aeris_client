@@ -1,10 +1,41 @@
-const { contextBridge, ipcRenderer } = require('electron');
-// DR M3: per-endpoint partition naming is a PURE function (no electron deps) so
-// the renderer can resolve the correct persistent partition for the active
-// mode + cashier without an IPC round-trip.
-const { partitionFor } = require('./dr-partition');
+// Preload MUST attach window.electronAPI or the entire renderer dies with
+// "Cannot read properties of undefined". Every step is wrapped in try/catch
+// so a partial failure still exposes what worked + logs the exact reason so
+// support can see the root cause via F12 -> Console.
+console.log('[AERIS-PRELOAD] starting', new Date().toISOString());
 
-contextBridge.exposeInMainWorld('electronAPI', {
+let contextBridge, ipcRenderer;
+try {
+  ({ contextBridge, ipcRenderer } = require('electron'));
+  console.log('[AERIS-PRELOAD] electron module loaded');
+} catch (e) {
+  console.error('[AERIS-PRELOAD] FATAL: require(electron) failed', e);
+  throw e;
+}
+
+// DR M3 partition naming — INLINED here (originally in dr-partition.js). The
+// preload script runs in SANDBOX mode by default in Electron 20+ when
+// nodeIntegration:false, and sandboxed preload cannot `require` local
+// modules — only 'electron'. Any attempt to `require('./dr-partition')` in a
+// sandboxed preload throws MODULE_NOT_FOUND, which aborts the whole preload
+// script BEFORE contextBridge.exposeInMainWorld runs. That in turn leaves
+// window.electronAPI undefined in the renderer, and every downstream feature
+// (settings, session, print, navigation) crashes with "Cannot read
+// properties of undefined". Inlining avoids the require entirely.
+//
+// The main-process (main.js) still uses dr-partition.js for its own
+// partition-clearing flows; that module remains the source of truth for
+// tests. This inline copy must stay in sync with it.
+function partitionFor(mode, sessionId) {
+  var hasSession = !(sessionId === null || sessionId === undefined || sessionId === '');
+  if (mode === 'local') {
+    return hasSession ? 'persist:nas:user-' + sessionId : 'persist:nas';
+  }
+  return hasSession ? 'persist:user-' + sessionId : 'persist:main';
+}
+
+try {
+  contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   testConnection: (url) => ipcRenderer.invoke('test-connection', url),
@@ -92,4 +123,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('print-silent-request');
     ipcRenderer.removeAllListeners('routing-mode-changed');
   }
-}); 
+});
+  console.log('[AERIS-PRELOAD] electronAPI attached via contextBridge');
+} catch (e) {
+  console.error('[AERIS-PRELOAD] FATAL: contextBridge.exposeInMainWorld failed', e);
+} 
