@@ -42,14 +42,32 @@ function persist(state: PersistedWorkspaceFeatures): void {
 
 function readRepairsFromLogin(raw: unknown): boolean {
   if (!raw || typeof raw !== 'object') return false;
-  const w = (raw as Record<string, unknown>).workspace;
-  if (!w || typeof w !== 'object') return false;
-  const features = (w as Record<string, unknown>).features;
-  if (!features || typeof features !== 'object') return false;
-  return pickBoolean(
-    (features as Record<string, unknown>).repairs_enabled,
-    false,
-  );
+  const r = raw as Record<string, unknown>;
+  // Canonical shape per shared/src/types/api.types.ts:
+  //   raw.workspace.features.repairs_enabled
+  const w = r.workspace;
+  if (w && typeof w === 'object') {
+    const features = (w as Record<string, unknown>).features;
+    if (features && typeof features === 'object') {
+      const v = (features as Record<string, unknown>).repairs_enabled;
+      if (typeof v === 'boolean') return v;
+    }
+    // Also tolerate `raw.workspace.repairs_enabled` (features missing).
+    const direct = (w as Record<string, unknown>).repairs_enabled;
+    if (typeof direct === 'boolean') return direct;
+  }
+  // Shape-tolerant fallbacks so a deployment that ships the flag under a
+  // slightly different key still lights up the tab. Ordered narrowest ->
+  // broadest so a partial rollout with the flag under features / at root
+  // still works.
+  const featuresTop = r.features;
+  if (featuresTop && typeof featuresTop === 'object') {
+    const v = (featuresTop as Record<string, unknown>).repairs_enabled;
+    if (typeof v === 'boolean') return v;
+  }
+  const rootFlag = r.repairs_enabled;
+  if (typeof rootFlag === 'boolean') return rootFlag;
+  return false;
 }
 
 export const useWorkspaceFeaturesStore = create<WorkspaceFeaturesState>(
