@@ -40,10 +40,13 @@ const defaultConfig = {
   // target. Empty until the operator configures + validates a LAN address.
   localUrl: '',
   routingMode: 'cloud',
-  // DR M3 automated failover. DARK by default — flag OFF ≡ today's behaviour
-  // (manual cloud↔in-store toggle only, no health probing, no auto-swap).
-  // Turning this on is a separate, proof-gated event (see PROJECT_DR_M3_BUILD_PLAN).
-  drAutoFailover: false,
+  // DR M3 automated failover. ON by default from 1.4.2. When on, Aeris watches
+  // both endpoints and auto-swaps to the NAS/in-store URL when cloud is
+  // unreachable (and back once cloud recovers + holds). The auto-swap only
+  // fires when a valid in-store URL is configured, so a fresh install with no
+  // in-store URL is functionally identical to OFF but the checkbox surfaces
+  // the capability to operators. Set OFF explicitly to disable probing.
+  drAutoFailover: true,
   autoStart: false,
   enableSessionManagement: true,
   sessionTimeout: 30, // minutes

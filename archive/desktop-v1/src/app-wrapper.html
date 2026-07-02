@@ -34,7 +34,12 @@
             align-items: center;
             padding: 5px 10px;
             user-select: none;
-            -webkit-app-region: drag; /* Make the toolbar draggable */
+            /* No custom drag region: BrowserWindow uses titleBarStyle 'default'
+               (see main.js), so the OS title bar already handles window drag.
+               A drag region on the client toolbar collides with Windows' resize
+               edge (which extends a few pixels into the client area), which
+               steals clicks from buttons flush against the right — most
+               visibly the settings gear. Removing the region fixes that. */
         }
         
         .toolbar-container {
@@ -897,8 +902,11 @@
                          username (e.g. Aeris2 web UI selectors drift). -->
                     <button class="logout-btn" id="logout-btn" style="margin-right: 10px;">Logout</button>
 
-                    <!-- Connection status -->
-                    <div class="connection-status" id="connection-status"></div>
+                    <!-- Connection status. Ships RED (.disconnected) so first
+                         paint reflects reality — the webview hasn't loaded
+                         anything yet. Flips green in updateToolbarConnectionStatus
+                         after the guest's dom-ready fires. -->
+                    <div class="connection-status disconnected" id="connection-status"></div>
                     
                     <!-- Update notification button (hidden by default) -->
                     <button class="toolbar-button" id="update-btn" title="Update Available" style="display: none;">
