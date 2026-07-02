@@ -51,6 +51,7 @@ import type {
   RepairStatusHistory,
   RepairUpdateInput,
   Sale,
+  SaleCreateInput,
   SaleDetail,
   StockAdjustment,
   StockAdjustmentInput,
@@ -384,40 +385,35 @@ export class DirectClient {
   }
 
   // --- Sales ---
-  async createSale(data: {
-    items: Array<{
-      product_id: number;
-      quantity: number;
-      unit_price_cents: number;
-      discount_cents?: number;
-      // tax_rate is a percent integer (10 = 10% GST). Mirrors RelayClient
-      // so direct-mode deployments tax 0%-GST lines correctly.
-      tax_rate?: number;
-    }>;
-    payments: Array<{
-      method: string;
-      amount_cents: number;
-      reference?: string;
-    }>;
-    customer_id?: number;
-    discount_cents?: number;
-    notes?: string;
-  }): Promise<{sale_id: number; sale_number: string; total_cents: number}> {
+  async createSale(
+    data: SaleCreateInput,
+  ): Promise<{sale_id: number; sale_number: string; total_cents: number}> {
     const round2 = (n: number) => Math.round(n * 100) / 100;
     const centsToDollars = (c: number) => round2(c / 100);
 
-    const lineTotalCents = data.items.reduce(
-      (sum, i) => sum + i.unit_price_cents * i.quantity - (i.discount_cents ?? 0),
-      0,
-    );
     const paymentsTotalCents = data.payments.reduce(
       (sum, p) => sum + p.amount_cents,
       0,
     );
     const cartDiscountCents = Math.max(0, data.discount_cents ?? 0);
-    const lineTotalDollars = centsToDollars(lineTotalCents);
-    const subtotal = round2(lineTotalDollars / 1.10);
-    const taxAmount = round2(lineTotalDollars - subtotal);
+    // T8-C1 fix: per-line subtotal + tax split honouring each item's
+    // gst_applicable flag (mirror of RelayClient). Repair items
+    // (tax_rate: 0) don't get the /1.10 GST-inclusive split, so a
+    // pure-repair or mixed cart passes ProcessSaleRequest's subtotal
+    // ±0.02 validator.
+    let subtotal = 0;
+    let taxAmount = 0;
+    for (const i of data.items) {
+      const rate = i.tax_rate ?? 10;
+      const gstApplicable = rate > 0;
+      const lineInc =
+        centsToDollars(i.unit_price_cents * i.quantity) -
+        centsToDollars(i.discount_cents ?? 0);
+      const lineSubtotal = gstApplicable ? round2(lineInc / 1.10) : lineInc;
+      const lineTax = gstApplicable ? round2(lineInc - lineSubtotal) : 0;
+      subtotal = round2(subtotal + lineSubtotal);
+      taxAmount = round2(taxAmount + lineTax);
+    }
     const totalAmount = centsToDollars(paymentsTotalCents);
 
     const payload: Record<string, unknown> = {
@@ -444,6 +440,11 @@ export class DirectClient {
     if (data.customer_id !== undefined) payload.customer_id = data.customer_id;
     if (cartDiscountCents > 0) payload.discount_amount = centsToDollars(cartDiscountCents);
     if (data.notes) payload.notes = data.notes;
+    // Repair hand-off (T8). Sibling to customer_id at the top level, matching
+    // Aeris2's ProcessSaleRequest field. Mirrors RelayClient — server flips
+    // repair.status → 'completed' as a side-effect BUT ONLY if the repair
+    // is currently 'ready'. The client pre-flight-guards at CheckoutScreen.
+    if (data.repair_id !== undefined) payload.repair_id = data.repair_id;
 
     const idempotencyKey = generateUuid();
     let lastError: unknown;

@@ -31,6 +31,7 @@ import type {
   RepairStatusHistory,
   RepairUpdateInput,
   Sale,
+  SaleCreateInput,
   SaleDetail,
   StockAdjustment,
   StockAdjustmentInput,
@@ -558,25 +559,9 @@ export class RelayClient {
   }
 
   // --- Sales ---
-  async createSale(data: {
-    items: Array<{
-      product_id: number;
-      quantity: number;
-      unit_price_cents: number;
-      discount_cents?: number;
-      // tax_rate is a percent integer (10 = 10% GST). Defaults to 10 when
-      // undefined to match Aeris2 StoreProductRequest::prepareForValidation.
-      tax_rate?: number;
-    }>;
-    payments: Array<{
-      method: string;
-      amount_cents: number;
-      reference?: string;
-    }>;
-    customer_id?: number;
-    discount_cents?: number;
-    notes?: string;
-  }): Promise<{sale_id: number; sale_number: string; total_cents: number}> {
+  async createSale(
+    data: SaleCreateInput,
+  ): Promise<{sale_id: number; sale_number: string; total_cents: number}> {
     // Public signature stays in cents; convert to the dollar-shape that
     // Aeris2's POSController::processSale (mapped from sale.create) expects.
     // ProcessSaleRequest validates required dollar fields (unit_price,
@@ -608,9 +593,26 @@ export class RelayClient {
     // `discount_amount` field; the server reconciles
     // `subtotal + tax_amount - discount_amount == total_amount`.
     const cartDiscountCents = Math.max(0, data.discount_cents ?? 0);
-    const lineTotalDollars = centsToDollars(lineTotalCents);
-    const subtotal = round2(lineTotalDollars / 1.10);
-    const taxAmount = round2(lineTotalDollars - subtotal);
+    // T8-C1 fix: compute subtotal + tax PER-LINE respecting each item's
+    // gst_applicable flag. Repair items (tax_rate: 0) get subtotal =
+    // full line total with zero tax; taxed items get the /1.10 split.
+    // The prior implementation split every line as if it were GST-
+    // inclusive, so a pure-repair or mixed cart failed ProcessSaleRequest's
+    // `subtotal == sum(qty * unit_price_ex_gst - discount_ex_gst) ±0.02`
+    // validator with a $18 delta on a $200 pure-repair sale.
+    let subtotal = 0;
+    let taxAmount = 0;
+    for (const i of data.items) {
+      const rate = i.tax_rate ?? 10;
+      const gstApplicable = rate > 0;
+      const lineInc =
+        centsToDollars(i.unit_price_cents * i.quantity) -
+        centsToDollars(i.discount_cents ?? 0);
+      const lineSubtotal = gstApplicable ? round2(lineInc / 1.10) : lineInc;
+      const lineTax = gstApplicable ? round2(lineInc - lineSubtotal) : 0;
+      subtotal = round2(subtotal + lineSubtotal);
+      taxAmount = round2(taxAmount + lineTax);
+    }
     const totalAmount = centsToDollars(paymentsTotalCents);
 
     const payload: Record<string, unknown> = {
@@ -637,6 +639,13 @@ export class RelayClient {
     if (data.customer_id !== undefined) payload.customer_id = data.customer_id;
     if (cartDiscountCents > 0) payload.discount_amount = centsToDollars(cartDiscountCents);
     if (data.notes) payload.notes = data.notes;
+    // Repair hand-off (T8). Sibling to customer_id at the top level, matching
+    // Aeris2's ProcessSaleRequest field. Server flips repair.status →
+    // 'completed' as a side-effect BUT ONLY if the repair is currently
+    // 'ready'; a non-ready repair still lands the sale, so the client
+    // pre-flight-guards status at CheckoutScreen. See SaleCreateInput
+    // (api.types.ts) for the full sitrep on that caveat.
+    if (data.repair_id !== undefined) payload.repair_id = data.repair_id;
 
     // One key per logical sale, reused on every retry. Gateway dedupes at
     // /api/relay/rpc (and propagates X-Aeris-Idempotency-Key on to the
