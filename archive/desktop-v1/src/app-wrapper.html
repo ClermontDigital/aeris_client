@@ -2134,8 +2134,10 @@
         // Update navigation state periodically
         setInterval(updateNavigationState, 2000);
 
-        // Initialize privacy overlay system
-        window.addEventListener('DOMContentLoaded', async () => {
+        // Initialize privacy overlay system. Uses the readyState-check pattern
+        // so the block still runs if DOMContentLoaded fires before this
+        // script parses (Chromium race on Windows inline-script-at-EOB).
+        async function initPrivacyOverlay() {
             // Check initial session state
             try {
                 const activeSession = await window.electronAPI.getActiveSession();
@@ -2246,7 +2248,15 @@
                     }
                 }
             });
-        });
+        }
+
+        // Same DOMContentLoaded-race guard as initializeToolbar: run immediately
+        // if the DOM is already parsed, otherwise defer to DOMContentLoaded.
+        if (document.readyState !== 'loading') {
+            initPrivacyOverlay();
+        } else {
+            window.addEventListener('DOMContentLoaded', initPrivacyOverlay);
+        }
 
         // Session switcher overlay management
         let selectedSessionId = null;
@@ -3011,8 +3021,15 @@
             }
         }
         
-        // Initialize toolbar when DOM is ready
-        document.addEventListener('DOMContentLoaded', initializeToolbar);
+        // Initialize toolbar when DOM is ready. If DOMContentLoaded has
+        // already fired (Chromium can race the inline-script-at-end-of-body
+        // path on Windows), call synchronously — otherwise the toolbar
+        // click handlers never attach and the ⚙ Settings gear appears dead.
+        if (document.readyState !== 'loading') {
+            initializeToolbar();
+        } else {
+            document.addEventListener('DOMContentLoaded', initializeToolbar);
+        }
 
     </script>
 </body>
