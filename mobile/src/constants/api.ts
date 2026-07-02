@@ -24,6 +24,12 @@ export const API_ENDPOINTS = {
   CUSTOMERS: '/api/v1/customers',
   PRODUCTS: '/api/v1/products',
   INVENTORY_ADJUST_STOCK: '/api/v1/inventory/adjust-stock',
+  // --- Repairs ---
+  // Root collection + bulk-status. Per-repair / per-item routes are exposed
+  // as parameterised builders below (matching the CUSTOMER_BY_ID pattern) so
+  // the map stays a pure string lookup.
+  REPAIRS: '/api/v1/repairs',
+  REPAIR_BULK_STATUS: '/api/v1/repairs/bulk-status',
 } as const;
 
 // Parameterised endpoint builders. Kept separate from the const map so the
@@ -33,3 +39,37 @@ export const CUSTOMER_BY_ID = (id: number | string): string =>
 
 export const PRODUCT_BY_ID = (id: number | string): string =>
   `/api/v1/products/${encodeURIComponent(String(id))}`;
+
+// --- Repair builders ---
+// Repair detail + status POST + status-history GET + items subresource.
+// Every id is URL-encoded via encodeURIComponent(String(id)) to match the
+// customer/product builders, even though repair ids are typed `number` at
+// call sites — belt-and-braces against a typo pushing a string through.
+export const REPAIR_BY_ID = (id: number | string): string =>
+  `/api/v1/repairs/${encodeURIComponent(String(id))}`;
+
+export const REPAIR_ITEMS = (id: number | string): string =>
+  `/api/v1/repairs/${encodeURIComponent(String(id))}/items`;
+
+export const REPAIR_ITEM_BY_ID = (
+  id: number | string,
+  itemId: number | string,
+): string =>
+  `/api/v1/repairs/${encodeURIComponent(String(id))}/items/${encodeURIComponent(String(itemId))}`;
+
+export const REPAIR_STATUS = (id: number | string): string =>
+  `/api/v1/repairs/${encodeURIComponent(String(id))}/status`;
+
+export const REPAIR_STATUS_HISTORY = (id: number | string): string =>
+  `/api/v1/repairs/${encodeURIComponent(String(id))}/status-history`;
+
+// POS-scoped pending-repairs picker; the endpoint applies the sale_id IS NULL
+// guard so it's the correct source for "which open repairs can I check out?".
+export const POS_PENDING_REPAIRS_BY_CUSTOMER = (
+  customerId: number | string,
+): string =>
+  `/api/v1/pos/customers/${encodeURIComponent(String(customerId))}/pending-repairs`;
+
+// Re-export the constant here so DirectClient can import it via the same
+// module surface it uses for the parameterised builders.
+export const REPAIR_BULK_STATUS = '/api/v1/repairs/bulk-status';

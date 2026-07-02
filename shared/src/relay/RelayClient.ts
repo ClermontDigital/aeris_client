@@ -12,6 +12,7 @@ import type {
   DrRoutingPayload,
   PaginatedResponse,
   PaymentMethod,
+  PendingRepair,
   Product,
   ProductCreateInput,
   ProductDetail,
@@ -21,6 +22,14 @@ import type {
   RefundParams,
   RefundResponse,
   RelayEnvelope,
+  Repair,
+  RepairCreateInput,
+  RepairDetail,
+  RepairItem,
+  RepairPriority,
+  RepairStatus,
+  RepairStatusHistory,
+  RepairUpdateInput,
   Sale,
   SaleDetail,
   StockAdjustment,
@@ -31,9 +40,13 @@ import type {
 import {
   emptyPage,
   normalizeCustomer,
+  normalizePendingRepair,
   normalizeProduct,
   normalizeProductDetail,
   normalizeReceipt,
+  normalizeRepair,
+  normalizeRepairDetail,
+  normalizeRepairStatusHistory,
   normalizeSale,
   normalizeSaleDetail,
   normalizeStockAdjustment,
@@ -988,6 +1001,380 @@ export class RelayClient {
       }
     }
     throw lastError;
+  }
+
+  // --- Repairs ---
+  //
+  // The `workspace.features.repairs_enabled` flag on AuthResponse gates the
+  // whole surface CLIENT-SIDE — the ApiClient facade guards every call with a
+  // `deployment-repairs-disabled` catch and flips the workspaceFeaturesStore
+  // off so the tab yanks itself. RelayClient stays neutral about the flag:
+  // callers that reach these methods are already past the gate.
+  //
+  // Marketplace dispatcher entries for the 12 actions are still pending on the
+  // gateway; while they're missing the RPC will come back as a NOT_FOUND
+  // envelope. Read paths swallow that into `[]`/`null`/`emptyPage`; writes let
+  // it surface so the UI can show "not available" instead of pretending it
+  // worked. Symmetric with getSuppliers / getTransactions patterns above.
+
+  async listRepairs(
+    page = 1,
+    perPage = 20,
+    filters?: {
+      status?: RepairStatus;
+      customer_id?: number;
+      assigned_to?: number;
+      location_id?: number;
+      priority?: RepairPriority;
+      date_from?: string;
+      date_to?: string;
+    },
+  ): Promise<PaginatedResponse<Repair>> {
+    return withReadRetry(async () => {
+      try {
+        const raw = await this.relayRpc<PaginatedResponse<unknown>>(
+          RELAY_ACTIONS.REPAIRS_LIST,
+          {page, per_page: perPage, ...(filters || {})},
+        );
+        return {
+          ...raw,
+          data: (raw.data || []).map(normalizeRepair),
+        };
+      } catch (e) {
+        // Dispatcher not yet wired / no rows matching the filter — surface an
+        // empty page so the screen renders its empty state instead of an
+        // error banner. Mirrors getTransactions.
+        if (isNotFound(e, 'relay')) return emptyPage<Repair>(page, perPage);
+        throw e;
+      }
+    });
+  }
+
+  async getRepairDetail(id: number): Promise<RepairDetail | null> {
+    return withReadRetry(async () => {
+      try {
+        const raw = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.REPAIRS_DETAIL,
+          {repair_id: id, id},
+        );
+        return raw == null ? null : normalizeRepairDetail(unwrapResource(raw));
+      } catch (e) {
+        if (isNotFound(e, 'relay')) return null;
+        throw e;
+      }
+    });
+  }
+
+  async getRepairStatusHistory(
+    repairId: number,
+  ): Promise<RepairStatusHistory[]> {
+    return withReadRetry(async () => {
+      try {
+        const result = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.REPAIRS_STATUS_HISTORY,
+          {repair_id: repairId, id: repairId},
+        );
+        // Server shape is {data: [...]} per RepairResource's statusHistory
+        // relation; unwrapList tolerates both the wrapped and bare-array
+        // forms.
+        return unwrapList<unknown>(result).map(normalizeRepairStatusHistory);
+      } catch (e) {
+        if (isNotFound(e, 'relay')) return [];
+        throw e;
+      }
+    });
+  }
+
+  async getPendingRepairsForCustomer(
+    customerId: number,
+  ): Promise<PendingRepair[]> {
+    return withReadRetry(async () => {
+      try {
+        const result = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.REPAIRS_PENDING_FOR_CUSTOMER,
+          {customer_id: customerId, id: customerId},
+        );
+        // POS-scoped endpoint answers with either the canonical `{data: [...]}`
+        // envelope OR the older `{success, repairs: [...], count}` shape. Try
+        // canonical first, then fall back to the `repairs` key.
+        const list = unwrapList<unknown>(result);
+        if (list.length > 0) return list.map(normalizePendingRepair);
+        if (result && typeof result === 'object') {
+          const r = result as Record<string, unknown>;
+          if (Array.isArray(r.repairs)) {
+            return (r.repairs as unknown[]).map(normalizePendingRepair);
+          }
+        }
+        return [];
+      } catch (e) {
+        if (isNotFound(e, 'relay')) return [];
+        throw e;
+      }
+    });
+  }
+
+  // POST /api/v1/repairs — StoreRepairRequest mirror. Retries with the same
+  // Idempotency-Key so a doubled tap creates ONE row. Returns the full detail
+  // (StoreRepairRequest response includes items + status_history seeded from
+  // the initial 'pending' state) so the caller can navigate straight into the
+  // repair-detail screen without a follow-up fetch.
+  async createRepair(input: RepairCreateInput): Promise<RepairDetail> {
+    const idempotencyKey = generateUuid();
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.REPAIRS_CREATE,
+          {...input},
+          {idempotencyKey},
+        );
+        assertWritePersisted(raw, RELAY_ACTIONS.REPAIRS_CREATE);
+        return normalizeRepairDetail(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  // PUT /api/v1/repairs/{id}. Full partial — customer_id is deliberately not
+  // in RepairUpdateInput (Aeris2 ignores it on update). Aliased id per the
+  // marketplace dispatcher placeholder pattern.
+  async updateRepair(
+    id: number,
+    input: RepairUpdateInput,
+  ): Promise<RepairDetail> {
+    const raw = await this.relayRpc<unknown>(RELAY_ACTIONS.REPAIRS_UPDATE, {
+      ...input,
+      repair_id: id,
+      id,
+    });
+    assertWritePersisted(raw, RELAY_ACTIONS.REPAIRS_UPDATE);
+    return normalizeRepairDetail(unwrapResource(raw));
+  }
+
+  // POST /api/v1/repairs/{id}/status — the server enforces the allowed
+  // transition set (App\Enums\RepairStatus::allowedTransitions), so callers
+  // should let a 422 propagate rather than pre-checking.
+  async updateRepairStatus(
+    id: number,
+    status: RepairStatus,
+    notes?: string,
+  ): Promise<RepairDetail> {
+    const raw = await this.relayRpc<unknown>(
+      RELAY_ACTIONS.REPAIRS_UPDATE_STATUS,
+      {
+        repair_id: id,
+        id,
+        status,
+        ...(notes !== undefined ? {notes} : {}),
+      },
+    );
+    assertWritePersisted(raw, RELAY_ACTIONS.REPAIRS_UPDATE_STATUS);
+    return normalizeRepairDetail(unwrapResource(raw));
+  }
+
+  // POST /api/v1/repairs/{id}/items — server computes `line_total` from
+  // quantity * unit_price, so callers MUST NOT send it (the wire shape
+  // documents this at api.types.ts). Idempotency key defended so a double
+  // tap doesn't add two identical line rows.
+  async addRepairItem(
+    repairId: number,
+    item: {
+      item_type: RepairItem['item_type'];
+      item_name: string;
+      quantity: number;
+      unit_price: number;
+      product_id?: number | null;
+      item_sku?: string | null;
+      notes?: string | null;
+    },
+  ): Promise<RepairDetail> {
+    const idempotencyKey = generateUuid();
+    // Defensive strip — line_total is server-computed; if a caller accidentally
+    // passes it through a spread we'd fail the server's forbidden-field check.
+    // Not typed on the parameter, but strip defensively at the boundary.
+    const payload: Record<string, unknown> = {
+      repair_id: repairId,
+      id: repairId,
+      item_type: item.item_type,
+      item_name: item.item_name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      ...(item.product_id !== undefined && item.product_id !== null
+        ? {product_id: item.product_id}
+        : {}),
+      ...(item.item_sku !== undefined && item.item_sku !== null
+        ? {item_sku: item.item_sku}
+        : {}),
+      ...(item.notes !== undefined && item.notes !== null
+        ? {notes: item.notes}
+        : {}),
+    };
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.REPAIRS_ADD_ITEM,
+          payload,
+          {idempotencyKey},
+        );
+        assertWritePersisted(raw, RELAY_ACTIONS.REPAIRS_ADD_ITEM);
+        return normalizeRepairDetail(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  // PUT /api/v1/repairs/{repair_id}/items/{item_id}. line_total remains
+  // server-computed. Send BOTH `repair_id`/`id` AND `item_id`/`itemId` so
+  // the dispatcher route-placeholder mapping lights up regardless of which
+  // key it expects.
+  async updateRepairItem(
+    repairId: number,
+    itemId: number,
+    patch: {
+      quantity?: number;
+      unit_price?: number;
+      notes?: string | null;
+      status?: RepairItem['status'];
+    },
+  ): Promise<RepairDetail> {
+    const raw = await this.relayRpc<unknown>(RELAY_ACTIONS.REPAIRS_UPDATE_ITEM, {
+      ...patch,
+      repair_id: repairId,
+      id: repairId,
+      item_id: itemId,
+    });
+    assertWritePersisted(raw, RELAY_ACTIONS.REPAIRS_UPDATE_ITEM);
+    return normalizeRepairDetail(unwrapResource(raw));
+  }
+
+  // DELETE /api/v1/repairs/{repair_id}/items/{item_id}. Returns the updated
+  // repair detail (server responds with the parent resource so the client
+  // has an authoritative post-delete snapshot without a follow-up fetch).
+  // If a future server flip returns 204 (relay serialises to {data: null}),
+  // fall back to a parent detail fetch instead of the misleading
+  // assertWritePersisted failure — mirrors DirectClient behaviour.
+  async removeRepairItem(
+    repairId: number,
+    itemId: number,
+  ): Promise<RepairDetail> {
+    const raw = await this.relayRpc<unknown>(RELAY_ACTIONS.REPAIRS_REMOVE_ITEM, {
+      repair_id: repairId,
+      id: repairId,
+      item_id: itemId,
+    });
+    const unwrapped = unwrapResource<unknown>(raw);
+    if (unwrapped === null || unwrapped === undefined) {
+      const parent = await this.getRepairDetail(repairId);
+      if (parent === null) {
+        throw new Error(`Repair ${repairId} not found after item removal`);
+      }
+      return parent;
+    }
+    assertWritePersisted(raw, RELAY_ACTIONS.REPAIRS_REMOVE_ITEM);
+    return normalizeRepairDetail(unwrapped);
+  }
+
+  // POST /api/v1/repairs/bulk-status. Server-side contract has been through a
+  // few iterations, so we accept ANY of:
+  //   1. `{succeeded: [ids], skipped: [ids]}` — canonical.
+  //   2. `{updated_ids: [...], skipped_ids: [...]}` — older alias.
+  //   3. Array of repair objects — the server just echoes the accepted rows,
+  //      and the client must diff against `requested`.
+  // Falling back to a client-side diff future-proofs the UI: whichever shape
+  // the server settles on, this method returns the same summary.
+  async bulkUpdateRepairStatus(
+    repairIds: number[],
+    status: RepairStatus,
+    notes?: string,
+  ): Promise<{succeeded: number[]; skipped: number[]}> {
+    const raw = await this.relayRpc<unknown>(RELAY_ACTIONS.REPAIRS_BULK_STATUS, {
+      repair_ids: repairIds,
+      status,
+      ...(notes !== undefined ? {notes} : {}),
+    });
+    assertWritePersisted(raw, RELAY_ACTIONS.REPAIRS_BULK_STATUS);
+    const requested = new Set(repairIds);
+    // Peek through a `{data: [...]}` list-envelope before unwrapResource,
+    // since unwrapResource explicitly refuses to unwrap arrays (it's a
+    // resource unwrapper). Callers of the bulk endpoint have surfaced BOTH
+    // the resource-envelope (single object) AND the list-envelope
+    // (array of repairs) shapes on the wire.
+    let inner: unknown = raw;
+    if (
+      raw &&
+      typeof raw === 'object' &&
+      !Array.isArray(raw) &&
+      'data' in (raw as Record<string, unknown>)
+    ) {
+      const d = (raw as {data: unknown}).data;
+      inner = Array.isArray(d) ? d : unwrapResource<unknown>(raw);
+    } else {
+      inner = unwrapResource<unknown>(raw);
+    }
+    // Shape 1 / 2 — try both canonical + alias key names.
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      const r = inner as Record<string, unknown>;
+      const succeededRaw = (r.succeeded ?? r.updated_ids) as unknown;
+      const skippedRaw = (r.skipped ?? r.skipped_ids) as unknown;
+      if (Array.isArray(succeededRaw)) {
+        const succeeded = succeededRaw
+          .map(v => (typeof v === 'number' ? v : Number(v)))
+          .filter(v => Number.isFinite(v));
+        let skipped = Array.isArray(skippedRaw)
+          ? skippedRaw
+              .map(v => (typeof v === 'number' ? v : Number(v)))
+              .filter(v => Number.isFinite(v))
+          : // Server only reported succeeded — diff against requested.
+            repairIds.filter(id => !succeeded.includes(id));
+        // Guard against the "server acknowledged with {succeeded: [], skipped: []}"
+        // shape. Both arrays empty means the server reported nothing usable —
+        // return every requested id as skipped rather than lying to the UI.
+        if (succeeded.length === 0 && skipped.length === 0 && repairIds.length > 0) {
+          skipped = [...repairIds];
+        }
+        return {succeeded, skipped};
+      }
+    }
+    // Shape 3 — array of repair objects. Diff against requested.
+    if (Array.isArray(inner)) {
+      const succeeded: number[] = [];
+      for (const row of inner) {
+        if (!row || typeof row !== 'object') continue;
+        const rawId = (row as Record<string, unknown>).id;
+        const id = typeof rawId === 'number' ? rawId : Number(rawId);
+        if (Number.isFinite(id) && requested.has(id)) succeeded.push(id);
+      }
+      const skipped = repairIds.filter(id => !succeeded.includes(id));
+      return {succeeded, skipped};
+    }
+    // Fallback — server acknowledged but returned nothing usable. Treat every
+    // requested id as skipped rather than lying to the UI.
+    return {succeeded: [], skipped: [...repairIds]};
+  }
+
+  // DELETE /api/v1/repairs/{id}. RepairController::destroy returns 204 →
+  // {data: null}, so we deliberately do NOT call assertWritePersisted (mirrors
+  // deleteCustomer). Also swallows NOT_FOUND — the user asked us to delete a
+  // record that's already gone, which is the desired outcome.
+  async deleteRepair(id: number): Promise<void> {
+    try {
+      await this.relayRpc<unknown>(RELAY_ACTIONS.REPAIRS_DELETE, {
+        repair_id: id,
+        id,
+      });
+    } catch (e) {
+      if (isNotFound(e, 'relay')) return;
+      throw e;
+    }
   }
 
   // --- Sales (Z-report) ---

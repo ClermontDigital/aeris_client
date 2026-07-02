@@ -2,9 +2,13 @@ import * as Crypto from 'expo-crypto';
 import {
   emptyPage,
   normalizeCustomer,
+  normalizePendingRepair,
   normalizeProduct,
   normalizeProductDetail,
   normalizeReceipt,
+  normalizeRepair,
+  normalizeRepairDetail,
+  normalizeRepairStatusHistory,
   normalizeSale,
   normalizeSaleDetail,
   normalizeStockAdjustment,
@@ -29,6 +33,7 @@ import type {
   DailySummary,
   PaginatedResponse,
   PaymentMethod,
+  PendingRepair,
   Product,
   ProductCreateInput,
   ProductDetail,
@@ -37,6 +42,14 @@ import type {
   Refund,
   RefundParams,
   RefundResponse,
+  Repair,
+  RepairCreateInput,
+  RepairDetail,
+  RepairItem,
+  RepairPriority,
+  RepairStatus,
+  RepairStatusHistory,
+  RepairUpdateInput,
   Sale,
   SaleDetail,
   StockAdjustment,
@@ -47,7 +60,14 @@ import type {
 import {
   API_ENDPOINTS,
   CUSTOMER_BY_ID,
+  POS_PENDING_REPAIRS_BY_CUSTOMER,
   PRODUCT_BY_ID,
+  REPAIR_BULK_STATUS,
+  REPAIR_BY_ID,
+  REPAIR_ITEMS,
+  REPAIR_ITEM_BY_ID,
+  REPAIR_STATUS,
+  REPAIR_STATUS_HISTORY,
 } from '../constants/api';
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -97,7 +117,30 @@ export class DirectClient {
   private refreshPromise: Promise<boolean> | null = null;
 
   configure(options: {baseUrl?: string; timeoutMs?: number}): void {
-    if (options.baseUrl !== undefined) this.baseUrl = options.baseUrl;
+    if (options.baseUrl !== undefined) {
+      // Defence-in-depth: SettingsModal validates URLs interactively, but a
+      // corrupted persisted payload or a programmatic saveSettings() could
+      // still land a bogus baseUrl here — which would then get suffixed with
+      // an auth bearer on every request. Reject anything that isn't a valid
+      // http(s) URL. An empty string is legal (means "not configured yet";
+      // request() will fail loudly on the first call).
+      const trimmed = options.baseUrl.trim();
+      if (trimmed === '') {
+        this.baseUrl = '';
+      } else {
+        try {
+          const parsed = new URL(trimmed);
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            throw new Error('invalid scheme');
+          }
+          this.baseUrl = trimmed;
+        } catch {
+          console.warn('DirectClient.configure: rejecting invalid baseUrl', trimmed);
+          // Leave the existing baseUrl in place rather than clearing it —
+          // a bad settings write shouldn't disconnect a working session.
+        }
+      }
+    }
     if (options.timeoutMs !== undefined && options.timeoutMs > 0) {
       this.timeoutMs = options.timeoutMs;
     }
@@ -767,6 +810,311 @@ export class DirectClient {
       assertWritePersisted(raw);
       return normalizeStockAdjustment(unwrapResource(raw));
     });
+  }
+
+  // --- Repairs ---
+  // Twins of RelayClient.* — same read/write shapes, same idempotency policy.
+  // Goes straight to the deployment's /api/v1/repairs/* routes (no envelope).
+
+  async listRepairs(
+    page = 1,
+    perPage = 20,
+    filters?: {
+      status?: RepairStatus;
+      customer_id?: number;
+      assigned_to?: number;
+      location_id?: number;
+      priority?: RepairPriority;
+      date_from?: string;
+      date_to?: string;
+    },
+  ): Promise<PaginatedResponse<Repair>> {
+    return withReadRetry(async () => {
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          per_page: String(perPage),
+        });
+        if (filters?.status) params.set('status', filters.status);
+        if (filters?.customer_id !== undefined) {
+          params.set('customer_id', String(filters.customer_id));
+        }
+        if (filters?.assigned_to !== undefined) {
+          params.set('assigned_to', String(filters.assigned_to));
+        }
+        if (filters?.location_id !== undefined) {
+          params.set('location_id', String(filters.location_id));
+        }
+        if (filters?.priority) params.set('priority', String(filters.priority));
+        if (filters?.date_from) params.set('date_from', filters.date_from);
+        if (filters?.date_to) params.set('date_to', filters.date_to);
+        const qs = params.toString();
+        const raw = await this.get<PaginatedResponse<unknown>>(
+          `${API_ENDPOINTS.REPAIRS}${qs ? `?${qs}` : ''}`,
+        );
+        return {
+          ...raw,
+          data: (raw.data || []).map(normalizeRepair),
+        };
+      } catch (e) {
+        if (isNotFound(e, 'direct')) return emptyPage<Repair>(page, perPage);
+        throw e;
+      }
+    });
+  }
+
+  async getRepairDetail(id: number): Promise<RepairDetail | null> {
+    return withReadRetry(async () => {
+      try {
+        const raw = await this.get<unknown>(REPAIR_BY_ID(id));
+        return raw == null ? null : normalizeRepairDetail(unwrapResource(raw));
+      } catch (e) {
+        if (isNotFound(e, 'direct')) return null;
+        throw e;
+      }
+    });
+  }
+
+  async getRepairStatusHistory(
+    repairId: number,
+  ): Promise<RepairStatusHistory[]> {
+    return withReadRetry(async () => {
+      try {
+        const result = await this.get<unknown>(REPAIR_STATUS_HISTORY(repairId));
+        return unwrapList<unknown>(result).map(normalizeRepairStatusHistory);
+      } catch (e) {
+        if (isNotFound(e, 'direct')) return [];
+        throw e;
+      }
+    });
+  }
+
+  async getPendingRepairsForCustomer(
+    customerId: number,
+  ): Promise<PendingRepair[]> {
+    return withReadRetry(async () => {
+      try {
+        const result = await this.get<unknown>(
+          POS_PENDING_REPAIRS_BY_CUSTOMER(customerId),
+        );
+        const list = unwrapList<unknown>(result);
+        if (list.length > 0) return list.map(normalizePendingRepair);
+        // Older `{success, repairs: [...], count}` shape — see the sibling
+        // relay method for the same fallback.
+        if (result && typeof result === 'object') {
+          const r = result as Record<string, unknown>;
+          if (Array.isArray(r.repairs)) {
+            return (r.repairs as unknown[]).map(normalizePendingRepair);
+          }
+        }
+        return [];
+      } catch (e) {
+        if (isNotFound(e, 'direct')) return [];
+        throw e;
+      }
+    });
+  }
+
+  async createRepair(input: RepairCreateInput): Promise<RepairDetail> {
+    const idempotencyKey = generateUuid();
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.post<unknown>(
+          API_ENDPOINTS.REPAIRS,
+          {...input},
+          {idempotencyKey},
+        );
+        assertWritePersisted(raw);
+        return normalizeRepairDetail(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  async updateRepair(
+    id: number,
+    input: RepairUpdateInput,
+  ): Promise<RepairDetail> {
+    const raw = await this.put<unknown>(REPAIR_BY_ID(id), {...input});
+    assertWritePersisted(raw);
+    return normalizeRepairDetail(unwrapResource(raw));
+  }
+
+  async updateRepairStatus(
+    id: number,
+    status: RepairStatus,
+    notes?: string,
+  ): Promise<RepairDetail> {
+    const raw = await this.post<unknown>(REPAIR_STATUS(id), {
+      status,
+      ...(notes !== undefined ? {notes} : {}),
+    });
+    assertWritePersisted(raw);
+    return normalizeRepairDetail(unwrapResource(raw));
+  }
+
+  async addRepairItem(
+    repairId: number,
+    item: {
+      item_type: RepairItem['item_type'];
+      item_name: string;
+      quantity: number;
+      unit_price: number;
+      product_id?: number | null;
+      item_sku?: string | null;
+      notes?: string | null;
+    },
+  ): Promise<RepairDetail> {
+    const idempotencyKey = generateUuid();
+    // Defensive: line_total is server-computed; never wire it.
+    const payload: Record<string, unknown> = {
+      item_type: item.item_type,
+      item_name: item.item_name,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      ...(item.product_id !== undefined && item.product_id !== null
+        ? {product_id: item.product_id}
+        : {}),
+      ...(item.item_sku !== undefined && item.item_sku !== null
+        ? {item_sku: item.item_sku}
+        : {}),
+      ...(item.notes !== undefined && item.notes !== null
+        ? {notes: item.notes}
+        : {}),
+    };
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= SALE_RETRY.maxAttempts; attempt++) {
+      try {
+        const raw = await this.post<unknown>(REPAIR_ITEMS(repairId), payload, {
+          idempotencyKey,
+        });
+        assertWritePersisted(raw);
+        return normalizeRepairDetail(unwrapResource(raw));
+      } catch (e) {
+        lastError = e;
+        if (attempt >= SALE_RETRY.maxAttempts || !isRetryable(e)) throw e;
+        await sleep(backoffDelay(attempt, SALE_RETRY.baseDelayMs));
+      }
+    }
+    throw lastError;
+  }
+
+  async updateRepairItem(
+    repairId: number,
+    itemId: number,
+    patch: {
+      quantity?: number;
+      unit_price?: number;
+      notes?: string | null;
+      status?: RepairItem['status'];
+    },
+  ): Promise<RepairDetail> {
+    const raw = await this.put<unknown>(
+      REPAIR_ITEM_BY_ID(repairId, itemId),
+      {...patch},
+    );
+    assertWritePersisted(raw);
+    return normalizeRepairDetail(unwrapResource(raw));
+  }
+
+  async removeRepairItem(
+    repairId: number,
+    itemId: number,
+  ): Promise<RepairDetail> {
+    // Item removal returns the updated parent repair (server chooses the
+    // parent-resource echo shape so the client has an authoritative snapshot
+    // without a follow-up fetch). Current contract is 200 + RepairResource
+    // body — but if a future server flip returns 204 (matching destroy()
+    // elsewhere in Aeris2), request() short-circuits to undefined and
+    // assertWritePersisted would falsely fail. Fall back to a parent fetch
+    // so the caller always gets an authoritative RepairDetail even under
+    // that server shape change.
+    const raw = await this.delete<unknown>(REPAIR_ITEM_BY_ID(repairId, itemId));
+    if (raw === undefined || raw === null) {
+      const parent = await this.getRepairDetail(repairId);
+      if (parent === null) {
+        throw new Error(`Repair ${repairId} not found after item removal`);
+      }
+      return parent;
+    }
+    assertWritePersisted(raw);
+    return normalizeRepairDetail(unwrapResource(raw));
+  }
+
+  async bulkUpdateRepairStatus(
+    repairIds: number[],
+    status: RepairStatus,
+    notes?: string,
+  ): Promise<{succeeded: number[]; skipped: number[]}> {
+    const raw = await this.post<unknown>(REPAIR_BULK_STATUS, {
+      repair_ids: repairIds,
+      status,
+      ...(notes !== undefined ? {notes} : {}),
+    });
+    assertWritePersisted(raw);
+    const requested = new Set(repairIds);
+    // Peek through the list-envelope before unwrapResource, which
+    // deliberately refuses to unwrap arrays. Mirrors RelayClient.
+    let inner: unknown = raw;
+    if (
+      raw &&
+      typeof raw === 'object' &&
+      !Array.isArray(raw) &&
+      'data' in (raw as Record<string, unknown>)
+    ) {
+      const d = (raw as {data: unknown}).data;
+      inner = Array.isArray(d) ? d : unwrapResource<unknown>(raw);
+    } else {
+      inner = unwrapResource<unknown>(raw);
+    }
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      const r = inner as Record<string, unknown>;
+      const succeededRaw = (r.succeeded ?? r.updated_ids) as unknown;
+      const skippedRaw = (r.skipped ?? r.skipped_ids) as unknown;
+      if (Array.isArray(succeededRaw)) {
+        const succeeded = succeededRaw
+          .map(v => (typeof v === 'number' ? v : Number(v)))
+          .filter(v => Number.isFinite(v));
+        let skipped = Array.isArray(skippedRaw)
+          ? skippedRaw
+              .map(v => (typeof v === 'number' ? v : Number(v)))
+              .filter(v => Number.isFinite(v))
+          : repairIds.filter(id => !succeeded.includes(id));
+        // Empty succeeded + empty skipped when the caller requested >0 ids
+        // means the server acknowledged but reported nothing usable — treat
+        // as fully skipped rather than lying to the UI. Mirrors RelayClient.
+        if (succeeded.length === 0 && skipped.length === 0 && repairIds.length > 0) {
+          skipped = [...repairIds];
+        }
+        return {succeeded, skipped};
+      }
+    }
+    if (Array.isArray(inner)) {
+      const succeeded: number[] = [];
+      for (const row of inner) {
+        if (!row || typeof row !== 'object') continue;
+        const rawId = (row as Record<string, unknown>).id;
+        const id = typeof rawId === 'number' ? rawId : Number(rawId);
+        if (Number.isFinite(id) && requested.has(id)) succeeded.push(id);
+      }
+      const skipped = repairIds.filter(id => !succeeded.includes(id));
+      return {succeeded, skipped};
+    }
+    return {succeeded: [], skipped: [...repairIds]};
+  }
+
+  async deleteRepair(id: number): Promise<void> {
+    try {
+      await this.delete(REPAIR_BY_ID(id));
+    } catch (e) {
+      if (isNotFound(e, 'direct')) return;
+      throw e;
+    }
   }
 
   // --- Internal HTTP methods ---

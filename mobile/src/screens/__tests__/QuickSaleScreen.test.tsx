@@ -92,6 +92,9 @@ jest.mock('../../hooks/useHaptics', () => {
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({navigate: jest.fn()}),
+  // QuickSaleScreen registers a header-back reset via useFocusEffect;
+  // focus events don't fire in RTL so a no-op stub is enough.
+  useFocusEffect: () => undefined,
 }));
 
 import QuickSaleScreen from '../QuickSaleScreen';

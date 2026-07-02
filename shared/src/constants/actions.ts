@@ -64,4 +64,17 @@ export const RELAY_ACTIONS = {
   REPAIRS_UPDATE_ITEM: 'repairs.update-item',
   REPAIRS_REMOVE_ITEM: 'repairs.remove-item',
   REPAIRS_BULK_STATUS: 'repairs.bulk-status',
+  // Status-history is a read-only slice served by the deployment's
+  // /api/v1/repairs/{id}/status-history endpoint. Marketplace dispatcher
+  // wiring pending — RelayClient tolerates NOT_FOUND by returning [].
+  REPAIRS_STATUS_HISTORY: 'repairs.status-history',
+  // Destroy — DELETE /api/v1/repairs/{id}. RepairController::destroy returns
+  // 204 which the dispatcher converts to {data: null}; RelayClient.deleteRepair
+  // therefore does NOT call assertWritePersisted (mirrors deleteCustomer).
+  REPAIRS_DELETE: 'repairs.delete',
+  // POS-scoped pending-repairs-for-customer picker. Uses the POS endpoint
+  // /api/v1/pos/customers/{id}/pending-repairs (sale_id IS NULL guard). This
+  // action is deployment-team-owned; dispatcher entry pending, so
+  // RelayClient.getPendingRepairsForCustomer swallows NOT_FOUND and returns [].
+  REPAIRS_PENDING_FOR_CUSTOMER: 'repairs.pending-for-customer',
 } as const;

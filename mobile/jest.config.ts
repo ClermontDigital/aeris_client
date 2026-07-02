@@ -22,7 +22,7 @@ const config: Config = {
     '^react/(.*)$': '<rootDir>/node_modules/react/$1',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(expo|expo-.*|@expo|react-native|@react-native|react-native-webview|react-native-modal|@react-native-community/netinfo|react-native-safe-area-context|react-native-reanimated|react-native-screens|react-native-gesture-handler|@react-navigation|zustand)/)',
+    'node_modules/(?!(expo|expo-.*|@expo|react-native|@react-native|react-native-webview|react-native-modal|react-native-animatable|@react-native-community/netinfo|react-native-safe-area-context|react-native-reanimated|react-native-screens|react-native-gesture-handler|@react-navigation|zustand)/)',
   ],
   setupFilesAfterEnv: ['./jest.setup.ts'],
   collectCoverageFrom: [
