@@ -46,15 +46,18 @@ jest.mock('../../hooks/useHaptics', () => {
 });
 
 // Auth store stub - ErrorBanner reads it via subscribe + getState.
+// H1: RepairEditScreen now reads user.location_id (required by the server's
+// StoreRepairRequest) so the mocked user MUST expose that field. Tests can
+// mutate `mockAuthState.user.location_id` to null to exercise the guard.
+const mockAuthState = {
+  user: {name: 'Tester', location_id: 1 as number | null},
+  isAuthenticated: true,
+  errorKind: null,
+};
 jest.mock('../../stores/authStore', () => {
-  const state = {
-    user: {name: 'Tester'},
-    isAuthenticated: true,
-    errorKind: null,
-  };
-  const useAuthStore: any = (selector: (s: typeof state) => unknown) =>
-    selector(state);
-  useAuthStore.getState = () => state;
+  const useAuthStore: any = (selector: (s: typeof mockAuthState) => unknown) =>
+    selector(mockAuthState);
+  useAuthStore.getState = () => mockAuthState;
   useAuthStore.subscribe = () => () => undefined;
   return {useAuthStore};
 });
@@ -235,22 +238,30 @@ describe('RepairEditScreen - pure form helpers', () => {
     expect(errs.estimated_completion).toBeDefined();
   });
 
-  it('buildCreatePayload includes customer_id + dollar-float cost', () => {
-    const payload = buildCreatePayload({
-      customerId: 42,
-      customerLabel: 'Ada',
-      device_type: 'Phone',
-      brand: 'Apple',
-      model: 'iPhone 13',
-      serial_number: 'SN-1',
-      issue_description: 'Cracked screen',
-      diagnosis: 'Digitizer OK',
-      notes: 'Rush',
-      priority: 'high',
-      estimated_cost: '199.95',
-      estimated_completion: '2026-08-01',
-    });
+  it('buildCreatePayload includes customer_id + location_id + dollar-float cost', () => {
+    const payload = buildCreatePayload(
+      {
+        customerId: 42,
+        customerLabel: 'Ada',
+        device_type: 'Phone',
+        brand: 'Apple',
+        model: 'iPhone 13',
+        serial_number: 'SN-1',
+        issue_description: 'Cracked screen',
+        diagnosis: 'Digitizer OK',
+        notes: 'Rush',
+        priority: 'high',
+        estimated_cost: '199.95',
+        estimated_completion: '2026-08-01',
+      },
+      1,
+    );
     expect(payload.customer_id).toBe(42);
+    // H1: location_id is a required field on the wire (Aeris2
+    // StoreRepairRequest declares required|exists:locations,id). The
+    // client sources it from the signed-in user's assigned deployment
+    // site (authStore.user.location_id).
+    expect(payload.location_id).toBe(1);
     expect(payload.issue_description).toBe('Cracked screen');
     expect(payload.estimated_cost).toBeCloseTo(199.95);
     expect(payload.priority).toBe('high');
@@ -308,6 +319,10 @@ describe('RepairEditScreen - create mode', () => {
     mockGetParent.mockReset();
     mockAddListener.mockReset().mockReturnValue(() => undefined);
     mockWorkspaceState.repairs_enabled = true;
+    // H1: default the signed-in user's location_id back to a valid value
+    // between tests so the null-location guard test can flip it without
+    // leaking to later specs.
+    mockAuthState.user = {name: 'Tester', location_id: 1};
   });
 
   it('renders "New repair" title and does NOT fetch getRepairDetail', () => {
@@ -378,6 +393,9 @@ describe('RepairEditScreen - create mode', () => {
     const [payload] = mockCreateRepair.mock.calls[0];
     expect(payload.customer_id).toBe(42);
     expect(payload.issue_description).toBe('Cracked screen');
+    // H1: the seeded user's location_id (1) is threaded into the
+    // create payload so the server's required|exists rule passes.
+    expect(payload.location_id).toBe(1);
   });
 
   it('successful create replaces navigation with RepairDetail id', async () => {
@@ -446,6 +464,46 @@ describe('RepairEditScreen - create mode', () => {
     // Inline helper text renders under the issue field.
     await findByText(/issue description field is required/i);
   });
+
+  it('blocks submit with a location banner when the signed-in user has no location_id', async () => {
+    // H1: null user.location_id short-circuits handleSubmit BEFORE the RPC
+    // fires (server would 422 with location_id required otherwise). The
+    // banner text is copied verbatim from the fix.
+    mockAuthState.user = {name: 'Tester', location_id: null};
+    mockSearchCustomers.mockResolvedValue({
+      data: [makeCustomer()],
+      current_page: 1,
+      last_page: 1,
+      per_page: 20,
+      total: 1,
+    });
+    mockCreateRepair.mockResolvedValue(makeDetail());
+
+    const {getByLabelText, getByTestId, findByLabelText, findByText} = render(
+      <RepairEditScreen />,
+    );
+    // Select a customer + fill the issue so client-side validation would
+    // otherwise pass - the location guard is the ONLY thing blocking.
+    fireEvent.press(getByLabelText('Select customer'));
+    fireEvent.changeText(getByTestId('repair-edit-customer-search'), 'Ada');
+    await waitFor(() => expect(mockSearchCustomers).toHaveBeenCalled(), {
+      timeout: 1000,
+    });
+    fireEvent.press(await findByLabelText('Select customer Ada Lovelace'));
+    fireEvent.changeText(
+      getByTestId('repair-edit-issue-description'),
+      'Cracked screen',
+    );
+    fireEvent.press(getByLabelText('Save new repair'));
+
+    // Banner surfaces the specific admin-contact message.
+    await findByText(
+      /your account has no location assigned - contact your administrator/i,
+    );
+    // Critical: the RPC was NOT called - the guard short-circuits before
+    // handleSubmit dispatches.
+    expect(mockCreateRepair).not.toHaveBeenCalled();
+  });
 });
 
 describe('RepairEditScreen - edit mode', () => {
@@ -461,6 +519,7 @@ describe('RepairEditScreen - edit mode', () => {
     mockGetParent.mockReset();
     mockAddListener.mockReset().mockReturnValue(() => undefined);
     mockWorkspaceState.repairs_enabled = true;
+    mockAuthState.user = {name: 'Tester', location_id: 1};
   });
 
   it('renders a spinner while getRepairDetail is in flight', () => {
@@ -530,6 +589,7 @@ describe('RepairEditScreen - discard-confirm on Back', () => {
     mockGoBack.mockReset();
     mockAddListener.mockReset().mockReturnValue(() => undefined);
     mockWorkspaceState.repairs_enabled = true;
+    mockAuthState.user = {name: 'Tester', location_id: 1};
   });
 
   it('skips the confirm and goes back when the form is clean', async () => {
@@ -621,6 +681,7 @@ describe('RepairEditScreen - workspace-flag bounce', () => {
     mockGoBack.mockReset();
     mockAddListener.mockReset().mockReturnValue(() => undefined);
     mockWorkspaceState.repairs_enabled = false;
+    mockAuthState.user = {name: 'Tester', location_id: 1};
   });
 
   it('bounces out when repairs_enabled is false at mount without firing an orphan fetch', async () => {

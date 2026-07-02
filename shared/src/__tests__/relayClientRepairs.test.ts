@@ -184,6 +184,7 @@ describe('RelayClient — repairs (T3)', () => {
       );
       const created = await client.createRepair({
         customer_id: 10,
+        location_id: 1,
         issue_description: 'Cracked screen',
       });
       const headers = fetchMock.mock.calls[0][1]?.headers as Record<string, string>;
@@ -193,6 +194,7 @@ describe('RelayClient — repairs (T3)', () => {
       const sent = readBody();
       expect(sent.action).toBe('repairs.create');
       expect(sent.params.customer_id).toBe(10);
+      expect(sent.params.location_id).toBe(1);
       expect(sent.params.issue_description).toBe('Cracked screen');
       expect(created.id).toBe(55);
       // RepairDetail includes items[] + status_history[] arrays.
@@ -212,6 +214,7 @@ describe('RelayClient — repairs (T3)', () => {
         );
       await client.createRepair({
         customer_id: 10,
+        location_id: 1,
         issue_description: 'Cracked screen',
       });
       expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -597,8 +600,16 @@ describe('RelayClient — repairs (T3)', () => {
         .mockResolvedValueOnce(
           jsonResponse(envelope('repairs.create', {data: repairFixture({id: 2})})),
         );
-      await client.createRepair({customer_id: 10, issue_description: 'A'});
-      await client.createRepair({customer_id: 10, issue_description: 'B'});
+      await client.createRepair({
+        customer_id: 10,
+        location_id: 1,
+        issue_description: 'A',
+      });
+      await client.createRepair({
+        customer_id: 10,
+        location_id: 1,
+        issue_description: 'B',
+      });
       const k1 = (fetchMock.mock.calls[0][1]?.headers as Record<string, string>)[
         'Idempotency-Key'
       ];
@@ -758,6 +769,40 @@ describe('RelayClient — repairs (T3)', () => {
     it('unusable response shape falls back to all-skipped', async () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse(envelope('repairs.bulk-status', {data: {}})),
+      );
+      const result = await client.bulkUpdateRepairStatus([1, 2, 3], 'ready');
+      expect(result.succeeded).toEqual([]);
+      expect(result.skipped).toEqual([1, 2, 3]);
+    });
+
+    // DR-M3 H2 remediation — server surfaced a `{updated_count: N}` count-only
+    // shape. When count === requested.length we attribute success to every
+    // requested id. Deployment team owes explicit ID lists; this branch is
+    // the transitional fallback.
+    it('accepts {updated_count: N} when N === repairIds.length and marks all succeeded', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.bulk-status', {
+            data: {updated_count: 3, message: 'ok'},
+          }),
+        ),
+      );
+      const result = await client.bulkUpdateRepairStatus([1, 2, 3], 'ready');
+      expect(result.succeeded).toEqual([1, 2, 3]);
+      expect(result.skipped).toEqual([]);
+    });
+
+    // Data-loss branch: server returned a partial count but no ID lists —
+    // we cannot tell WHICH ids succeeded, so we report every requested id
+    // as skipped rather than lie to the UI. Deployment team is expected
+    // to return succeeded/skipped ID lists so this branch can be retired.
+    it('reports all-skipped when {updated_count: N} is partial (data-loss branch)', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.bulk-status', {
+            data: {updated_count: 1},
+          }),
+        ),
       );
       const result = await client.bulkUpdateRepairStatus([1, 2, 3], 'ready');
       expect(result.succeeded).toEqual([]);

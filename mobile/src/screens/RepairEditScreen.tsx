@@ -23,6 +23,7 @@ import PillButton from '../components/PillButton';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
+import {useAuthStore} from '../stores/authStore';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import type {
   Customer,
@@ -98,6 +99,9 @@ export interface RepairFormErrors {
   priority?: string;
   estimated_cost?: string;
   estimated_completion?: string;
+  // Surfaced when the current user has no location_id assigned (blocks
+  // create) or when the server 422s on the location_id field.
+  location_id?: string;
 }
 
 const EMPTY_FORM: RepairFormValues = {
@@ -181,8 +185,16 @@ function optStr(s: string): string | null {
   return t === '' ? null : t;
 }
 
+// buildCreatePayload takes the current user's `locationId` as a required
+// second argument (rather than reading the store from inside a pure helper)
+// so this function stays trivially unit-testable. The server's
+// StoreRepairRequest declares `location_id => required|exists:locations,id`
+// (see the RepairCreateInput doc-comment for the H1 background); the caller
+// (handleSubmit) sources locationId from `useAuthStore(s => s.user?.location_id)`
+// and MUST block submit when it's null.
 export function buildCreatePayload(
   values: RepairFormValues,
+  locationId: number,
 ): RepairCreateInput {
   if (values.customerId == null) {
     // Caller has already validated; belt-and-braces so the type narrows.
@@ -190,6 +202,7 @@ export function buildCreatePayload(
   }
   const out: RepairCreateInput = {
     customer_id: values.customerId,
+    location_id: locationId,
     issue_description: values.issue_description.trim(),
     device_type: optStr(values.device_type),
     brand: optStr(values.brand),
@@ -258,6 +271,7 @@ export function parseServerFieldErrors(err: unknown): RepairFormErrors {
           else if (k === 'estimated_cost') out.estimated_cost = first;
           else if (k === 'estimated_completion')
             out.estimated_completion = first;
+          else if (k === 'location_id') out.location_id = first;
         }
         if (Object.keys(out).length > 0) return out;
       }
@@ -274,6 +288,9 @@ export function parseServerFieldErrors(err: unknown): RepairFormErrors {
     out.estimated_cost = 'Invalid amount';
   if (msg.includes('completion') || msg.includes('estimated_completion'))
     out.estimated_completion = 'Invalid date';
+  if (msg.includes('location'))
+    out.location_id =
+      'Your account has no location assigned - contact your administrator';
   return out;
 }
 
@@ -291,6 +308,11 @@ const RepairEditScreen: React.FC = () => {
 
   // ---------------- state (all hooks live ABOVE early-return guards per
   // feedback_hooks_above_early_returns). ----------------
+  // H1 fix: source location_id from the signed-in user's assigned deployment
+  // site. Server StoreRepairRequest declares location_id required, so a null
+  // here MUST block Save in create mode. Edit mode never sends location_id
+  // (server-locked after create), so a null user.location_id there is fine.
+  const userLocationId = useAuthStore(s => s.user?.location_id ?? null);
   const [values, setValues] = useState<RepairFormValues>(EMPTY_FORM);
   const [assignedToName, setAssignedToName] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<RepairFormErrors>({});
@@ -466,6 +488,15 @@ const RepairEditScreen: React.FC = () => {
   const handleSubmit = useCallback(async () => {
     if (submitLockRef.current) return;
     const errs = validateRepairForm(values, isEdit);
+    // H1 guard: create mode requires the current user's location_id.
+    // The server StoreRepairRequest rejects a missing/invalid location_id
+    // with 422; we short-circuit here with an inline banner so cashiers
+    // whose account is missing a location assignment get a clear message
+    // rather than a cryptic server error tail.
+    if (!isEdit && userLocationId == null) {
+      errs.location_id =
+        'Your account has no location assigned - contact your administrator';
+    }
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) {
       haptics.error();
@@ -483,7 +514,9 @@ const RepairEditScreen: React.FC = () => {
         // RepairDetailScreen refetches on focus (T6), so goBack is enough.
         navigation.goBack();
       } else {
-        const payload = buildCreatePayload(values);
+        // userLocationId is non-null here: the guard above blocks submit
+        // when it's null. The `!` is safe.
+        const payload = buildCreatePayload(values, userLocationId!);
         const created = await ApiClient.createRepair(payload);
         haptics.success();
         dirtyRef.current = false;
@@ -505,7 +538,7 @@ const RepairEditScreen: React.FC = () => {
       setIsSubmitting(false);
       submitLockRef.current = false;
     }
-  }, [values, isEdit, repairId, haptics, navigation]);
+  }, [values, isEdit, repairId, haptics, navigation, userLocationId]);
 
   // ---------------- discard-confirm on Back ----------------
   // Three-way confirm mirrors the spec: Discard / Keep editing / Save. Save
@@ -654,6 +687,24 @@ const RepairEditScreen: React.FC = () => {
               <ErrorBanner
                 message={topError}
                 onDismiss={() => setTopError(null)}
+              />
+            </View>
+          ) : null}
+
+          {/* H1: location_id is required by the server; surface a top-level
+              banner rather than an inline field error because there is no
+              user-facing location picker on this screen. */}
+          {fieldErrors.location_id ? (
+            <View style={styles.bannerWrap}>
+              <ErrorBanner
+                message={fieldErrors.location_id}
+                onDismiss={() =>
+                  setFieldErrors(prev => {
+                    const next = {...prev};
+                    delete next.location_id;
+                    return next;
+                  })
+                }
               />
             </View>
           ) : null}

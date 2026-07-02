@@ -210,7 +210,6 @@ const RepairStatusChangeSheet: React.FC = () => {
     submitLockRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
-    haptics.success();
 
     // Mark the write in-flight so the DR auto-failover cascade defers a
     // mid-write swap. Matches StockAdjustModal + RefundModal.
@@ -229,11 +228,27 @@ const RepairStatusChangeSheet: React.FC = () => {
       newStatus,
       trimmedNotes.length > 0 ? trimmedNotes : undefined,
     )
+      .then(() => {
+        // Fire the success haptic only after the server has ack'd. The
+        // previous "haptic before RPC" pattern gave a false-positive
+        // buzz on the DirectClient POST→405 path (BLOCKER: server route
+        // is PATCH). Now the buzz means "actually persisted".
+        haptics.success();
+      })
       .catch(e => {
-        // The sheet is already dismissed - nothing to render an error on.
-        // The parent detail refetch on focus will re-read the server's
-        // (unchanged) status; that IS the surfacing of the failure.
-        // We still log so a QA session with the debug menu can see it.
+        // Sheet is already dismissed - nothing to render an inline error
+        // on. Surface via Alert.alert so the cashier gets an unmissable
+        // signal (the previous silent console.warn hid the PATCH-vs-POST
+        // failure entirely). RepairDetail's useFocusEffect refetch will
+        // still reconcile the (unchanged) status chip.
+        haptics.error();
+        const message =
+          e instanceof RelayError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : 'Failed to update repair status.';
+        Alert.alert('Status change failed', message);
         // eslint-disable-next-line no-console
         console.warn('updateRepairStatus failed after optimistic dismiss', e);
       })
