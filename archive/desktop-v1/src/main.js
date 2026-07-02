@@ -489,18 +489,28 @@ function createMenu() {
     }
   ];
 
-  // Add DevTools menu item only in development
-  if (process.env.NODE_ENV !== 'production') {
-    template[2].submenu.push({
-      label: 'Developer Tools',
-      accelerator: 'F12',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.webContents.toggleDevTools();
-        }
+  // DevTools accelerator is exposed in ALL builds from 1.4.4 forward so
+  // support can diagnose live-user issues without shipping a special build.
+  // The accelerator is F12 (matches Chrome expectation) with Ctrl+Shift+I as
+  // a fallback on keyboards that map F12 to a media key.
+  template[2].submenu.push({
+    label: 'Developer Tools',
+    accelerator: 'F12',
+    click: () => {
+      if (mainWindow) {
+        mainWindow.webContents.toggleDevTools();
       }
-    });
-  }
+    }
+  });
+  template[2].submenu.push({
+    label: 'Developer Tools (alt)',
+    accelerator: 'CmdOrCtrl+Shift+I',
+    click: () => {
+      if (mainWindow) {
+        mainWindow.webContents.toggleDevTools();
+      }
+    }
+  });
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
