@@ -156,6 +156,7 @@ export default function SaleDetailScreen() {
       name === 'Transactions' ||
       name === 'QuickSale' ||
       name === 'Dashboard' ||
+      name === 'Repairs' ||
       name === 'ERP'
     ) {
       return name;
