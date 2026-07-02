@@ -1292,12 +1292,18 @@ export class RelayClient {
     return normalizeRepairDetail(unwrapped);
   }
 
-  // POST /api/v1/repairs/bulk-status. Server-side contract has been through a
+  // PATCH /api/v1/repairs/bulk/status. Server-side contract has been through a
   // few iterations, so we accept ANY of:
   //   1. `{succeeded: [ids], skipped: [ids]}` — canonical.
   //   2. `{updated_ids: [...], skipped_ids: [...]}` — older alias.
   //   3. Array of repair objects — the server just echoes the accepted rows,
   //      and the client must diff against `requested`.
+  //   4. `{updated_count: N, message?: string}` — count-only shape observed in
+  //      DR-M3. Data-loss branch: if N === requested.length we can mark all
+  //      requested ids as succeeded; if N < requested.length we can't tell
+  //      WHICH succeeded so report all as skipped rather than lie to the UI.
+  //      Deployment-team follow-up: the server SHOULD be updated to return
+  //      explicit succeeded/skipped ID lists — this branch is transitional.
   // Falling back to a client-side diff future-proofs the UI: whichever shape
   // the server settles on, this method returns the same summary.
   async bulkUpdateRepairStatus(
@@ -1364,6 +1370,23 @@ export class RelayClient {
       }
       const skipped = repairIds.filter(id => !succeeded.includes(id));
       return {succeeded, skipped};
+    }
+    // Shape 4 — `{updated_count: N}` observed in DR-M3. Data-loss branch:
+    // if N === requested.length we can attribute success to all requested
+    // ids; otherwise we can't tell WHICH succeeded so mark all as skipped.
+    // Deployment-team follow-up: return succeeded/skipped ID lists so we
+    // can retire this branch.
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      const r = inner as Record<string, unknown>;
+      const rawCount = r.updated_count;
+      const updatedCount =
+        typeof rawCount === 'number' ? rawCount : Number(rawCount);
+      if (Number.isFinite(updatedCount)) {
+        if (updatedCount === repairIds.length) {
+          return {succeeded: [...repairIds], skipped: []};
+        }
+        return {succeeded: [], skipped: [...repairIds]};
+      }
     }
     // Fallback — server acknowledged but returned nothing usable. Treat every
     // requested id as skipped rather than lying to the UI.

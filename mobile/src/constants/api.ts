@@ -29,7 +29,12 @@ export const API_ENDPOINTS = {
   // as parameterised builders below (matching the CUSTOMER_BY_ID pattern) so
   // the map stays a pure string lookup.
   REPAIRS: '/api/v1/repairs',
-  REPAIR_BULK_STATUS: '/api/v1/repairs/bulk-status',
+  // Server route is PATCH /api/v1/repairs/bulk/status (slash, not hyphen).
+  // The mismatched '/bulk-status' slug returned 404 in DR-M3 for both
+  // relay- and direct-mode. Peer review flagged the paired verb regression:
+  // the server exposes PATCH here; the client used POST. Both are fixed
+  // together — see DirectClient.bulkUpdateRepairStatus + RelayClient.
+  REPAIR_BULK_STATUS: '/api/v1/repairs/bulk/status',
 } as const;
 
 // Parameterised endpoint builders. Kept separate from the const map so the
@@ -71,5 +76,7 @@ export const POS_PENDING_REPAIRS_BY_CUSTOMER = (
   `/api/v1/pos/customers/${encodeURIComponent(String(customerId))}/pending-repairs`;
 
 // Re-export the constant here so DirectClient can import it via the same
-// module surface it uses for the parameterised builders.
-export const REPAIR_BULK_STATUS = '/api/v1/repairs/bulk-status';
+// module surface it uses for the parameterised builders. Kept in sync with
+// API_ENDPOINTS.REPAIR_BULK_STATUS above; server route is PATCH on the
+// slash-form URL.
+export const REPAIR_BULK_STATUS = '/api/v1/repairs/bulk/status';

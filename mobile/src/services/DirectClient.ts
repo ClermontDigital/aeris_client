@@ -951,7 +951,11 @@ export class DirectClient {
     status: RepairStatus,
     notes?: string,
   ): Promise<RepairDetail> {
-    const raw = await this.post<unknown>(REPAIR_STATUS(id), {
+    // Server route is PATCH /api/v1/repairs/{id}/status. POST returns
+    // 405 Method Not Allowed and silently drops the status change,
+    // which is why the sheet's optimistic dismiss looked green but the
+    // detail refetch showed the old status.
+    const raw = await this.patch<unknown>(REPAIR_STATUS(id), {
       status,
       ...(notes !== undefined ? {notes} : {}),
     });
@@ -1047,12 +1051,27 @@ export class DirectClient {
     return normalizeRepairDetail(unwrapResource(raw));
   }
 
+  // PATCH /api/v1/repairs/bulk/status. Server-side contract has been through a
+  // few iterations, so we accept ANY of:
+  //   1. `{succeeded: [ids], skipped: [ids]}` — canonical.
+  //   2. `{updated_ids: [...], skipped_ids: [...]}` — older alias.
+  //   3. Array of repair objects — the server echoes accepted rows; we diff
+  //      against `requested`.
+  //   4. `{updated_count: N, message?: string}` — count-only shape observed
+  //      in DR-M3. Data-loss branch: when N === repairIds.length we can
+  //      confidently mark all requested ids as succeeded; when N is less we
+  //      have no way to identify WHICH ones succeeded, so report all as
+  //      skipped rather than lie. The server SHOULD be updated to return
+  //      explicit succeeded/skipped ID lists — this branch exists as a
+  //      transitional fallback (see deployment-team follow-up).
+  // Falling back to a client-side diff future-proofs the UI: whichever shape
+  // the server settles on, this method returns the same summary.
   async bulkUpdateRepairStatus(
     repairIds: number[],
     status: RepairStatus,
     notes?: string,
   ): Promise<{succeeded: number[]; skipped: number[]}> {
-    const raw = await this.post<unknown>(REPAIR_BULK_STATUS, {
+    const raw = await this.patch<unknown>(REPAIR_BULK_STATUS, {
       repair_ids: repairIds,
       status,
       ...(notes !== undefined ? {notes} : {}),
@@ -1106,6 +1125,24 @@ export class DirectClient {
       const skipped = repairIds.filter(id => !succeeded.includes(id));
       return {succeeded, skipped};
     }
+    // Shape 4 — `{updated_count: N}` observed in DR-M3. Data-loss branch:
+    // if N === requested.length we can attribute success to all requested
+    // ids; otherwise we can't tell WHICH succeeded so mark all as skipped.
+    // Deployment-team follow-up: return succeeded/skipped ID lists.
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      const r = inner as Record<string, unknown>;
+      const rawCount = r.updated_count;
+      const updatedCount =
+        typeof rawCount === 'number' ? rawCount : Number(rawCount);
+      if (Number.isFinite(updatedCount)) {
+        if (updatedCount === repairIds.length) {
+          return {succeeded: [...repairIds], skipped: []};
+        }
+        return {succeeded: [], skipped: [...repairIds]};
+      }
+    }
+    // Fallback — server acknowledged but returned nothing usable. Treat every
+    // requested id as skipped rather than lying to the UI.
     return {succeeded: [], skipped: [...repairIds]};
   }
 
@@ -1137,6 +1174,18 @@ export class DirectClient {
     options?: RequestOptions,
   ): Promise<T> {
     return this.request<T>('PUT', path, body, options);
+  }
+
+  // Added for the repairs.bulk-status route which the server exposes as
+  // PATCH /api/v1/repairs/bulk/status. Mirrors post/put — routes through
+  // the same request() so retry/refresh/timeout/correlation-id plumbing
+  // Just Works.
+  private patch<T>(
+    path: string,
+    body: unknown,
+    options?: RequestOptions,
+  ): Promise<T> {
+    return this.request<T>('PATCH', path, body, options);
   }
 
   private delete<T = unknown>(path: string): Promise<T> {

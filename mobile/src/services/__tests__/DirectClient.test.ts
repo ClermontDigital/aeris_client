@@ -70,3 +70,75 @@ describe('DirectClient.createSale tax_rate -> gst_applicable', () => {
     expect(items[0].gst_applicable).toBe(true);
   });
 });
+
+describe('DirectClient.updateRepairStatus HTTP verb', () => {
+  let fetchMock: FetchMock;
+  let client: DirectClient;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    (global as unknown as {fetch: FetchMock}).fetch = fetchMock;
+    client = new DirectClient();
+    client.configure({baseUrl: 'http://aeris.local:8000'});
+    client.setAuthToken('tok');
+  });
+
+  // The server route is PATCH /api/v1/repairs/{id}/status. Previously the
+  // client sent POST which the router rejected with 405, silently dropping
+  // the status change while the optimistic UI dismiss made it look green.
+  test('uses PATCH verb against /api/v1/repairs/{id}/status', async () => {
+    // Minimal-shape wire payload that survives assertWritePersisted +
+    // normalizeRepairDetail. Fields cribbed from the RepairDetail contract.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          id: 42,
+          repair_number: 'R-42',
+          customer_id: 1,
+          status: 'diagnosed',
+          priority: 'normal',
+          issue_description: 'x',
+          items: [],
+          history: [],
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      }),
+    );
+
+    await client.updateRepairStatus(42, 'diagnosed', 'ok');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://aeris.local:8000/api/v1/repairs/42/status');
+    expect(init?.method).toBe('PATCH');
+    const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+    expect(body).toEqual({status: 'diagnosed', notes: 'ok'});
+  });
+
+  test('omits notes when undefined', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: {
+          id: 7,
+          repair_number: 'R-7',
+          customer_id: 1,
+          status: 'pending',
+          priority: 'normal',
+          issue_description: 'x',
+          items: [],
+          history: [],
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      }),
+    );
+
+    await client.updateRepairStatus(7, 'pending');
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init?.method).toBe('PATCH');
+    const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+    expect(body).toEqual({status: 'pending'});
+  });
+});
