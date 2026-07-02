@@ -328,14 +328,19 @@ function saveWindowState() {
 }
 
 function createSettingsWindow() {
-  if (settingsWindow) {
+  // Guard against a stale reference — the 'closed' handler doesn't always fire
+  // on Windows in edge cases (parent quit while modal was open, etc.), which
+  // would leave settingsWindow pointing at a destroyed BrowserWindow and cause
+  // .focus() below to throw. Reset to null so we create a fresh one.
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.focus();
     return;
   }
+  settingsWindow = null;
 
   settingsWindow = new BrowserWindow({
-    width: 500,
-    height: 400,
+    width: 520,
+    height: 560,
     resizable: false,
     parent: mainWindow,
     modal: true,

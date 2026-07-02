@@ -172,7 +172,7 @@
                 <div class="form-group">
                     <label for="baseUrl">Server URL</label>
                     <input type="url" id="baseUrl" name="baseUrl" placeholder="https://aeris.example.com" required>
-                    <button type="button" class="test-button" onclick="testConnection()">Verify reachable (optional)</button>
+                    <button type="button" class="test-button" onclick="testConnection(event)">Verify reachable (optional)</button>
                     <div class="help-text">Enter the URL where your Aeris server is running. Save even if the reachability check fails — the app will retry on next load.</div>
                     <div id="connection-status" class="status-message"></div>
                 </div>
@@ -180,7 +180,7 @@
                 <div class="form-group">
                     <label for="localUrl">NAS / In-store URL</label>
                     <input type="url" id="localUrl" name="localUrl" placeholder="https://aeris.deployment.local">
-                    <button type="button" class="test-button" onclick="testLocalConnection()">Verify reachable (optional)</button>
+                    <button type="button" class="test-button" onclick="testLocalConnection(event)">Verify reachable (optional)</button>
                     <div class="help-text">Optional. The on-site NAS LAN address used in in-store (failover) mode. Must be https:// and a private LAN address (e.g. 192.168.x.x) or a single-label .local name.</div>
                     <div id="local-connection-status" class="status-message"></div>
                 </div>
@@ -251,10 +251,12 @@
             sessionTimeoutGroup.style.display = enableSessionManagement ? 'block' : 'none';
         }
         
-        async function testConnection() {
+        async function testConnection(evt) {
             const url = document.getElementById('baseUrl').value;
             const statusDiv = document.getElementById('connection-status');
-            const testButton = event.target;
+            // window.event is deprecated in Chromium 120+; accept event as
+            // a parameter (fixes "cannot read properties of undefined" on save).
+            const testButton = evt && evt.target ? evt.target : document.querySelector('button[onclick^="testConnection"]');
             
             if (!url) {
                 showStatus('Please enter a server URL first', 'error');
@@ -292,9 +294,9 @@
             }, 5000);
         }
 
-        async function testLocalConnection() {
+        async function testLocalConnection(evt) {
             const url = document.getElementById('localUrl').value;
-            const testButton = event.target;
+            const testButton = evt && evt.target ? evt.target : document.querySelector('button[onclick^="testLocalConnection"]');
 
             if (!url) {
                 showStatus('Please enter a NAS / in-store URL first', 'error', 'local-connection-status');
