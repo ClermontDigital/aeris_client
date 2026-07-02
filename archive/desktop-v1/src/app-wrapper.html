@@ -5,6 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aeris ERP Client</title>
     <link rel="stylesheet" href="assets/fonts/poppins.css">
+    <!-- Diagnostic error banner: added 1.4.4 so live-user issues surface the
+         actual error text instead of failing silently. Any uncaught JS error
+         or unhandled promise rejection renders a red banner at the top of the
+         viewport with the error message + stack. Kept in early <head> so it
+         catches errors from any script that runs later. -->
+    <script>
+        (function installErrorBanner() {
+            function show(kind, message, stack) {
+                try {
+                    var existing = document.getElementById('aeris-error-banner');
+                    if (existing) existing.remove();
+                    var banner = document.createElement('div');
+                    banner.id = 'aeris-error-banner';
+                    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#c1121f;color:#fff;padding:10px 14px;font:12px/1.4 Consolas,Menlo,monospace;box-shadow:0 2px 8px rgba(0,0,0,0.3);white-space:pre-wrap;max-height:40vh;overflow:auto;';
+                    var label = kind + ': ' + (message || '(no message)');
+                    banner.textContent = label + (stack ? '\n\n' + stack : '');
+                    var close = document.createElement('button');
+                    close.textContent = '×';
+                    close.style.cssText = 'position:absolute;top:4px;right:8px;background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer;';
+                    close.onclick = function () { banner.remove(); };
+                    banner.appendChild(close);
+                    (document.body || document.documentElement).appendChild(banner);
+                    console.error('[AERIS-BANNER]', kind, message, stack);
+                } catch (e) {
+                    // Absolute last-resort — DOM isn't available yet.
+                    console.error('[AERIS-BANNER-FALLBACK]', kind, message, stack, e);
+                }
+            }
+            window.addEventListener('error', function (evt) {
+                var msg = evt.message || (evt.error && evt.error.message) || String(evt);
+                var stack = evt.error && evt.error.stack;
+                show('JS Error', msg, stack);
+            });
+            window.addEventListener('unhandledrejection', function (evt) {
+                var reason = evt.reason || {};
+                var msg = reason.message || String(reason);
+                var stack = reason.stack;
+                show('Unhandled promise', msg, stack);
+            });
+        })();
+    </script>
     <style>
         * {
             margin: 0;
@@ -920,8 +961,13 @@
                         <div class="tooltip">Switch connection mode</div>
                     </button>
 
-                    <!-- Settings button -->
-                    <button class="toolbar-button" id="settings-btn" title="Application Settings">
+                    <!-- Settings button. Inline onclick is the bulletproof path
+                         (bypasses any DOMContentLoaded / addEventListener race);
+                         the JS addEventListener wire below is redundant belt-
+                         and-braces — createSettingsWindow guards against a
+                         double-open so firing both is idempotent. -->
+                    <button class="toolbar-button" id="settings-btn" title="Application Settings"
+                            onclick="try { window.electronAPI && window.electronAPI.openSettings && window.electronAPI.openSettings(); } catch (e) { console.error('settings click failed', e); alert('Settings failed to open: ' + (e && e.message)); }">
                         ⚙
                         <div class="tooltip">App Settings (Ctrl+,)</div>
                     </button>

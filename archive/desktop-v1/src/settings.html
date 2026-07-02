@@ -5,6 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aeris Settings</title>
     <link rel="stylesheet" href="assets/fonts/poppins.css">
+    <!-- Diagnostic error banner (see app-wrapper.html for details). Added
+         1.4.4 so any error thrown by the URL flow surfaces visibly instead
+         of the user seeing an ambiguous "cannot read undefined" toast. -->
+    <script>
+        (function installErrorBanner() {
+            function show(kind, message, stack) {
+                try {
+                    var existing = document.getElementById('aeris-error-banner');
+                    if (existing) existing.remove();
+                    var banner = document.createElement('div');
+                    banner.id = 'aeris-error-banner';
+                    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#c1121f;color:#fff;padding:10px 14px;font:12px/1.4 Consolas,Menlo,monospace;box-shadow:0 2px 8px rgba(0,0,0,0.3);white-space:pre-wrap;max-height:40vh;overflow:auto;';
+                    banner.textContent = kind + ': ' + (message || '(no message)') + (stack ? '\n\n' + stack : '');
+                    var close = document.createElement('button');
+                    close.textContent = '×';
+                    close.style.cssText = 'position:absolute;top:4px;right:8px;background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer;';
+                    close.onclick = function () { banner.remove(); };
+                    banner.appendChild(close);
+                    (document.body || document.documentElement).appendChild(banner);
+                    console.error('[AERIS-BANNER]', kind, message, stack);
+                } catch (e) {
+                    console.error('[AERIS-BANNER-FALLBACK]', kind, message, stack, e);
+                }
+            }
+            window.addEventListener('error', function (evt) {
+                var msg = evt.message || (evt.error && evt.error.message) || String(evt);
+                var stack = evt.error && evt.error.stack;
+                show('JS Error', msg, stack);
+            });
+            window.addEventListener('unhandledrejection', function (evt) {
+                var reason = evt.reason || {};
+                var msg = reason.message || String(reason);
+                var stack = reason.stack;
+                show('Unhandled promise', msg, stack);
+            });
+        })();
+    </script>
     <style>
         * {
             margin: 0;
@@ -227,20 +264,24 @@
         
         async function loadSettings() {
             try {
-                const settings = await window.electronAPI.getSettings();
+                // Defensive: an IPC failure or preload timing race can leave
+                // settings as undefined — treat as empty defaults so the form
+                // still renders (user can then edit + save).
+                const settings = (await window.electronAPI.getSettings()) || {};
                 originalSettings = { ...settings };
-                
-                document.getElementById('baseUrl').value = settings.baseUrl;
+
+                document.getElementById('baseUrl').value = settings.baseUrl || '';
                 document.getElementById('localUrl').value = settings.localUrl || '';
                 document.getElementById('drAutoFailover').checked = settings.drAutoFailover === true;
-                document.getElementById('autoStart').checked = settings.autoStart;
+                document.getElementById('autoStart').checked = Boolean(settings.autoStart);
                 document.getElementById('enableSessionManagement').checked = settings.enableSessionManagement !== false; // default to true
                 document.getElementById('sessionTimeout').value = settings.sessionTimeout || 30;
-                
+
                 // Toggle session timeout visibility
                 toggleSessionTimeout();
             } catch (error) {
                 console.error('Failed to load settings:', error);
+                showStatus('Failed to load current settings — showing empty form.', 'error');
             }
         }
         
@@ -336,11 +377,14 @@
             };
 
             try {
-                const result = await window.electronAPI.saveSettings(settings);
+                // Defensive: treat undefined as {success:true, needsRestart:false}
+                // so an IPC hiccup doesn't crash the form with "cannot read
+                // properties of undefined" and lock the user out.
+                const result = (await window.electronAPI.saveSettings(settings)) || {};
 
                 // Surface validation rejection (e.g. an invalid NAS/in-store URL)
                 // instead of silently closing the window.
-                if (result && result.success === false) {
+                if (result.success === false) {
                     const isLocalErr = /in-store url/i.test(result.error || '');
                     showStatus(
                         result.error || 'Failed to save settings',
@@ -352,7 +396,7 @@
 
                 if (result.needsRestart) {
                     showStatus('Settings saved! Application will restart to apply changes.', 'success');
-                    
+
                     // Show restart message and close after delay
                     setTimeout(() => {
                         if (confirm('Settings require an application restart to take effect. Restart now?')) {
@@ -363,14 +407,14 @@
                     }, 1000);
                 } else {
                     showStatus('Settings saved successfully!', 'success');
-                    
+
                     // Close window after short delay
                     setTimeout(() => {
                         window.close();
                     }, 1500);
                 }
             } catch (error) {
-                showStatus(`Failed to save settings: ${error.message}`, 'error');
+                showStatus(`Failed to save settings: ${(error && error.message) || error}`, 'error');
             }
         }
         
