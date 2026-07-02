@@ -25,7 +25,7 @@ jest.mock('../../services/ApiClient', () => ({
   },
 }));
 
-// Stable haptics ref — a fresh object per render would reset useCallback
+// Stable haptics ref - a fresh object per render would reset useCallback
 // dep arrays inside the screen and trigger an unrelated effect loop.
 jest.mock('../../hooks/useHaptics', () => {
   const stable = {
@@ -38,21 +38,28 @@ jest.mock('../../hooks/useHaptics', () => {
   return {useHaptics: () => stable};
 });
 
-// Auth store stub — ErrorBanner reads it via subscribe + getState.
+// Auth store stub - ErrorBanner reads it via subscribe + getState, and
+// the T7 action row reads `user.permissions` to gate "Notify customer".
+// `mockAuthState.user.permissions` is mutable so tests can flip the
+// send-manual-notification ability on/off.
+const mockAuthState: {
+  user: {name: string; permissions: string[]} | null;
+  isAuthenticated: boolean;
+  errorKind: null;
+} = {
+  user: {name: 'Tester', permissions: []},
+  isAuthenticated: true,
+  errorKind: null,
+};
 jest.mock('../../stores/authStore', () => {
-  const state = {
-    user: {name: 'Tester'},
-    isAuthenticated: true,
-    errorKind: null,
-  };
-  const useAuthStore: any = (selector: (s: typeof state) => unknown) =>
-    selector(state);
-  useAuthStore.getState = () => state;
+  const useAuthStore: any = (selector: (s: typeof mockAuthState) => unknown) =>
+    selector(mockAuthState);
+  useAuthStore.getState = () => mockAuthState;
   useAuthStore.subscribe = () => () => undefined;
   return {useAuthStore};
 });
 
-// navHistoryStore mock — track push calls to assert the breadcrumb was
+// navHistoryStore mock - track push calls to assert the breadcrumb was
 // pushed on cross-tab navigation.
 const mockPush = jest.fn();
 const mockPopPrev = jest.fn(() => null);
@@ -61,7 +68,7 @@ jest.mock('../../stores/navHistoryStore', () => ({
     selector({push: mockPush, popPrev: mockPopPrev}),
 }));
 
-// headerBackStore mock — the screen only wires setOnBack / clearIf, no
+// headerBackStore mock - the screen only wires setOnBack / clearIf, no
 // assertion needed on the store side. Returning stable jest.fns via a
 // selector-shaped mock keeps the hook signature happy.
 const mockSetOnBack = jest.fn();
@@ -71,7 +78,7 @@ jest.mock('../../stores/headerBackStore', () => ({
     selector({setOnBack: mockSetOnBack, clearIf: mockClearIf}),
 }));
 
-// workspaceFeaturesStore — the mount-guard checks getState().repairs_enabled.
+// workspaceFeaturesStore - the mount-guard checks getState().repairs_enabled.
 // Default true so most tests mount cleanly; the bounce test flips it false.
 const mockWorkspaceState = {repairs_enabled: true};
 jest.mock('../../stores/workspaceFeaturesStore', () => ({
@@ -89,7 +96,7 @@ const mockAddListener = jest.fn(() => () => undefined);
 
 // Prefix with `mock` so jest.mock() hoisting is permitted to reference it.
 //
-// The screen registers TWO useFocusEffect calls per render — the fetch
+// The screen registers TWO useFocusEffect calls per render - the fetch
 // effect (guarded by didInitialFetchRef) and the header-back setup. Each
 // render pushes a fresh copy of BOTH into the queue, so we track the last
 // pair-per-render and only invoke the most recently registered pair. This
@@ -221,6 +228,10 @@ describe('RepairDetailScreen', () => {
     mockAddListener.mockReset().mockReturnValue(() => undefined);
     mockWorkspaceState.repairs_enabled = true;
     mockFocusCallbacks.list = [];
+    // Reset the permissions gate - most tests want the send-manual-
+    // notification ability absent so the hidden-by-default posture is
+    // exercised. The two "Notify customer" tests flip it on explicitly.
+    mockAuthState.user = {name: 'Tester', permissions: []};
   });
 
   it('renders the loading spinner while the detail fetch is in flight', () => {
@@ -275,7 +286,7 @@ describe('RepairDetailScreen', () => {
     expect(getByText('Ada Lovelace')).toBeTruthy();
     expect(getByText('ada@example.com')).toBeTruthy();
     expect(getByText('+61 400 000 000')).toBeTruthy();
-    // Device card — note 'Phone' is both a device_type value AND the
+    // Device card - note 'Phone' is both a device_type value AND the
     // customer field label, so we assert on device-only strings here.
     expect(getByText('Apple')).toBeTruthy();
     expect(getByText('iPhone 13')).toBeTruthy();
@@ -284,7 +295,7 @@ describe('RepairDetailScreen', () => {
     expect(
       getByText('Cracked screen, needs full replacement'),
     ).toBeTruthy();
-    // Items subtotal — 130 + 70 = $200.00, distinct from estimated_cost
+    // Items subtotal - 130 + 70 = $200.00, distinct from estimated_cost
     // ($199.00) so we're asserting on the subtotal-specific string.
     expect(getByText('$200.00')).toBeTruthy();
     // Costs card renders the estimate.
@@ -292,11 +303,11 @@ describe('RepairDetailScreen', () => {
     // Item names + type chips render.
     expect(getByText('iPhone 13 Screen Assembly')).toBeTruthy();
     expect(getByText('Screen replacement labour')).toBeTruthy();
-    // History entries — "Unknown user" fallback surfaces in the second row.
+    // History entries - "Unknown user" fallback surfaces in the second row.
     expect(getByText(/Unknown user/)).toBeTruthy();
   });
 
-  // T6-COV-06 — empty state coverage. Screen has 3 empty-state branches:
+  // T6-COV-06 - empty state coverage. Screen has 3 empty-state branches:
   // 'No device details recorded', 'No quote yet', 'No items added yet',
   // plus an empty status_history array. None were previously exercised.
   it('renders the empty-state fallbacks when device/costs/items/history are all absent', async () => {
@@ -318,7 +329,7 @@ describe('RepairDetailScreen', () => {
     expect(await findByText('No device details recorded')).toBeTruthy();
     expect(await findByText('No quote yet')).toBeTruthy();
     expect(await findByText('No items added yet')).toBeTruthy();
-    // No history rows render — the Unknown user placeholder shouldn't appear.
+    // No history rows render - the Unknown user placeholder shouldn't appear.
     expect(queryByText(/Unknown user/)).toBeNull();
   });
 
@@ -363,14 +374,14 @@ describe('RepairDetailScreen', () => {
       expect(mockGetRepairDetail).toHaveBeenCalledTimes(1);
     });
 
-    // First focus fire — didInitialFetchRef flips true, no refetch. The
+    // First focus fire - didInitialFetchRef flips true, no refetch. The
     // header-back useFocusEffect ALSO fires here (it's harmless side
     // effects only) but the didInitialFetchRef branch guards the fetch.
     triggerFocus();
     await new Promise(r => setImmediate(r));
     expect(mockGetRepairDetail).toHaveBeenCalledTimes(1);
 
-    // Second focus fire — user returned to the tab, refetch triggers.
+    // Second focus fire - user returned to the tab, refetch triggers.
     triggerFocus();
     await waitFor(() => {
       expect(mockGetRepairDetail).toHaveBeenCalledTimes(2);
@@ -391,5 +402,75 @@ describe('RepairDetailScreen', () => {
     // both guards the fetch races the goBack and produces either a spurious
     // REPAIRS_DISABLED toast or a setState-on-unmounted warning.
     expect(mockGetRepairDetail).not.toHaveBeenCalled();
+  });
+
+  // ---------------- T7 part C - action row ----------------
+  // Three new tests below cover the action row appended between the
+  // History timeline and the bottom padding: Change status, Edit, and
+  // (optionally) Notify customer. The existing T6 tests still pass
+  // because the row is purely additive - nothing above History changed.
+
+  it('T7C - "Edit" navigates to RepairEdit with the current repair id', async () => {
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
+
+    const {findByLabelText} = render(<RepairDetailScreen />);
+
+    const editBtn = await findByLabelText('Edit repair');
+    fireEvent.press(editBtn);
+
+    expect(mockNavigate).toHaveBeenCalledWith('RepairEdit', {id: 1});
+  });
+
+  it('T7C - "Change status" navigates to RepairStatusChange with the current repair id', async () => {
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
+
+    const {findByLabelText} = render(<RepairDetailScreen />);
+
+    const statusBtn = await findByLabelText('Change status');
+    fireEvent.press(statusBtn);
+
+    expect(mockNavigate).toHaveBeenCalledWith('RepairStatusChange', {id: 1});
+  });
+
+  it('T7C - "Notify customer" is hidden when the send-manual-notification permission is absent', async () => {
+    // beforeEach defaults permissions to []. This test asserts the
+    // hidden-by-default posture.
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
+
+    const {findByText, queryByLabelText} = render(<RepairDetailScreen />);
+
+    // Wait for the detail to hydrate so we know the action row is mounted.
+    await findByText('Repair REP-0001');
+    // The other two action buttons ARE visible.
+    expect(queryByLabelText('Change status')).not.toBeNull();
+    expect(queryByLabelText('Edit repair')).not.toBeNull();
+    // The gated button is not rendered.
+    expect(queryByLabelText('Notify customer')).toBeNull();
+  });
+
+  it('T7C - "Notify customer" appears when send-manual-notification is present and opens the stub Alert', async () => {
+    mockAuthState.user = {
+      name: 'Tester',
+      permissions: ['send-manual-notification'],
+    };
+    // Silence the Alert side effect and let us assert on its args - the
+    // T7 stub Alert is the only user-visible signal that the button
+    // fired.
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
+    const {findByLabelText} = render(<RepairDetailScreen />);
+
+    const notifyBtn = await findByLabelText('Notify customer');
+    fireEvent.press(notifyBtn);
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Notify customer',
+      'Customer notifications ship in a later release.',
+    );
+
+    alertSpy.mockRestore();
   });
 });
