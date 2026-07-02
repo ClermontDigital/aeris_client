@@ -171,16 +171,16 @@
             <form id="settings-form">
                 <div class="form-group">
                     <label for="baseUrl">Server URL</label>
-                    <input type="url" id="baseUrl" name="baseUrl" placeholder="http://aeris.local" required>
-                    <button type="button" class="test-button" onclick="testConnection()">Test Connection</button>
-                    <div class="help-text">Enter the URL where your Aeris ERP server is running</div>
+                    <input type="url" id="baseUrl" name="baseUrl" placeholder="https://aeris.example.com" required>
+                    <button type="button" class="test-button" onclick="testConnection()">Verify reachable (optional)</button>
+                    <div class="help-text">Enter the URL where your Aeris server is running. Save even if the reachability check fails — the app will retry on next load.</div>
                     <div id="connection-status" class="status-message"></div>
                 </div>
 
                 <div class="form-group">
                     <label for="localUrl">NAS / In-store URL</label>
-                    <input type="url" id="localUrl" name="localUrl" placeholder="https://aeris.shop.local">
-                    <button type="button" class="test-button" onclick="testLocalConnection()">Test Connection</button>
+                    <input type="url" id="localUrl" name="localUrl" placeholder="https://aeris.deployment.local">
+                    <button type="button" class="test-button" onclick="testLocalConnection()">Verify reachable (optional)</button>
                     <div class="help-text">Optional. The on-site NAS LAN address used in in-store (failover) mode. Must be https:// and a private LAN address (e.g. 192.168.x.x) or a single-label .local name.</div>
                     <div id="local-connection-status" class="status-message"></div>
                 </div>
@@ -190,7 +190,7 @@
                         <input type="checkbox" id="drAutoFailover" name="drAutoFailover">
                         <label for="drAutoFailover">Automatic failover to in-store server (DR)</label>
                     </div>
-                    <div class="help-text">Off by default. When on, Aeris watches both servers and automatically switches to the in-store (NAS) server if the cloud becomes unreachable, then back when the cloud returns. Requires a valid In-store URL above. Leave OFF unless your deployment has been cleared for automatic failover.</div>
+                    <div class="help-text">On by default. Aeris watches both servers and automatically switches to the in-store (NAS) server if the cloud becomes unreachable, then back when the cloud returns. Requires a valid In-store URL above — with no In-store URL configured the auto-swap is a no-op.</div>
                 </div>
 
                 <div class="form-group">
@@ -268,15 +268,15 @@
                 const result = await window.electronAPI.testConnection(url);
                 
                 if (result.success) {
-                    showStatus('Connection successful!', 'success');
+                    showStatus('Reachable ✓', 'success');
                 } else {
-                    showStatus(`Connection failed: ${result.error}`, 'error');
+                    showStatus(`Not currently reachable — you can still save. (${result.error})`, 'error');
                 }
             } catch (error) {
-                showStatus(`Connection test failed: ${error.message}`, 'error');
+                showStatus(`Reachability check failed — you can still save. (${error.message})`, 'error');
             } finally {
                 testButton.disabled = false;
-                testButton.textContent = 'Test Connection';
+                testButton.textContent = 'Verify reachable (optional)';
             }
         }
         
@@ -309,15 +309,15 @@
                 const result = await window.electronAPI.testConnection(url);
 
                 if (result.success) {
-                    showStatus('Connection successful!', 'success', 'local-connection-status');
+                    showStatus('Reachable ✓', 'success', 'local-connection-status');
                 } else {
-                    showStatus(`Connection failed: ${result.error}`, 'error', 'local-connection-status');
+                    showStatus(`Not currently reachable — you can still save. (${result.error})`, 'error', 'local-connection-status');
                 }
             } catch (error) {
-                showStatus(`Connection test failed: ${error.message}`, 'error', 'local-connection-status');
+                showStatus(`Reachability check failed — you can still save. (${error.message})`, 'error', 'local-connection-status');
             } finally {
                 testButton.disabled = false;
-                testButton.textContent = 'Test Connection';
+                testButton.textContent = 'Verify reachable (optional)';
             }
         }
         
