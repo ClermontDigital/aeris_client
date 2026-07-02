@@ -21,7 +21,6 @@ import ErrorBanner from '../components/ErrorBanner';
 import PillButton from '../components/PillButton';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
-import {useAuthStore} from '../stores/authStore';
 import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
@@ -44,11 +43,6 @@ type RepairsListRouteProp = RouteProp<RepairsStackParamList, 'RepairsList'>;
 // 'all' is the chip-row-only sentinel used to represent "no status filter" —
 // the wire never sees this value. When active, the fetch call omits the
 // `status` field entirely so the server returns every non-cancelled row.
-// 'my_queue' is a cross-status personal filter: it AND-s an
-// `assigned_to: user.id` filter onto whatever status chip is active (so
-// tapping "My queue" then "Pending" narrows to the operator's pending
-// rows). It's a distinct sentinel rather than a chip key so it doesn't
-// collide with status filtering.
 type StatusChipKey = 'all' | RepairStatus;
 
 const PER_PAGE = 20;
@@ -141,19 +135,9 @@ const RepairsListScreen: React.FC = () => {
     }, []),
   );
 
-  // WSA-5: signed-in user id drives the "My queue" toggle. Null / undefined
-  // (unauthenticated) hides the chip entirely so tapping it can't produce
-  // an assigned_to filter with no user context. Type falls back to `null`
-  // via the store's ?? so downstream comparisons don't hit a `?.id`.
-  const userId = useAuthStore(s => s.user?.id ?? null);
-
   // ---------------- state ----------------
   const [repairs, setRepairs] = useState<Repair[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusChipKey>('all');
-  // WSA-5: "My queue" toggle. AND-s an `assigned_to: userId` filter onto
-  // the current status chip so the two axes compose naturally on the wire.
-  // Only settable when userId is non-null (chip hidden otherwise).
-  const [myQueue, setMyQueue] = useState(false);
   // Seeded from the deep-link. Tapping the ✕ on the customer chip clears
   // it in-place without popping the screen (mirrors the TransactionList
   // productId behaviour).
@@ -239,14 +223,9 @@ const RepairsListScreen: React.FC = () => {
         const filters: {
           status?: RepairStatus;
           customer_id?: number;
-          assigned_to?: number;
         } = {};
         if (statusFilter !== 'all') filters.status = statusFilter;
         if (customerId != null) filters.customer_id = customerId;
-        // WSA-5: My queue AND-s onto the status axis. The server-side
-        // deployment scopes repairs.list by the signed-in user's location
-        // already; assigned_to narrows to rows owned by the operator.
-        if (myQueue && userId != null) filters.assigned_to = userId;
 
         const response = await ApiClient.listRepairs(
           pageNum,
@@ -287,7 +266,7 @@ const RepairsListScreen: React.FC = () => {
         }
       }
     },
-    [statusFilter, customerId, haptics, search, myQueue, userId],
+    [statusFilter, customerId, haptics, search],
   );
 
   // Debounced initial + search-driven fetch. Immediate on mount / filter
@@ -338,17 +317,6 @@ const RepairsListScreen: React.FC = () => {
     },
     [haptics],
   );
-
-  // WSA-5: My queue toggle. Fires selection haptic (same as status chips)
-  // so the toggle feels of a piece with the row. Coexists with status —
-  // does NOT reset the status chip so an operator can compose "my queue"
-  // + "in progress" naturally.
-  const handleMyQueueToggle = useCallback(() => {
-    if (userId == null) return; // defensive; chip is hidden in this state
-    haptics.selection();
-    setMyQueue(v => !v);
-    setPage(1);
-  }, [haptics, userId]);
 
   const handleClearCustomerFilter = useCallback(() => {
     haptics.selection();
@@ -520,40 +488,9 @@ const RepairsListScreen: React.FC = () => {
           {isReady && !active ? <View style={styles.readyDot} /> : null}
         </TouchableOpacity>,
       );
-      // WSA-5: splice the "My queue" chip in immediately after "All" so it
-      // reads as a personal peer of "everything on site". Hidden entirely
-      // when the user isn't authenticated (userId null).
-      if (chip.key === 'all' && userId != null) {
-        chips.push(
-          <TouchableOpacity
-            key="my_queue"
-            style={[
-              styles.filterButton,
-              myQueue && styles.filterButtonActive,
-            ]}
-            onPress={handleMyQueueToggle}
-            accessibilityRole="button"
-            accessibilityLabel="Filter My queue"
-            accessibilityState={{selected: myQueue}}>
-            <Icon
-              name="person-outline"
-              size={ICON_SIZE.action - 2}
-              color={myQueue ? COLORS.cream : COLORS.textMuted}
-              style={styles.filterIcon}
-            />
-            <Text
-              style={[
-                styles.filterButtonText,
-                myQueue && styles.filterButtonTextActive,
-              ]}>
-              My queue
-            </Text>
-          </TouchableOpacity>,
-        );
-      }
     }
     return chips;
-  }, [statusFilter, handleFilterChange, myQueue, handleMyQueueToggle, userId]);
+  }, [statusFilter, handleFilterChange]);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>

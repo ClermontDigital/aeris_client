@@ -83,21 +83,6 @@ jest.mock('../../stores/headerBackStore', () => ({
   },
 }));
 
-// WSA-5: user.id drives the "My queue" toggle. Tests can flip
-// `mockAuthState.user` between an authenticated user and null to exercise
-// the chip's visibility guard.
-const mockAuthState: {user: {id: number; name: string} | null} = {
-  user: {id: 7, name: 'Tester'},
-};
-jest.mock('../../stores/authStore', () => {
-  const useAuthStore: any = (
-    selector: (s: typeof mockAuthState) => unknown,
-  ) => selector(mockAuthState);
-  useAuthStore.getState = () => mockAuthState;
-  useAuthStore.subscribe = () => () => undefined;
-  return {useAuthStore};
-});
-
 import RepairsListScreen from '../RepairsListScreen';
 
 // ---------------- fixtures ----------------
@@ -151,9 +136,6 @@ describe('RepairsListScreen', () => {
     mockGoBack.mockReset();
     mockRouteParams.current = {};
     mockWorkspaceState.repairs_enabled = true;
-    // Default to an authenticated user so the "My queue" chip is rendered.
-    // Tests that need the anonymous case flip this to null in-line.
-    mockAuthState.user = {id: 7, name: 'Tester'};
   });
 
   it('applies status filter when a chip is tapped and refetches', async () => {
@@ -342,70 +324,4 @@ describe('RepairsListScreen', () => {
     await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(2));
   });
 
-  // WSA-5: "My queue" chip AND-s an assigned_to filter onto the status axis.
-  it('My queue toggle adds assigned_to filter to listRepairs', async () => {
-    mockListRepairs.mockResolvedValue(okPage([makeRepair({id: 1})]));
-    const {getByLabelText} = render(<RepairsListScreen />);
-
-    // Initial fetch — no assigned_to filter.
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(1));
-    expect(mockListRepairs).toHaveBeenLastCalledWith(1, 20, {});
-
-    // Toggle My queue on. Chip labelled "Filter My queue" per the a11y
-    // convention shared with the status chips.
-    fireEvent.press(getByLabelText('Filter My queue'));
-
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(2));
-    expect(mockListRepairs).toHaveBeenLastCalledWith(1, 20, {assigned_to: 7});
-
-    // The chip's accessibility state flips selected=true so screen readers
-    // reflect the active filter.
-    expect(getByLabelText('Filter My queue').props.accessibilityState).toMatchObject({
-      selected: true,
-    });
-  });
-
-  it('My queue AND status filter compose on the wire', async () => {
-    mockListRepairs.mockResolvedValue(okPage([makeRepair({id: 1})]));
-    const {getByLabelText} = render(<RepairsListScreen />);
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(1));
-
-    // Toggle My queue on.
-    fireEvent.press(getByLabelText('Filter My queue'));
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(2));
-
-    // Tap the In Progress status chip. Now both filters are on the wire.
-    fireEvent.press(getByLabelText('Filter In Progress'));
-
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(3));
-    expect(mockListRepairs).toHaveBeenLastCalledWith(1, 20, {
-      status: 'in_progress',
-      assigned_to: 7,
-    });
-  });
-
-  it('hides the My queue chip when the user is not authenticated', async () => {
-    mockAuthState.user = null;
-    mockListRepairs.mockResolvedValue(okPage([]));
-    const {queryByLabelText} = render(<RepairsListScreen />);
-
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(1));
-    expect(queryByLabelText('Filter My queue')).toBeNull();
-  });
-
-  it('toggling My queue OFF restores the base filter (no assigned_to)', async () => {
-    mockListRepairs.mockResolvedValue(okPage([makeRepair({id: 1})]));
-    const {getByLabelText} = render(<RepairsListScreen />);
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(1));
-
-    // On.
-    fireEvent.press(getByLabelText('Filter My queue'));
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(2));
-    expect(mockListRepairs).toHaveBeenLastCalledWith(1, 20, {assigned_to: 7});
-
-    // Off — same chip toggles back.
-    fireEvent.press(getByLabelText('Filter My queue'));
-    await waitFor(() => expect(mockListRepairs).toHaveBeenCalledTimes(3));
-    expect(mockListRepairs).toHaveBeenLastCalledWith(1, 20, {});
-  });
 });
