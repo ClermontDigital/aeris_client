@@ -29,7 +29,6 @@ import {
 import {useAuthStore} from '../stores/authStore';
 import {useCartStore} from '../stores/cartStore';
 import {useSettingsStore} from '../stores/settingsStore';
-import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {formatCurrency} from '../utils/format';
@@ -116,11 +115,6 @@ const DashboardScreen: React.FC = () => {
   const isDirectMode = useSettingsStore(
     s => s.settings.connectionMode === 'direct',
   );
-  // Workspace flag drives whether the Repairs card renders at all. Read via
-  // the store hook (not getState) so a mid-session flip re-renders the
-  // Dashboard immediately — the tab appears/disappears at the same instant
-  // as this card. Mirrors the pattern in AppTabs / RepairsListScreen.
-  const isRepairsEnabled = useWorkspaceFeaturesStore(s => s.repairs_enabled);
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [recentCustomers, setRecentCustomers] = useState<
     Array<{
@@ -134,17 +128,6 @@ const DashboardScreen: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  // Repairs card: ready count + in-progress count. `null` means not-yet-loaded
-  // (renders as em-dash-free '-' placeholder); a numeric zero renders as '0'.
-  // Errors flip `repairsError` on so the card renders an 'unavailable' label
-  // rather than crashing the Dashboard.
-  const [repairsReadyCount, setRepairsReadyCount] = useState<number | null>(
-    null,
-  );
-  const [repairsInProgressCount, setRepairsInProgressCount] = useState<
-    number | null
-  >(null);
-  const [repairsError, setRepairsError] = useState<boolean>(false);
 
   // In-flight guard: collapse concurrent fetchSummary invocations onto
   // ONE round-trip. Cold-start can fire from the initial useEffect, the
@@ -241,39 +224,9 @@ const DashboardScreen: React.FC = () => {
     return inFlightRef.current;
   }, [haptics]);
 
-  // Repairs card fetch: hits listRepairs twice in parallel with per_page=1
-  // to read `meta.total` for each status bucket. Cheap because the server
-  // only mints one row per request, and the two calls share the auth /
-  // relay session (no cold-start refresh race — this fires AFTER the main
-  // fetchSummary path has warmed the bearer). Runs only when the workspace
-  // flag is on.
-  const fetchRepairsCounts = useCallback(async () => {
-    if (!isRepairsEnabled) return;
-    try {
-      setRepairsError(false);
-      const [readyPage, inProgressPage] = await Promise.all([
-        ApiClient.listRepairs(1, 1, {status: 'ready'}),
-        ApiClient.listRepairs(1, 1, {status: 'in_progress'}),
-      ]);
-      setRepairsReadyCount(readyPage?.meta?.total ?? 0);
-      setRepairsInProgressCount(inProgressPage?.meta?.total ?? 0);
-    } catch {
-      // Repairs-off / dispatcher-not-wired / transient network — never bring
-      // down the Dashboard. Card renders the 'unavailable' fallback.
-      setRepairsError(true);
-    }
-  }, [isRepairsEnabled]);
-
   useEffect(() => {
     fetchSummary();
   }, [fetchSummary]);
-
-  // Cold-mount repairs fetch. Kept SEPARATE from fetchSummary so a
-  // repairs-off workspace doesn't pay the round-trip and so a transient
-  // repairs failure doesn't taint the main dashboard error path.
-  useEffect(() => {
-    fetchRepairsCounts();
-  }, [fetchRepairsCounts]);
 
   // Tab root: null the shared brand-header back slot on focus so a stale
   // handler left over by ProductDetail / ProductEdit doesn't bleed through
@@ -297,11 +250,7 @@ const DashboardScreen: React.FC = () => {
         return;
       }
       fetchSummary();
-      // Repairs counts refresh on tab return so a status change made from
-      // the Repairs stack (e.g. mark-as-ready via RepairStatusChangeSheet)
-      // reflects on Dashboard next time the operator tabs back.
-      fetchRepairsCounts();
-    }, [fetchSummary, fetchRepairsCounts]),
+    }, [fetchSummary]),
   );
 
   // ALSO refetch the instant a sale is marked completed. The useFocusEffect
@@ -390,12 +339,6 @@ const DashboardScreen: React.FC = () => {
             refreshing={isRefreshing}
             onRefresh={() => {
               fetchSummary(true);
-              // Pull-to-refresh piggybacks the repairs refetch too so the
-              // operator gets a single, coherent "everything up to date"
-              // moment. Errors on the repairs side are absorbed by the
-              // repairsError state — the isRefreshing wheel is driven by
-              // the summary fetch alone.
-              fetchRepairsCounts();
             }}
             tintColor={COLORS.accent}
           />
@@ -504,87 +447,6 @@ const DashboardScreen: React.FC = () => {
             })()}
           </>
         )}
-
-        {isRepairsEnabled ? (
-          <>
-            <EyebrowLabel>Repairs</EyebrowLabel>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel={
-                repairsError
-                  ? 'Repairs currently unavailable, tap to open the repairs list'
-                  : `${repairsReadyCount ?? 0} repairs ready for pickup, tap to open the repairs list`
-              }
-              onPress={() => {
-                haptics.light();
-                // Deep-link to RepairsList without a pre-filter. The list
-                // screen defaults its chip row to "All" so the operator
-                // picks their own status filter; the alternative — landing
-                // on a pre-filtered "Ready" view — surprised operators in
-                // T8 usability so we route to the general list here.
-                navigation.navigate('Repairs', {
-                  screen: 'RepairsList',
-                } as never);
-              }}>
-              <MotionCard
-                style={[styles.heroCard, {marginBottom: SPACING.lg}]}
-                delay={120}>
-                <View style={styles.repairsHeader}>
-                  <View style={styles.repairsIcon}>
-                    <Icon
-                      name="construct-outline"
-                      size={ICON_SIZE.action}
-                      color={COLORS.crimson}
-                    />
-                  </View>
-                  <View style={styles.repairsHeaderText}>
-                    <Text style={styles.repairsTitle}>Repairs</Text>
-                    <Text style={styles.repairsSubtitle}>
-                      {repairsError
-                        ? 'Currently unavailable'
-                        : repairsReadyCount == null
-                          ? 'Loading...'
-                          : 'ready for pickup'}
-                    </Text>
-                  </View>
-                  <Icon
-                    name="chevron-forward"
-                    size={ICON_SIZE.action - 4}
-                    color={COLORS.textMuted}
-                  />
-                </View>
-                <Text
-                  style={styles.repairsValue}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.5}
-                  allowFontScaling={false}>
-                  {repairsError
-                    ? '-'
-                    : repairsReadyCount == null
-                      ? '-'
-                      : String(repairsReadyCount)}
-                </Text>
-                {!repairsError && repairsInProgressCount != null ? (
-                  <View style={styles.heroFootnote}>
-                    {/* T9-7: distinct footnote icon (time-outline) so
-                        the row doesn't repeat the header's construct icon. */}
-                    <Icon
-                      name="time-outline"
-                      size={ICON_SIZE.action - 4}
-                      color={COLORS.textMuted}
-                      style={styles.heroFootnoteIcon}
-                    />
-                    <Text style={styles.heroFootnoteText}>
-                      {`${repairsInProgressCount} in progress`}
-                    </Text>
-                  </View>
-                ) : null}
-              </MotionCard>
-            </TouchableOpacity>
-          </>
-        ) : null}
 
         <EyebrowLabel>Recent customers</EyebrowLabel>
         {recentCustomers.length > 0 ? (
@@ -764,40 +626,6 @@ const styles = StyleSheet.create({
     color: COLORS.crimson,
     fontFamily: FONT_FAMILY.bold,
     letterSpacing: LETTER_SPACING.tightXl,
-    fontVariant: ['tabular-nums'],
-  },
-  repairsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.xs,
-  },
-  repairsIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: BORDER_RADIUS.full,
-    backgroundColor: COLORS.cream,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: SPACING.sm,
-  },
-  repairsHeaderText: {
-    flex: 1,
-  },
-  repairsTitle: {
-    fontSize: FONT_SIZE.md,
-    fontFamily: FONT_FAMILY.medium,
-    color: COLORS.text,
-  },
-  repairsSubtitle: {
-    fontSize: FONT_SIZE.xs,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  repairsValue: {
-    fontSize: FONT_SIZE.displayLg,
-    color: COLORS.crimson,
-    fontFamily: FONT_FAMILY.bold,
-    letterSpacing: LETTER_SPACING.tightLg,
     fontVariant: ['tabular-nums'],
   },
   heroFootnote: {
