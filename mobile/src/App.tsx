@@ -47,7 +47,7 @@ import {useAutoFailover} from './hooks/useAutoFailover';
 import {useAutoFailback} from './hooks/useAutoFailback';
 import {useDrPresenceBeat} from './hooks/useDrPresenceBeat';
 import ApiClient from './services/ApiClient';
-import RootNavigator from './navigation/RootNavigator';
+import RootNavigator, {linking} from './navigation/RootNavigator';
 import AppLockScreen from './screens/AppLockScreen';
 import PinSetupScreen from './screens/PinSetupScreen';
 import {COLORS, FONT_FAMILY} from './constants/theme';
@@ -447,6 +447,7 @@ const App: React.FC = () => {
             per the v1.3.45 pendant SVG redesign). */}
         <StatusBar hidden={Platform.OS === 'ios'} barStyle="dark-content" />
         <NavigationContainer
+          linking={linking}
           theme={{
             dark: true,
             colors: {

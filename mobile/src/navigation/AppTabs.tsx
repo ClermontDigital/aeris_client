@@ -21,10 +21,12 @@ import DashboardScreen from '../screens/DashboardScreen';
 import QuickSaleStack from './QuickSaleStack';
 import ItemsStack from './ItemsStack';
 import CustomersStack from './CustomersStack';
+import RepairsStack from './RepairsStack';
 import TransactionsStack from './TransactionsStack';
 import ERPScreen from '../screens/ERPScreen';
 import {SettingsScreen} from '../screens/SettingsModal';
 import {useSettingsStore} from '../stores/settingsStore';
+import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import {useNetworkStatus} from '../hooks/useNetworkStatus';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
@@ -135,6 +137,13 @@ const AppTabsInner: React.FC = () => {
     process.env.EXPO_PUBLIC_SHOW_ERP_TAB === '1';
   const showErpTab =
     erpTabEnabled && (connectionMode !== 'relay' || isServerReachable);
+  // Repairs tab is workspace-scoped: surfaced only when the merchant's
+  // workspace has `repairs_enabled: true` in its features payload (see
+  // workspaceFeaturesStore.hydrateFromLogin). The RepairsStack itself is
+  // ALWAYS registered on the AppTab param list — only the visible tab is
+  // gated — so an admin who toggles the flag mid-session doesn't need a
+  // nav rebuild for cross-tab navigate() or deep-link resolution.
+  const showRepairsTab = useWorkspaceFeaturesStore(s => s.repairs_enabled);
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   // React Navigation's bottom-tabs defaults to ~56dp on Android, which
@@ -273,6 +282,26 @@ const AppTabsInner: React.FC = () => {
             tabBarIcon: ({color, size}) => (
               <Icon name="people" size={size} color={color} />
             ),
+          }}
+        />
+        {/* Repairs Tab.Screen is ALWAYS registered so aeris://repairs/:id
+            deep-links resolve and cross-tab getParent()?.navigate('Repairs')
+            works even when the flag is off. Visibility is gated via
+            tabBarButton returning null, which removes it from the visible tab
+            bar without deregistering the route — a deep-link hitting a
+            hidden tab bounces at the screen mount-guard rather than 404ing
+            through the linking layer. */}
+        <Tab.Screen
+          name="Repairs"
+          component={RepairsStack}
+          listeners={popToRootOnReTap}
+          options={{
+            tabBarLabel: 'Repairs',
+            tabBarIcon: ({color, size}) => (
+              <Icon name="construct-outline" size={size} color={color} />
+            ),
+            tabBarButton: showRepairsTab ? undefined : () => null,
+            tabBarItemStyle: showRepairsTab ? undefined : {display: 'none'},
           }}
         />
         <Tab.Screen
