@@ -22,7 +22,6 @@ const mockGetRepairDetail = jest.fn();
 const mockCreateRepair = jest.fn();
 const mockUpdateRepair = jest.fn();
 const mockSearchCustomers = jest.fn();
-const mockListRepairTechnicians = jest.fn();
 jest.mock('../../services/ApiClient', () => ({
   __esModule: true,
   default: {
@@ -30,8 +29,6 @@ jest.mock('../../services/ApiClient', () => ({
     createRepair: (...args: unknown[]) => mockCreateRepair(...args),
     updateRepair: (...args: unknown[]) => mockUpdateRepair(...args),
     searchCustomers: (...args: unknown[]) => mockSearchCustomers(...args),
-    listRepairTechnicians: (...args: unknown[]) =>
-      mockListRepairTechnicians(...args),
   },
 }));
 
@@ -52,8 +49,6 @@ jest.mock('../../hooks/useHaptics', () => {
 // H1: RepairEditScreen now reads user.location_id (required by the server's
 // StoreRepairRequest) so the mocked user MUST expose that field. Tests can
 // mutate `mockAuthState.user.location_id` to null to exercise the guard.
-// WSA-5: user.id + user.name are now read for the "Me" quick-pick on the
-// technician picker.
 const mockAuthState = {
   user: {
     id: 7 as number | null,
@@ -196,7 +191,6 @@ describe('RepairEditScreen - pure form helpers', () => {
         priority: 'normal',
         estimated_cost: '',
         estimated_completion: '',
-        assignedTo: null,
       },
       false,
     );
@@ -219,7 +213,6 @@ describe('RepairEditScreen - pure form helpers', () => {
         priority: 'normal',
         estimated_cost: '',
         estimated_completion: '',
-        assignedTo: null,
       },
       true,
     );
@@ -242,7 +235,6 @@ describe('RepairEditScreen - pure form helpers', () => {
         priority: 'normal',
         estimated_cost: 'abc',
         estimated_completion: 'tomorrow',
-        assignedTo: null,
       },
       false,
     );
@@ -265,7 +257,6 @@ describe('RepairEditScreen - pure form helpers', () => {
         priority: 'high',
         estimated_cost: '199.95',
         estimated_completion: '2026-08-01',
-        assignedTo: null,
       },
       1,
     );
@@ -295,7 +286,6 @@ describe('RepairEditScreen - pure form helpers', () => {
       priority: 'normal',
       estimated_cost: '',
       estimated_completion: '',
-      assignedTo: null,
     });
     // customer_id is Omit'd from RepairUpdateInput at the type level; assert
     // at runtime that the payload builder honours that (server ignores it).
@@ -327,7 +317,6 @@ describe('RepairEditScreen - create mode', () => {
     mockCreateRepair.mockReset();
     mockUpdateRepair.mockReset();
     mockSearchCustomers.mockReset();
-    mockListRepairTechnicians.mockReset().mockResolvedValue([]);
     mockGoBack.mockReset();
     mockReplace.mockReset();
     mockNavigate.mockReset();
@@ -528,7 +517,6 @@ describe('RepairEditScreen - edit mode', () => {
     mockCreateRepair.mockReset();
     mockUpdateRepair.mockReset();
     mockSearchCustomers.mockReset();
-    mockListRepairTechnicians.mockReset().mockResolvedValue([]);
     mockGoBack.mockReset();
     mockReplace.mockReset();
     mockNavigate.mockReset();
@@ -562,8 +550,6 @@ describe('RepairEditScreen - edit mode', () => {
     await findByText('Locked');
     // In edit mode we DO NOT render the create-mode customer picker.
     expect(queryByLabelText('Select customer')).toBeNull();
-    // Assigned-to chip renders in edit mode.
-    await findByText('Grace Hopper');
   });
 
   it('Save calls updateRepair (not createRepair) then navigation.goBack', async () => {
@@ -602,7 +588,6 @@ describe('RepairEditScreen - discard-confirm on Back', () => {
     mockRouteParamsRef.params = {id: 1};
     mockGetRepairDetail.mockReset();
     mockUpdateRepair.mockReset();
-    mockListRepairTechnicians.mockReset().mockResolvedValue([]);
     mockGoBack.mockReset();
     mockAddListener.mockReset().mockReturnValue(() => undefined);
     mockWorkspaceState.repairs_enabled = true;
@@ -695,161 +680,10 @@ describe('RepairEditScreen - discard-confirm on Back', () => {
   });
 });
 
-// WSA-5: technician picker + Me quick-pick tests.
-describe('RepairEditScreen - WSA-5 technician assignment picker', () => {
-  beforeEach(() => {
-    mockRouteParamsRef.params = undefined; // create mode default
-    mockGetRepairDetail.mockReset();
-    mockCreateRepair.mockReset().mockResolvedValue(makeDetail({id: 900}));
-    mockUpdateRepair.mockReset();
-    mockSearchCustomers.mockReset().mockResolvedValue({
-      data: [makeCustomer()],
-      current_page: 1,
-      last_page: 1,
-      per_page: 20,
-      total: 1,
-    });
-    mockListRepairTechnicians.mockReset().mockResolvedValue([
-      {id: 5, name: 'Grace Hopper'},
-      {id: 11, name: 'Ada Byron'},
-    ]);
-    mockGoBack.mockReset();
-    mockReplace.mockReset();
-    mockNavigate.mockReset();
-    mockGetParent.mockReset();
-    mockAddListener.mockReset().mockReturnValue(() => undefined);
-    mockWorkspaceState.repairs_enabled = true;
-    mockAuthState.user = {id: 7, name: 'Tester', location_id: 1};
-  });
-
-  // Buildup helper: opens customer picker + fills issue + picks Ada. Used by
-  // create-mode assignment tests so the shared preamble doesn't repeat.
-  async function primeCreateForm(utils: ReturnType<typeof render>) {
-    fireEvent.press(utils.getByLabelText('Select customer'));
-    fireEvent.changeText(
-      utils.getByTestId('repair-edit-customer-search'),
-      'Ada',
-    );
-    await waitFor(() => expect(mockSearchCustomers).toHaveBeenCalled(), {
-      timeout: 1000,
-    });
-    fireEvent.press(await utils.findByLabelText('Select customer Ada Lovelace'));
-    fireEvent.changeText(
-      utils.getByTestId('repair-edit-issue-description'),
-      'Cracked screen',
-    );
-  }
-
-  it('fetches technicians when the picker opens for the first time', async () => {
-    const utils = render(<RepairEditScreen />);
-    // Not fetched before any user interaction — the RPC is lazy so the
-    // create-mode fast-path (never opens the picker) doesn't pay for it.
-    expect(mockListRepairTechnicians).not.toHaveBeenCalled();
-
-    fireEvent.press(utils.getByTestId('repair-edit-assignment-picker'));
-
-    await waitFor(() => {
-      expect(mockListRepairTechnicians).toHaveBeenCalledTimes(1);
-    });
-    // Sheet rows: Unassigned + the two fetched techs.
-    await utils.findByLabelText('Unassigned');
-    await utils.findByLabelText('Assign to Grace Hopper');
-    await utils.findByLabelText('Assign to Ada Byron');
-  });
-
-  it('Me quick-pick sets assigned_to to the signed-in user id without opening the sheet', async () => {
-    const utils = render(<RepairEditScreen />);
-    await primeCreateForm(utils);
-
-    // Me chip is present (user.id !== null) and taps in-line — the
-    // full-picker sheet is NOT opened, so listRepairTechnicians is not
-    // fetched by this quick-pick path.
-    const meChip = utils.getByLabelText('Assign to me');
-    fireEvent.press(meChip);
-    expect(mockListRepairTechnicians).not.toHaveBeenCalled();
-
-    // Save now threads assigned_to = user.id into the create payload.
-    fireEvent.press(utils.getByLabelText('Save new repair'));
-    await waitFor(() => {
-      expect(mockCreateRepair).toHaveBeenCalledTimes(1);
-    });
-    const [payload] = mockCreateRepair.mock.calls[0];
-    expect(payload.assigned_to).toBe(7);
-  });
-
-  it('selecting a tech from the picker threads that id into the create payload', async () => {
-    const utils = render(<RepairEditScreen />);
-    await primeCreateForm(utils);
-
-    // Open the sheet and pick Grace Hopper.
-    fireEvent.press(utils.getByTestId('repair-edit-assignment-picker'));
-    await waitFor(() => expect(mockListRepairTechnicians).toHaveBeenCalled());
-    fireEvent.press(await utils.findByLabelText('Assign to Grace Hopper'));
-
-    fireEvent.press(utils.getByLabelText('Save new repair'));
-    await waitFor(() => expect(mockCreateRepair).toHaveBeenCalledTimes(1));
-    const [payload] = mockCreateRepair.mock.calls[0];
-    expect(payload.assigned_to).toBe(5);
-  });
-
-  it('unchanged edit-mode save OMITS assigned_to from the update payload', async () => {
-    mockRouteParamsRef.params = {id: 1};
-    // Hydrated repair is assigned to Grace Hopper (id 5) — same value on save.
-    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
-    mockUpdateRepair.mockResolvedValue(makeDetail());
-
-    const utils = render(<RepairEditScreen />);
-    await utils.findByText('Edit repair');
-    // Bump the issue so the form is dirty and Save is enabled.
-    fireEvent.changeText(
-      utils.getByTestId('repair-edit-issue-description'),
-      'Updated issue',
-    );
-    fireEvent.press(utils.getByLabelText('Save changes'));
-
-    await waitFor(() => expect(mockUpdateRepair).toHaveBeenCalledTimes(1));
-    const [, payload] = mockUpdateRepair.mock.calls[0];
-    // assigned_to must NOT be on the payload when the operator didn't touch
-    // the picker — otherwise a partial PATCH clobbers the server-side
-    // assignment. This is the "assigned_to on update only if changed" rule.
-    expect((payload as Record<string, unknown>).assigned_to).toBeUndefined();
-  });
-
-  it('edit-mode reassignment DOES include assigned_to on the update payload', async () => {
-    mockRouteParamsRef.params = {id: 1};
-    // Hydrated repair is assigned to Grace Hopper (id 5); operator reassigns
-    // to Ada Byron (id 11) via the picker.
-    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
-    mockUpdateRepair.mockResolvedValue(makeDetail());
-
-    const utils = render(<RepairEditScreen />);
-    await utils.findByText('Edit repair');
-    fireEvent.press(utils.getByTestId('repair-edit-assignment-picker'));
-    await waitFor(() => expect(mockListRepairTechnicians).toHaveBeenCalled());
-    fireEvent.press(await utils.findByLabelText('Assign to Ada Byron'));
-
-    fireEvent.press(utils.getByLabelText('Save changes'));
-    await waitFor(() => expect(mockUpdateRepair).toHaveBeenCalledTimes(1));
-    const [, payload] = mockUpdateRepair.mock.calls[0];
-    expect(payload.assigned_to).toBe(11);
-  });
-
-  it('hides the Me quick-pick when the signed-in user has no id', () => {
-    mockAuthState.user = {id: null, name: 'Tester', location_id: 1};
-    const utils = render(<RepairEditScreen />);
-    // Me chip renders conditional on userId != null; guard against a stale
-    // session where user.id is missing.
-    expect(utils.queryByLabelText('Assign to me')).toBeNull();
-    // Picker row is still present so a lead can still assign a tech.
-    expect(utils.getByTestId('repair-edit-assignment-picker')).toBeTruthy();
-  });
-});
-
 describe('RepairEditScreen - workspace-flag bounce', () => {
   beforeEach(() => {
     mockRouteParamsRef.params = {id: 1};
     mockGetRepairDetail.mockReset();
-    mockListRepairTechnicians.mockReset().mockResolvedValue([]);
     mockGoBack.mockReset();
     mockAddListener.mockReset().mockReturnValue(() => undefined);
     mockWorkspaceState.repairs_enabled = false;
