@@ -24,10 +24,12 @@ import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useAuthStore} from '../stores/authStore';
+import {useCartStore} from '../stores/cartStore';
 import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useNavHistoryStore, type CrumbTab} from '../stores/navHistoryStore';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import type {
+  Product,
   RepairDetail,
   RepairItem,
   RepairStatus,
@@ -354,6 +356,95 @@ const RepairDetailScreen: React.FC = () => {
     () => items.reduce((acc, it) => acc + (it.line_total ?? 0), 0),
     [items],
   );
+
+  // ---------------- T8 checkout hand-off ----------------
+  // Repairs flag mirrors the mount-guard; keep it above the early-return
+  // guards per feedback_hooks_above_early_returns.
+  const repairsEnabled = useWorkspaceFeaturesStore(s => s.repairs_enabled);
+
+  // Belt-and-braces guard: re-fetch the repair one more time before we hand
+  // the cart off to Checkout so a status drift between render and tap
+  // can't slip a non-ready repair through. Mirrors the second guard on
+  // CheckoutScreen.handleCompleteSale — never trust the server to reject.
+  // Materialises the cart from repair items (dollar → cent conversion at
+  // the boundary; parts reserved at intake so we do NOT decrement stock
+  // here per the DR-M3 deployment sitrep) and cross-tab-nav to Cart.
+  const handleRepairCheckout = useCallback(() => {
+    if (!repair) return;
+    Alert.alert(
+      'Take payment for repair',
+      'Parts reserved at intake. Ready to take payment?',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            try {
+              // Fresh re-fetch — repair may have flipped status since the
+              // page rendered.
+              const fresh = await ApiClient.getRepairDetail(repair.id);
+              if (!fresh || fresh.status !== 'ready') {
+                haptics.error();
+                Alert.alert(
+                  'Repair no longer ready for checkout.',
+                  'Its status has changed since you opened this page.',
+                );
+                return;
+              }
+              const cart = useCartStore.getState();
+              // Clear any pre-existing cart so a mixed retail + repair
+              // basket doesn't accidentally carry across into the sale.
+              cart.clear();
+              if (fresh.customer) {
+                cart.setCustomer(fresh.customer.id, fresh.customer.name);
+              }
+              // Money on the repair wire is DOLLARS (per api.types.ts
+              // §Repair). Synthesise a stub Product per repair item —
+              // negative id to avoid colliding with real products in the
+              // cart, tax_rate 0 so the GST math doesn't double-apply
+              // (repair quotes are already GST-inclusive).
+              fresh.items.forEach(ri => {
+                const synth: Product = {
+                  id: -ri.id,
+                  name: ri.item_name,
+                  sku: ri.item_sku ?? '',
+                  barcode: null,
+                  price_cents: Math.round(ri.unit_price * 100),
+                  tax_rate: 0,
+                  stock_on_hand: 0,
+                  category_id: null,
+                  category_name: null,
+                  image_url: null,
+                  is_active: true,
+                };
+                cart.addItem(synth, ri.quantity);
+              });
+              cart.setRepairId(fresh.id);
+              cart.setRepairNumber(fresh.repair_number);
+
+              const parent = navigation.getParent?.();
+              if (parent) {
+                (
+                  parent as unknown as {
+                    navigate: (tab: string, params: object) => void;
+                  }
+                ).navigate('QuickSale', {
+                  initial: false,
+                  screen: 'Cart',
+                });
+              }
+            } catch {
+              haptics.error();
+              Alert.alert(
+                'Could not open checkout',
+                'Please check your connection and try again.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  }, [repair, navigation, haptics]);
 
   // ---------------- early-return guards (all hooks are declared above) --
   if (isLoading) {
@@ -721,10 +812,21 @@ const RepairDetailScreen: React.FC = () => {
               style={styles.actionBtn}
             />
           ) : null}
-          {/* T8 slot - Checkout / "Complete & cash out" PillButton lands
-              here. Intentionally omitted from T7 part C so the checkout
-              flow (sale materialisation + payment sheet) is shipped as a
-              single, testable unit rather than a half-wired stub. */}
+          {/* T8 - Checkout PillButton. Renders ONLY when the repair is in
+              status 'ready' AND the workspace has repairs enabled. Solid
+              crimson so it reads as the primary action of the row when it
+              appears; the confirm dialog uses the "Parts reserved at
+              intake" copy per the DR-M3 sitrep (stock is NOT decremented
+              on this checkout in this release). */}
+          {repair.status === 'ready' && repairsEnabled ? (
+            <PillButton
+              label="Checkout"
+              variant="solid"
+              onPress={handleRepairCheckout}
+              accessibilityLabel="Checkout repair"
+              style={styles.actionBtn}
+            />
+          ) : null}
         </View>
 
         {/* Back lives in the shared brand header (top-left of the chrome)

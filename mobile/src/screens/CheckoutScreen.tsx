@@ -110,6 +110,7 @@ export default function CheckoutScreen() {
     customerName,
     discountCents,
     notes,
+    repairId,
     getTotalCents,
     getItemCount,
     clear,
@@ -280,6 +281,33 @@ export default function CheckoutScreen() {
     useTransactionActivityStore.getState().setSaleInFlight(true);
 
     try {
+      // T8 pre-flight guard — when the cart is a repair checkout, re-fetch
+      // the repair immediately before we send the sale so a status drift
+      // between "Take payment for repair" and Complete-sale can't slip an
+      // orphan sale past the server. The server SILENTLY skips the
+      // completion side-effect for non-ready repairs (per the DR-M3
+      // sitrep), so the client MUST enforce this — never trust the
+      // server to reject. Belt-and-braces with the RepairDetail Checkout
+      // button's own guard.
+      if (repairId != null) {
+        try {
+          const fresh = await ApiClient.getRepairDetail(repairId);
+          if (!fresh || fresh.status !== 'ready') {
+            haptics.error();
+            setError(
+              'This repair is no longer ready for checkout. Reload and try again.',
+            );
+            return;
+          }
+        } catch {
+          haptics.error();
+          setError(
+            'Could not verify repair status. Check your connection and try again.',
+          );
+          return;
+        }
+      }
+
       const saleItems = items.map(item => ({
         product_id: item.product.id,
         quantity: item.quantity,
@@ -303,6 +331,9 @@ export default function CheckoutScreen() {
         customer_id: customerId ?? undefined,
         discount_cents: discountCents > 0 ? discountCents : undefined,
         notes: notes || undefined,
+        // T8: thread repairId as top-level repair_id so Aeris2's
+        // ProcessSaleRequest can link + complete the repair.
+        repair_id: repairId ?? undefined,
       });
 
       haptics.success();
@@ -343,7 +374,7 @@ export default function CheckoutScreen() {
       submitLockRef.current = false;
       useTransactionActivityStore.getState().setSaleInFlight(false);
     }
-  }, [selectedMethod, items, totalCents, customerId, discountCents, notes, haptics, markSaleCompleted]);
+  }, [selectedMethod, items, totalCents, customerId, discountCents, notes, repairId, haptics, markSaleCompleted]);
 
   const handlePrintReceipt = useCallback(async () => {
     if (!saleResult) return;

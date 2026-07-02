@@ -654,6 +654,63 @@ describe('RelayClient — repairs (T3)', () => {
     });
   });
 
+  // T8 — createSale threads repair_id at the TOP LEVEL of the wire payload
+  // (sibling to customer_id), matching Aeris2's ProcessSaleRequest field.
+  // Both the presence and the absence cases are covered — the per-item
+  // whitelist projection at RelayClient:620-627 would silently drop the
+  // field if the mapping missed it.
+  describe('createSale (T8 — repair_id threading)', () => {
+    function readSaleBody(): Record<string, unknown> {
+      const init = fetchMock.mock.calls[0][1];
+      const body = init?.body as string | undefined;
+      if (!body) throw new Error('no body sent');
+      const parsed = JSON.parse(body);
+      return (parsed.params ?? parsed) as Record<string, unknown>;
+    }
+
+    it('threads repair_id at the top level of the wire payload', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('sale.create', {
+            id: 1,
+            sale_number: 'S-1',
+            total_cents: 100,
+          }),
+        ),
+      );
+      await client.createSale({
+        items: [{product_id: 1, quantity: 1, unit_price_cents: 100}],
+        payments: [{method: 'cash', amount_cents: 100}],
+        customer_id: 42,
+        repair_id: 7,
+      });
+      const sent = readSaleBody();
+      expect(sent.repair_id).toBe(7);
+      // Sibling to customer_id at the top level — NOT nested under items[].
+      expect(sent.customer_id).toBe(42);
+      const items = sent.items as Array<Record<string, unknown>>;
+      expect(items[0].repair_id).toBeUndefined();
+    });
+
+    it('omits repair_id when not provided (normal retail sale)', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('sale.create', {
+            id: 1,
+            sale_number: 'S-1',
+            total_cents: 100,
+          }),
+        ),
+      );
+      await client.createSale({
+        items: [{product_id: 1, quantity: 1, unit_price_cents: 100}],
+        payments: [{method: 'cash', amount_cents: 100}],
+      });
+      const sent = readSaleBody();
+      expect(sent.repair_id).toBeUndefined();
+    });
+  });
+
   // COV-4 — bulk-status assertions the earlier tests skipped: wire params,
   // notes on the wire, the older alias {updated_ids, skipped_ids}, the
   // "server acknowledged with empty succeeded+skipped" fallback.

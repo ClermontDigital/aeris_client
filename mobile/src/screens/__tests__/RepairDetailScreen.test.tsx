@@ -25,6 +25,24 @@ jest.mock('../../services/ApiClient', () => ({
   },
 }));
 
+// Cart store stub — the T8 Checkout button materialises the cart via
+// these setters. Test-controllable so we can assert the calls fire in the
+// expected order + shape.
+const mockCartState: any = {
+  clear: jest.fn(),
+  setCustomer: jest.fn(),
+  addItem: jest.fn(),
+  setRepairId: jest.fn(),
+  setRepairNumber: jest.fn(),
+};
+jest.mock('../../stores/cartStore', () => {
+  const useCartStore: any = () => mockCartState;
+  useCartStore.getState = () => mockCartState;
+  useCartStore.setState = jest.fn();
+  useCartStore.subscribe = () => () => undefined;
+  return {useCartStore};
+});
+
 // Stable haptics ref - a fresh object per render would reset useCallback
 // dep arrays inside the screen and trigger an unrelated effect loop.
 jest.mock('../../hooks/useHaptics', () => {
@@ -81,11 +99,14 @@ jest.mock('../../stores/headerBackStore', () => ({
 // workspaceFeaturesStore - the mount-guard checks getState().repairs_enabled.
 // Default true so most tests mount cleanly; the bounce test flips it false.
 const mockWorkspaceState = {repairs_enabled: true};
-jest.mock('../../stores/workspaceFeaturesStore', () => ({
-  useWorkspaceFeaturesStore: {
-    getState: () => mockWorkspaceState,
-  },
-}));
+jest.mock('../../stores/workspaceFeaturesStore', () => {
+  const useWorkspaceFeaturesStore: any = (selector?: any) =>
+    typeof selector === 'function'
+      ? selector(mockWorkspaceState)
+      : mockWorkspaceState;
+  useWorkspaceFeaturesStore.getState = () => mockWorkspaceState;
+  return {useWorkspaceFeaturesStore};
+});
 
 // Navigation mock. useRoute always returns {id: 1}. useFocusEffect is
 // controllable so tests can simulate a tab-return via triggerFocus().
@@ -232,6 +253,11 @@ describe('RepairDetailScreen', () => {
     // notification ability absent so the hidden-by-default posture is
     // exercised. The two "Notify customer" tests flip it on explicitly.
     mockAuthState.user = {name: 'Tester', permissions: []};
+    mockCartState.clear.mockClear();
+    mockCartState.setCustomer.mockClear();
+    mockCartState.addItem.mockClear();
+    mockCartState.setRepairId.mockClear();
+    mockCartState.setRepairNumber.mockClear();
   });
 
   it('renders the loading spinner while the detail fetch is in flight', () => {
@@ -471,6 +497,119 @@ describe('RepairDetailScreen', () => {
       'Customer notifications ship in a later release.',
     );
 
+    alertSpy.mockRestore();
+  });
+
+  // ---------------- T8 - Checkout button + hand-off ----------------
+  // The Checkout PillButton lives at the tail of the action row and
+  // renders ONLY when repair.status === 'ready' AND repairs_enabled.
+  // Confirm copy is "Parts reserved at intake" per the DR-M3 sitrep -
+  // stock is NOT decremented on this checkout, so the operator-facing
+  // wording MUST NOT say anything about stock adjustments.
+
+  it('T8 - Checkout button is hidden when status is not "ready"', async () => {
+    mockGetRepairDetail.mockResolvedValueOnce(
+      makeDetail({status: 'in_progress'}),
+    );
+    const {findByText, queryByLabelText} = render(<RepairDetailScreen />);
+    await findByText('Repair REP-0001');
+    expect(queryByLabelText('Checkout repair')).toBeNull();
+  });
+
+  it('T8 - Checkout button is hidden when workspace repairs flag is off', async () => {
+    // Mount-guard bounces immediately if the flag is off, but this is
+    // belt-and-braces: even if we somehow render past it, the button
+    // itself must be gated by the same flag.
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail({status: 'ready'}));
+    // Flag off — the screen bounces via Alert + goBack. We don't need
+    // the button to appear.
+    mockWorkspaceState.repairs_enabled = false;
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+    const {queryByLabelText} = render(<RepairDetailScreen />);
+    await waitFor(() => {
+      expect(mockGoBack).toHaveBeenCalled();
+    });
+    expect(queryByLabelText('Checkout repair')).toBeNull();
+    alertSpy.mockRestore();
+  });
+
+  it('T8 - Checkout button renders when status is "ready" and shows the confirm alert', async () => {
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail({status: 'ready'}));
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+
+    const {findByLabelText} = render(<RepairDetailScreen />);
+    const btn = await findByLabelText('Checkout repair');
+    fireEvent.press(btn);
+
+    // Confirm dialog copy MUST match the DR-M3 sitrep wording - parts
+    // reserved at intake, no "stock will be adjusted" language.
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Take payment for repair',
+      'Parts reserved at intake. Ready to take payment?',
+      expect.any(Array),
+    );
+    alertSpy.mockRestore();
+  });
+
+  // T8-COV-01/02 remediation: exercise BOTH branches of the confirm dialog.
+  // Cancel should leave cart untouched and skip the cross-tab navigation;
+  // Confirm should clear + populate the cart and cross-tab navigate.
+  it('T8 - Cancel branch of confirm leaves cart untouched and does NOT navigate', async () => {
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail({status: 'ready'}));
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+
+    const {findByLabelText} = render(<RepairDetailScreen />);
+    fireEvent.press(await findByLabelText('Checkout repair'));
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    const cancel = buttons.find(b => b.text === 'Cancel');
+    // Cancel is either onPress: undefined (dismiss only) or a no-op.
+    cancel?.onPress?.();
+
+    expect(mockCartState.clear).not.toHaveBeenCalled();
+    expect(mockCartState.addItem).not.toHaveBeenCalled();
+    expect(mockCartState.setRepairId).not.toHaveBeenCalled();
+    expect(mockGetParent).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('T8 - Confirm branch clears cart, adds repair items, sets repairId, cross-tab navigates', async () => {
+    // Two getRepairDetail calls: one for the initial screen render,
+    // one for the belt-and-braces re-fetch inside the Confirm handler.
+    const readyDetail = makeDetail({status: 'ready'});
+    mockGetRepairDetail
+      .mockResolvedValueOnce(readyDetail)
+      .mockResolvedValueOnce(readyDetail);
+    const parent = {navigate: jest.fn()};
+    mockGetParent.mockReturnValue(parent);
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+
+    const {findByLabelText} = render(<RepairDetailScreen />);
+    fireEvent.press(await findByLabelText('Checkout repair'));
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    const confirm = buttons.find(b => b.text === 'Confirm');
+    await confirm?.onPress?.();
+    await waitFor(() => expect(mockGetRepairDetail).toHaveBeenCalledTimes(2));
+
+    expect(mockCartState.clear).toHaveBeenCalled();
+    expect(mockCartState.addItem).toHaveBeenCalled();
+    expect(mockCartState.setRepairId).toHaveBeenCalledWith(readyDetail.id);
+    expect(parent.navigate).toHaveBeenCalled();
     alertSpy.mockRestore();
   });
 });
