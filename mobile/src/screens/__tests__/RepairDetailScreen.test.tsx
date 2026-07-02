@@ -681,36 +681,17 @@ describe('RepairDetailScreen', () => {
     alertSpy.mockRestore();
   });
 
-  it('T8 - Confirm branch on a parts-only repair clears cart, adds items with REAL product_ids, sets repairId, cross-tab navigates', async () => {
+  it('T8 - Confirm branch on a parts+labour repair clears cart, synthesises BOTH lines (parts=real product_id, labour=-600000-id), tax_rate 10 on all lines, cross-tab navigates', async () => {
     // Two getRepairDetail calls: one for the initial screen render,
     // one for the belt-and-braces re-fetch inside the Confirm handler.
-    // Parts-only fixture: strip the labour row so the Confirm handler
-    // reaches the cart materialisation branch. The default makeDetail
-    // includes a labour row which now (T8 stock contract) blocks with
-    // "This repair has labour lines" — see the labour-block test below.
-    const partsOnlyDetail: RepairDetail = {
-      ...makeDetail({status: 'ready'}),
-      items: [
-        {
-          id: 10,
-          repair_id: 1,
-          product_id: 900,
-          item_name: 'iPhone 13 Screen Assembly',
-          item_sku: 'SCREEN-IP13',
-          item_type: 'part',
-          quantity: 1,
-          unit_price: 130,
-          line_total: 130,
-          notes: null,
-          status: 'reserved',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ],
-    };
+    // makeDetail's default items include a labour row (id 11, product_id
+    // null). Per the deployment-team labour contract, labour synths to
+    // `product_id: -600000 - ri.id` = -600011, and both parts + labour
+    // set tax_rate: 10 so the wire encoder emits gst_applicable: true.
+    const readyDetail = makeDetail({status: 'ready'});
     mockGetRepairDetail
-      .mockResolvedValueOnce(partsOnlyDetail)
-      .mockResolvedValueOnce(partsOnlyDetail);
+      .mockResolvedValueOnce(readyDetail)
+      .mockResolvedValueOnce(readyDetail);
     const parent = {navigate: jest.fn()};
     mockGetParent.mockReturnValue(parent);
     const alertSpy = jest
@@ -729,55 +710,19 @@ describe('RepairDetailScreen', () => {
     await waitFor(() => expect(mockGetRepairDetail).toHaveBeenCalledTimes(2));
 
     expect(mockCartState.clear).toHaveBeenCalled();
-    // T8 stock contract: id passed to addItem is the REAL product_id, NOT
-    // -ri.id (POSController::processSale does Product::findOrFail on it).
-    const addCall = mockCartState.addItem.mock.calls[0][0];
-    expect(addCall.id).toBe(900);
-    expect(mockCartState.setRepairId).toHaveBeenCalledWith(partsOnlyDetail.id);
+    expect(mockCartState.addItem).toHaveBeenCalledTimes(2);
+    // Parts row: REAL product_id (900), tax_rate 10.
+    const partsCall = mockCartState.addItem.mock.calls[0][0];
+    expect(partsCall.id).toBe(900);
+    expect(partsCall.tax_rate).toBe(10);
+    expect(partsCall.price_cents).toBe(13000);
+    // Labour row: synthetic id -600000 - 11 = -600011, tax_rate 10.
+    const labourCall = mockCartState.addItem.mock.calls[1][0];
+    expect(labourCall.id).toBe(-600011);
+    expect(labourCall.tax_rate).toBe(10);
+    expect(labourCall.price_cents).toBe(7000);
+    expect(mockCartState.setRepairId).toHaveBeenCalledWith(readyDetail.id);
     expect(parent.navigate).toHaveBeenCalled();
-    alertSpy.mockRestore();
-  });
-
-  // T8 stock contract: labour handling is UNRESOLVED. Provisional policy
-  // is to block the hand-off with an Alert when the repair has any labour
-  // lines (product_id === null OR item_type === 'labor'). Cart, customer,
-  // and repair-link must remain untouched so the cashier can take the
-  // checkout to the till desktop without collateral state pollution.
-  it('T8 - Confirm branch on a repair with labour BLOCKS with a "till desktop" alert and does NOT touch the cart', async () => {
-    // makeDetail's default items include a labour row (product_id: null).
-    const readyWithLabour = makeDetail({status: 'ready'});
-    mockGetRepairDetail
-      .mockResolvedValueOnce(readyWithLabour)
-      .mockResolvedValueOnce(readyWithLabour);
-    const parent = {navigate: jest.fn()};
-    mockGetParent.mockReturnValue(parent);
-    const alertSpy = jest
-      .spyOn(require('react-native').Alert, 'alert')
-      .mockImplementation(() => undefined);
-
-    const {findByLabelText} = render(<RepairDetailScreen />);
-    fireEvent.press(await findByLabelText('Checkout repair'));
-
-    const buttons = alertSpy.mock.calls[0][2] as Array<{
-      text: string;
-      onPress?: () => void;
-    }>;
-    const confirm = buttons.find(b => b.text === 'Confirm');
-    await confirm?.onPress?.();
-
-    await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith(
-        'Repair labour handling',
-        expect.stringContaining('till desktop'),
-      );
-    });
-
-    // Cart untouched — cashier takes the checkout to the till desktop.
-    expect(mockCartState.clear).not.toHaveBeenCalled();
-    expect(mockCartState.addItem).not.toHaveBeenCalled();
-    expect(mockCartState.setRepairId).not.toHaveBeenCalled();
-    expect(mockCartState.setRepairNumber).not.toHaveBeenCalled();
-    expect(parent.navigate).not.toHaveBeenCalled();
     alertSpy.mockRestore();
   });
 });
