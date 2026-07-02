@@ -29,6 +29,16 @@ jest.mock('../../services/ApiClient', () => ({
     updateProduct: (...args: unknown[]) => mockUpdateProduct(...args),
     getCategories: () => mockGetCategories(),
     getProductDetail: (id: number) => mockGetProductDetail(id),
+    // ProductEditScreen loads suppliers in parallel with categories on
+    // mount (v1.4.13+). Not exercised by these tests, but if the method
+    // is missing the entire Promise.all rejects synchronously and
+    // categories never populate → the category picker stays empty.
+    getSuppliers: () => Promise.resolve([]),
+    // ProductImagePicker (edit-mode only) reads this feature gate
+    // synchronously on render; returning false short-circuits the
+    // picker subtree so we don't need to stub the full upload chain.
+    canUploadProductImages: () => false,
+    uploadProductImage: jest.fn(),
   },
 }));
 
@@ -71,9 +81,47 @@ const mockGoBack = jest.fn();
 // Route params control create vs edit mode — set per test via mockRoute.
 let mockRoute: {params?: {productId?: number}} = {params: undefined};
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({navigate: mockNavigate, goBack: mockGoBack}),
+  useNavigation: () => ({
+    navigate: mockNavigate,
+    goBack: mockGoBack,
+    // ProductEditScreen subscribes to `beforeRemove` to clear the shared
+    // header-back handler when the screen unmounts (v1.4.13+); the
+    // subscribe fn must return an unsubscribe fn.
+    addListener: jest.fn(() => jest.fn()),
+  }),
   useRoute: () => mockRoute,
   useFocusEffect: () => undefined,
+}));
+
+// Mock expo-image-picker + expo-image-manipulator — ProductEditScreen
+// transitively imports ProductImagePicker which pulls these in. Neither
+// ships a Jest-compatible entry (both are hoisted into the root
+// node_modules and resolve to ESM/TS source), so we stub them here to
+// keep the module graph loadable. The tests don't exercise the picker.
+jest.mock('expo-image-picker', () => ({
+  __esModule: true,
+  launchImageLibraryAsync: jest.fn(() =>
+    Promise.resolve({canceled: true, assets: null}),
+  ),
+  launchCameraAsync: jest.fn(() =>
+    Promise.resolve({canceled: true, assets: null}),
+  ),
+  requestMediaLibraryPermissionsAsync: jest.fn(() =>
+    Promise.resolve({status: 'granted', granted: true}),
+  ),
+  requestCameraPermissionsAsync: jest.fn(() =>
+    Promise.resolve({status: 'granted', granted: true}),
+  ),
+  MediaTypeOptions: {Images: 'Images', Videos: 'Videos', All: 'All'},
+  PermissionStatus: {GRANTED: 'granted', DENIED: 'denied', UNDETERMINED: 'undetermined'},
+}));
+
+jest.mock('expo-image-manipulator', () => ({
+  __esModule: true,
+  manipulateAsync: jest.fn(() =>
+    Promise.resolve({uri: 'file:///tmp/manipulated.jpg', width: 100, height: 100}),
+  ),
+  SaveFormat: {JPEG: 'jpeg', PNG: 'png', WEBP: 'webp'},
 }));
 
 import ProductEditScreen from '../ProductEditScreen';
