@@ -21,6 +21,18 @@ interface CartState {
   // the Dashboard tab after ringing through a transaction. Set by
   // CheckoutScreen on saleResult; null until the first sale of the session.
   lastSaleAt: string | null;
+  // Repair being cashed out (T8). Non-null when the current cart is a
+  // "take payment for repair" flow — the cart items were synthesised from
+  // repair.items and CheckoutScreen threads this id through to
+  // ApiClient.createSale as the top-level `repair_id` field so the server
+  // links the sale to the repair and flips it to 'completed'. Null for a
+  // normal retail sale. Cleared by `clear()` alongside the rest of the cart.
+  repairId: number | null;
+  // Display-only mirror of the repair's public number (e.g. "REP-0001")
+  // so the "Checking out repair REP-…" chip on CartScreen doesn't need a
+  // second fetch. Optional — the CartScreen picker sets it via
+  // setRepairNumber() alongside setRepairId(). Absent when repairId is null.
+  repairNumber: string | null;
 
   addItem: (product: Product, quantity?: number) => void;
   removeItem: (productId: number) => void;
@@ -28,6 +40,8 @@ interface CartState {
   setCustomer: (id: number | null, name: string | null) => void;
   setDiscount: (cents: number) => void;
   setNotes: (notes: string) => void;
+  setRepairId: (id: number | null) => void;
+  setRepairNumber: (n: string | null) => void;
   markSaleCompleted: () => void;
   clear: () => void;
 
@@ -45,6 +59,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   discountCents: 0,
   notes: '',
   lastSaleAt: null,
+  repairId: null,
+  repairNumber: null,
 
   addItem: (product: Product, quantity = 1) => {
     set(state => {
@@ -95,6 +111,8 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({discountCents: clampDiscountCents(get().items, cents)});
   },
   setNotes: (notes) => set({notes}),
+  setRepairId: (id) => set({repairId: id}),
+  setRepairNumber: (n) => set({repairNumber: n}),
   // Called by CheckoutScreen on a successful sale (BEFORE clear()) so that
   // any screen subscribed to `lastSaleAt` can refetch — used by
   // DashboardScreen.useFocusEffect to invalidate its summary so the
@@ -104,12 +122,17 @@ export const useCartStore = create<CartState>((set, get) => ({
     // Deliberately leaves `lastSaleAt` alone — clearing the cart on manual
     // "Clear cart" shouldn't blank a recent-sale signal. The field resets
     // naturally on logout via the auth-store subscription below.
+    // repairId IS cleared here — a fresh cart must never carry a stale
+    // repair link from a previous transaction (would double-book the repair
+    // on the next sale.create).
     set({
       items: [],
       customerId: null,
       customerName: null,
       discountCents: 0,
       notes: '',
+      repairId: null,
+      repairNumber: null,
     }),
 
   getSubtotalCents: () => getSubtotalCents(get().items),

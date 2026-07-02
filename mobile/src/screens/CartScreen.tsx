@@ -12,6 +12,8 @@ import {
   InputAccessoryView,
   Keyboard,
   Pressable,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
@@ -27,10 +29,12 @@ import {
   ICON_SIZE,
 } from '../constants/theme';
 import {useCartStore} from '../stores/cartStore';
+import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import EmptyState from '../components/EmptyState';
-import type {CartItem} from '../types/api.types';
+import ApiClient from '../services/ApiClient';
+import type {CartItem, PendingRepair, Product} from '../types/api.types';
 import type {QuickSaleStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 
@@ -56,16 +60,131 @@ export default function CartScreen() {
     notes,
     customerId,
     customerName,
+    repairId,
+    repairNumber,
     updateQuantity,
     removeItem,
     setDiscount,
     setNotes,
+    setRepairId,
+    setRepairNumber,
+    addItem,
     clear,
     getSubtotalCents,
     getTaxCents,
     getTotalCents,
     getItemCount,
   } = useCartStore();
+
+  // Workspace flag — the "Take payment for repair" affordance only shows
+  // for deployments that have shipped the repairs surface. Selector-shaped
+  // read so a flip of the flag re-renders the screen without needing a
+  // full store subscribe.
+  const repairsEnabled = useWorkspaceFeaturesStore(s => s.repairs_enabled);
+
+  // Picker state — repair-picker bottom-sheet modal. When shown, we fetch
+  // pending repairs for the current customer and let the cashier pick one.
+  // Kept LOCAL to CartScreen (not a route) because the deployment sitrep
+  // wants the picker to feel like a native bottom-sheet pull rather than a
+  // full-screen stack push. Hooks above the early-return contract per
+  // feedback_hooks_above_early_returns — always mounted, opens on demand.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState<string | null>(null);
+  const [pendingRepairs, setPendingRepairs] = useState<PendingRepair[]>([]);
+
+  const loadPendingRepairs = useCallback(async () => {
+    if (customerId == null) return;
+    setPickerLoading(true);
+    setPickerError(null);
+    try {
+      const list = await ApiClient.getPendingRepairsForCustomer(customerId);
+      setPendingRepairs(list);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to load repairs';
+      setPickerError(msg);
+    } finally {
+      setPickerLoading(false);
+    }
+  }, [customerId]);
+
+  const openRepairPicker = useCallback(() => {
+    haptics.light();
+    setPickerOpen(true);
+    loadPendingRepairs();
+  }, [haptics, loadPendingRepairs]);
+
+  const closeRepairPicker = useCallback(() => {
+    setPickerOpen(false);
+  }, []);
+
+  const handlePickRepair = useCallback(
+    async (repair: PendingRepair) => {
+      haptics.medium();
+      try {
+        // Fetch full detail so we can synthesise cart items from
+        // repair.items. The picker's PendingRepair shape doesn't carry
+        // items (see api.types.ts).
+        const detail = await ApiClient.getRepairDetail(repair.id);
+        if (!detail) {
+          setPickerError('Repair not found.');
+          return;
+        }
+        // T8-C3: verify status is still 'ready' at pick time. The
+        // getPendingRepairsForCustomer endpoint already filters on ready,
+        // but a race between the picker fetch and the pick tap (e.g.
+        // another cashier just moved the repair to 'completed') would
+        // otherwise silently link a non-ready repair, which the server
+        // no-ops the completion side-effect on.
+        if (detail.status !== 'ready') {
+          setPickerError('Repair no longer ready for checkout.');
+          return;
+        }
+        // T8-C2: clear the cart first so a mixed retail + repair basket
+        // doesn't accidentally carry across into the sale. Mirrors
+        // RepairDetailScreen.handleRepairCheckout.
+        clear();
+        // Money on the repair wire travels as DOLLAR FLOATS (per api.types.ts
+        // §Repair). cartStore.addItem expects a Product-shaped object whose
+        // price_cents is CENTS. Synthesise a stub Product per repair item:
+        //  - id: negative repair_item.id so it doesn't collide with real
+        //    Product primary keys already in the cart.
+        //  - price_cents: Math.round(item.unit_price * 100) - convert
+        //    dollars to cents at the boundary.
+        //  - tax_rate: 0 - repair labour + parts are quoted GST-inclusive
+        //    already; a repeat 10% would double-tax.
+        detail.items.forEach(ri => {
+          const synth: Product = {
+            id: -ri.id,
+            name: ri.item_name,
+            sku: ri.item_sku ?? '',
+            barcode: null,
+            price_cents: Math.round(ri.unit_price * 100),
+            tax_rate: 0,
+            stock_on_hand: 0,
+            category_id: null,
+            category_name: null,
+            image_url: null,
+            is_active: true,
+          };
+          addItem(synth, ri.quantity);
+        });
+        setRepairId(detail.id);
+        setRepairNumber(detail.repair_number);
+        setPickerOpen(false);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Failed to load repair';
+        setPickerError(msg);
+      }
+    },
+    [addItem, clear, setRepairId, setRepairNumber, haptics],
+  );
+
+  const clearRepairLink = useCallback(() => {
+    haptics.light();
+    setRepairId(null);
+    setRepairNumber(null);
+  }, [haptics, setRepairId, setRepairNumber]);
 
   const subtotal = getSubtotalCents();
   const tax = getTaxCents();
@@ -408,6 +527,61 @@ export default function CartScreen() {
         </Text>
       </View>
 
+      {/* T8 — "Checking out repair" chip. Renders whenever the cart is
+          linked to a repair (regardless of items count) so the cashier can
+          always see + clear the link. Tap to unlink; the cart items stay
+          put (the cashier may still want to complete a mixed transaction). */}
+      {repairId != null && (
+        <TouchableOpacity
+          style={styles.repairLinkChip}
+          onPress={clearRepairLink}
+          accessibilityRole="button"
+          accessibilityLabel="Clear repair link"
+          activeOpacity={0.7}>
+          <Icon
+            name="construct-outline"
+            size={ICON_SIZE.action}
+            color={COLORS.crimson}
+          />
+          <Text style={styles.repairLinkText} numberOfLines={1}>
+            Checking out repair {repairNumber ? `REP-${repairNumber}` : ''}
+          </Text>
+          <Icon
+            name="close"
+            size={ICON_SIZE.action - 4}
+            color={COLORS.textMuted}
+          />
+        </TouchableOpacity>
+      )}
+
+      {/* T8 — "Take payment for repair" affordance. Gated on customer set
+          AND workspace repairs_enabled AND no active repair link (once
+          linked, the chip above is the source of truth). Unconditional
+          on items.length so a cashier can start the flow from an empty
+          cart — the picker populates the cart. */}
+      {customerId != null && repairsEnabled && repairId == null && (
+        <TouchableOpacity
+          style={styles.repairLink}
+          onPress={openRepairPicker}
+          accessibilityRole="button"
+          accessibilityLabel="Take payment for repair"
+          activeOpacity={0.7}>
+          <Icon
+            name="construct-outline"
+            size={ICON_SIZE.action}
+            color={COLORS.accent}
+          />
+          <Text style={styles.repairLinkTextAction}>
+            Take payment for repair
+          </Text>
+          <Icon
+            name="chevron-forward"
+            size={ICON_SIZE.action - 4}
+            color={COLORS.accent}
+          />
+        </TouchableOpacity>
+      )}
+
       {/* Customer chip — same picker the Checkout screen uses. Surfacing
           customer attribution here (before total/checkout) is the cue for
           the operator to register the sale against the right account. */}
@@ -620,6 +794,78 @@ export default function CartScreen() {
       )}
       </Pressable>
       </KeyboardAvoidingView>
+
+      {/* T8 — Repair picker bottom sheet. Fed by
+          ApiClient.getPendingRepairsForCustomer on open; picking a repair
+          synthesises cart items from repair.items and links the cart. */}
+      <Modal
+        visible={pickerOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={closeRepairPicker}
+        accessibilityViewIsModal>
+        <View style={styles.pickerBackdrop}>
+          <View style={styles.pickerSheet}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Pick a repair</Text>
+              <TouchableOpacity
+                onPress={closeRepairPicker}
+                accessibilityRole="button"
+                accessibilityLabel="Close repair picker"
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                <Icon
+                  name="close"
+                  size={ICON_SIZE.action}
+                  color={COLORS.text}
+                />
+              </TouchableOpacity>
+            </View>
+            {pickerLoading ? (
+              <View style={styles.pickerCenter}>
+                <ActivityIndicator color={COLORS.accent} size="large" />
+              </View>
+            ) : pickerError ? (
+              <View style={styles.pickerCenter}>
+                <Text style={styles.pickerError}>{pickerError}</Text>
+              </View>
+            ) : pendingRepairs.length === 0 ? (
+              <View style={styles.pickerCenter}>
+                <Text style={styles.pickerEmpty}>
+                  No repairs ready for pickup for this customer.
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={pendingRepairs}
+                keyExtractor={r => String(r.id)}
+                renderItem={({item: repair}) => (
+                  <TouchableOpacity
+                    style={styles.pickerRow}
+                    onPress={() => handlePickRepair(repair)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Pick repair ${repair.repair_number}`}>
+                    <View style={styles.pickerRowLeft}>
+                      <Text style={styles.pickerRowNumber}>
+                        REP-{repair.repair_number}
+                      </Text>
+                      <Text
+                        style={styles.pickerRowIssue}
+                        numberOfLines={2}>
+                        {repair.issue_description}
+                      </Text>
+                    </View>
+                    {repair.estimated_cost != null ? (
+                      <Text style={styles.pickerRowCost}>
+                        {'$' + repair.estimated_cost.toFixed(2)}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -929,5 +1175,116 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.bold,
+  },
+  // T8 — Repair link affordance + linked chip. Both sit under the header
+  // row, above the customer chip. The "Take payment for repair" link uses
+  // the accent colour so it reads as an actionable link, not a chip
+  // showing a currently-linked repair.
+  repairLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+  },
+  repairLinkTextAction: {
+    flex: 1,
+    color: COLORS.accent,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  repairLinkChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    // Cream tint so a currently-linked repair reads as "attached", not as
+    // an available action.
+    backgroundColor: COLORS.cream,
+    borderWidth: 1,
+    borderColor: COLORS.crimson,
+  },
+  repairLinkText: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  // Picker sheet
+  pickerBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  pickerSheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: BORDER_RADIUS.xl,
+    borderTopRightRadius: BORDER_RADIUS.xl,
+    padding: SPACING.md,
+    maxHeight: '75%',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  pickerTitle: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.lg,
+    fontFamily: FONT_FAMILY.bold,
+  },
+  pickerCenter: {
+    padding: SPACING.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerEmpty: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.md,
+    textAlign: 'center',
+  },
+  pickerError: {
+    color: COLORS.danger,
+    fontSize: FONT_SIZE.md,
+    textAlign: 'center',
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceBorder,
+  },
+  pickerRowLeft: {
+    flex: 1,
+    marginRight: SPACING.md,
+  },
+  pickerRowNumber: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bold,
+    fontVariant: ['tabular-nums'],
+  },
+  pickerRowIssue: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    marginTop: 2,
+  },
+  pickerRowCost: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.bold,
+    fontVariant: ['tabular-nums'],
   },
 });

@@ -248,6 +248,52 @@ export interface CartItem {
   discount_cents: number;
 }
 
+// Exported input shape for `ApiClient.createSale` / `RelayClient.createSale`.
+// Previously the shape was inlined on both client methods; T8 hoists it so a
+// caller (CheckoutScreen, the repair-checkout flow) can name the type when
+// threading a repair through. The clients still accept the inline object
+// literal — this is purely additive.
+//
+// repair_id (top-level, sibling to customer_id): when set, the server links
+// the resulting sale to the repair and flips the repair's status to
+// 'completed' as a side-effect of the sale.create call. Threaded through
+// Aeris2's ProcessSaleRequest per the T3 plan.
+//
+// CAVEAT (deployment sitrep): the repair-completion side-effect is silently
+// skipped server-side if the repair is NOT in status 'ready' when the sale
+// lands. The sale is still created — the repair just doesn't flip. The
+// client MUST guard: re-fetch the repair right before submitting and block
+// the checkout if status has drifted. Never trust the server to reject.
+export interface SaleCreateItemInput {
+  product_id: number;
+  quantity: number;
+  unit_price_cents: number;
+  discount_cents?: number;
+  // tax_rate is a percent integer (10 = 10% GST). Defaults to 10 when
+  // undefined to match Aeris2 StoreProductRequest::prepareForValidation.
+  tax_rate?: number;
+}
+
+export interface SaleCreatePaymentInput {
+  method: string;
+  amount_cents: number;
+  reference?: string;
+}
+
+export interface SaleCreateInput {
+  items: SaleCreateItemInput[];
+  payments: SaleCreatePaymentInput[];
+  customer_id?: number;
+  discount_cents?: number;
+  notes?: string;
+  // Repair being cashed out. When present, the server (a) attaches
+  // sale.repair_id and (b) flips the repair to 'completed' — but ONLY if the
+  // repair is currently in status 'ready'. Non-ready repairs still create
+  // the sale but the completion is silently skipped; the client must
+  // pre-flight-guard status === 'ready' before submitting.
+  repair_id?: number;
+}
+
 // Inputs for the customer create/update endpoints. Mirror StoreCustomerRequest
 // validation rules — first_name OR company is required, every other field is
 // optional. Cents are converted to dollars at the boundary by RelayClient.
