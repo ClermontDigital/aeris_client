@@ -140,56 +140,50 @@ export default function CartScreen() {
           setPickerError('Repair no longer ready for checkout.');
           return;
         }
-        // T8 STOCK CONTRACT (deployment-team-confirmed, option b): mobile
-        // MUST restate repair parts as real product-line items on sale.create.
-        // Every reserved part in repair.items[] with a product_id lands on
-        // the sale with the REAL product_id; the server dedupes against the
-        // repair_id side-effect so stock_reserved is released without a
-        // second stock_quantity decrement. Synthetic negative ids would fail
-        // POSController::processSale's Product::findOrFail() with a 422.
+        // T8 STOCK CONTRACT (deployment-team-confirmed):
+        //  * PARTS: mobile restates repair parts as real product-line items
+        //    on sale.create. Every reserved part in repair.items[] with a
+        //    product_id lands on the sale with the REAL product_id; the
+        //    server dedupes against the repair_id side-effect so
+        //    stock_reserved is released without a second stock_quantity
+        //    decrement. Synthetic negative ids would fail
+        //    POSController::processSale's Product::findOrFail() with a 422.
+        //  * LABOUR: uses a synthetic product_id in the range <= -600000.
+        //    Per the second deployment-team sitrep, the server sale
+        //    validator whitelists this range so labour lines pass without
+        //    a Product row. We derive `product_id: -600000 - ri.id` so
+        //    every labour ri gets a unique synth id while staying in the
+        //    labour range.
         //
-        // LABOUR HANDLING is UNRESOLVED — the deployment team is confirming
-        // the surface. Provisional policy: if the repair has ANY labour
-        // lines (product_id === null) block the hand-off with a clear
-        // Alert; leave cart + customer + repair-link untouched so the
-        // cashier can take the checkout to the till desktop. Once labour
-        // surface is confirmed we unblock (either accept labour as a
-        // notes line, mint a synth catalog product on-server, or route
-        // labour through a dedicated action).
-        const hasLabour = detail.items.some(
-          ri => ri.item_type === 'labor' || ri.product_id == null,
-        );
-        if (hasLabour) {
-          Alert.alert(
-            'Repair labour handling',
-            'This repair has labour lines. Handle this checkout at the till desktop until labour surface is confirmed.',
-          );
-          return;
-        }
+        // BOTH parts and labour set tax_rate: 10 on the synthesised Product
+        // so the wire encoder in RelayClient/DirectClient createSale emits
+        // `gst_applicable: true` on every line (per T8-C1: subtotal is
+        // computed as sum of lineTotal/1.10 for gst-applicable lines and
+        // sum(lineTotal) for non-applicable lines). Repair items are quoted
+        // GST-inclusive already, so tax_rate: 10 tells the wire encoder
+        // "extract GST from unit_price"; the server round-trips the same
+        // math and no double-tax.
         // T8-C2: clear the cart first so a mixed retail + repair basket
         // doesn't accidentally carry across into the sale. Mirrors
         // RepairDetailScreen.handleRepairCheckout.
         clear();
         // Money on the repair wire travels as DOLLAR FLOATS (per api.types.ts
         // §Repair). cartStore.addItem expects a Product-shaped object whose
-        // price_cents is CENTS. Synthesise a stub Product per parts row:
-        //  - id: REAL ri.product_id (per stock contract above).
+        // price_cents is CENTS. Synthesise a stub Product per line:
+        //  - id: REAL ri.product_id for parts, `-600000 - ri.id` for labour.
         //  - price_cents: Math.round(item.unit_price * 100) - convert
         //    dollars to cents at the boundary.
-        //  - tax_rate: 0 - repair items are quoted GST-inclusive already;
-        //    a repeat 10% would double-tax.
+        //  - tax_rate: 10 - see block comment above.
         detail.items.forEach(ri => {
-          // Guard rail — should be unreachable given the labour block above,
-          // but belt-and-braces so a future edit doesn't accidentally slip
-          // a null product_id onto the wire.
-          if (ri.item_type === 'labor' || ri.product_id == null) return;
+          const isLabour = ri.item_type === 'labor' || ri.product_id == null;
+          const synthId = isLabour ? -600000 - ri.id : ri.product_id!;
           const synth: Product = {
-            id: ri.product_id,
+            id: synthId,
             name: ri.item_name,
             sku: ri.item_sku ?? '',
             barcode: null,
             price_cents: Math.round(ri.unit_price * 100),
-            tax_rate: 0,
+            tax_rate: 10,
             stock_on_hand: 0,
             category_id: null,
             category_name: null,

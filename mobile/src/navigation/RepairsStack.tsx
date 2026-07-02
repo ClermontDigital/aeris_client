@@ -6,6 +6,8 @@ import RepairDetailScreen from '../screens/RepairDetailScreen';
 import RepairStatusChangeSheet from '../screens/RepairStatusChangeSheet';
 import RepairEditScreen from '../screens/RepairEditScreen';
 import BarcodeScannerScreen from '../screens/BarcodeScannerScreen';
+import RepairLabelPrintSheet from '../screens/RepairLabelPrintSheet';
+import RepairItemsEditorSheet from '../screens/RepairItemsEditorSheet';
 
 const Stack = createNativeStackNavigator<RepairsStackParamList>();
 
@@ -48,6 +50,21 @@ const RepairsStack: React.FC = () => (
       component={BarcodeScannerScreen}
       initialParams={{mode: 'repair'}}
       options={{presentation: 'fullScreenModal'}}
+    />
+    {/* WSA-2 label print: formSheet over RepairDetail. Same mental model as
+        RepairStatusChange — focused sub-task, not a push. Sheet fetches its
+        own detail so the caller only supplies the id. */}
+    <Stack.Screen
+      name="RepairLabelPrint"
+      component={RepairLabelPrintSheet}
+      options={{presentation: 'formSheet'}}
+    />
+    {/* WSA-3 items editor: same formSheet presentation as the label sheet.
+        Parts + labour rows editable side-by-side, scan-to-add for parts. */}
+    <Stack.Screen
+      name="RepairItemsEditor"
+      component={RepairItemsEditorSheet}
+      options={{presentation: 'formSheet'}}
     />
   </Stack.Navigator>
 );
