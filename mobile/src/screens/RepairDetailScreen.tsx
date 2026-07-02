@@ -48,6 +48,50 @@ import {
 type Nav = NativeStackNavigationProp<RepairsStackParamList, 'RepairDetail'>;
 type RepairDetailRouteProp = RouteProp<RepairsStackParamList, 'RepairDetail'>;
 
+// ===========================================================================
+// T10 - Known caveats (consolidated from T7 + T8 inline notes).
+//
+// The DR-M3 deployment sitrep flagged three server-side behaviours that this
+// screen has to work around. Each was noted inline at the point it mattered
+// during T7/T8; T10 consolidates them here so a new agent lands on one block
+// and does not have to reverse-engineer them from scattered comments.
+//
+// 1. NON-READY CHECKOUT SILENT NO-OP
+//    Server silently no-ops the completion side-effect when the repair is
+//    not in `ready` status at the moment CompleteSale runs. Client guards
+//    at TWO points to avoid ever exercising that path:
+//      a. Checkout button only renders when repair.status === 'ready'
+//         (see the T8 slot below the action row).
+//      b. handleRepairCheckout re-fetches the repair one more time inside
+//         the Confirm handler and re-verifies status === 'ready' before
+//         handing the cart to CheckoutScreen. Mirrors the belt-and-braces
+//         pattern on CheckoutScreen.handleCompleteSale.
+//    If both guards were ever bypassed, no data loss occurs - the sale
+//    still lands - but the repair status would not flip to `completed` and
+//    would have to be reconciled manually from the repairs list.
+//
+// 2. STOCK NOT DECREMENTED ON REPAIR CHECKOUT
+//    Repair checkout does NOT decrement stock in this release: parts are
+//    reserved at intake time (server-side), so double-decrementing at
+//    checkout would drift inventory. The Confirm alert copy reads
+//    "Parts reserved at intake." to make this legible to cashiers. If
+//    intake never happened (edge: cash-only repair with no parts row),
+//    stock remains untouched.
+//
+// 3. CUSTOMER SYNC NOTIFICATION UNCERTAINTY
+//    Customer SMS/email notification on status change may or may not fire -
+//    the send-manual-notification ability gate and per-tenant notification
+//    templates live server-side and are not queryable from the client. The
+//    refetch-on-focus effect below reconciles the timeline card whenever
+//    the screen regains focus, so if the notification did fire the delivery
+//    row will show up on the next visit. The "Notify customer" action-row
+//    entry is a stub in this release (Alert only, per T7) - the real send
+//    lands in a follow-up once the deployment team exposes the ability.
+//
+// See also mobile/src/utils/repairsBulkStatus.ts for the parallel caveats
+// on the bulk-status endpoint (surfaced by the future BulkStatusScreen).
+// ===========================================================================
+
 // Timestamps on the repair wire arrive as ISO 8601 strings. Match the
 // SaleDetail formatter so timestamps read consistently across the app.
 function formatDateTime(iso: string | null | undefined): string {
