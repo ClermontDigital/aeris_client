@@ -85,6 +85,44 @@ function isNavigationAllowed(navigationUrl, activeTargetUrl) {
   }
 }
 
+// Webview popup policy (pure, for unit test). Aeris2's UI opens popups in TWO
+// shapes, both of which the v1 webview must allow or the sales-view Print
+// Invoice button silently drops:
+//
+//   (a) URL popup — window.open('/sales/{id}/invoice.pdf?inline=1', '_blank')
+//       (Sales/Show.tsx). Same-host only.
+//   (b) Blank popup — window.open('', '_blank') then doc.write from the opener
+//       (RemittanceStatementModal, RepairBarcodeModal, LabelPrintModal, POS/
+//       ReceiptModal fallback). Same-origin by construction: the popup is
+//       hydrated by the opener via document.write, no navigation happens.
+//
+// Both spawn a child BrowserWindow that inherits the webview session (auth
+// cookie carries). Off-host URLs hand off to the system browser; anything
+// else denies fail-closed.
+const CHILD_WINDOW_OPTIONS = {
+  width: 900,
+  height: 1100,
+  title: 'AERIS',
+  webPreferences: {
+    contextIsolation: true,
+    nodeIntegration: false,
+    enableRemoteModule: false,
+  },
+};
+
+function decideWebviewPopup(url, activeTargetUrl) {
+  // Blank popup — doc.write pattern. Same-origin by construction.
+  if (url === '' || url === 'about:blank') {
+    return { action: 'allow', overrideBrowserWindowOptions: CHILD_WINDOW_OPTIONS };
+  }
+  if (isNavigationAllowed(url, activeTargetUrl)) {
+    return { action: 'allow', overrideBrowserWindowOptions: CHILD_WINDOW_OPTIONS };
+  }
+  const external =
+    url && (url.startsWith('https://') || url.startsWith('http://')) ? url : null;
+  return { action: 'deny', external };
+}
+
 function createMainWindow() {
   const windowState = store.get('windowState', defaultConfig.windowState);
   
@@ -147,6 +185,46 @@ function createMainWindow() {
       console.warn('Blocked external link with invalid scheme:', url);
     }
     return { action: 'deny' };
+  });
+
+  // Webview popup gate. Aeris2's UI opens the invoice PDF (Sales/Show.tsx,
+  // POS/ReceiptModal.tsx fallback) via window.open(url, '_blank'). Without
+  // this handler on the WEBVIEW'S webContents those calls silently drop — the
+  // sales-view "Print Invoice" button appears to do nothing. Same-host popups
+  // spawn a child window that inherits the webview session so the auth cookie
+  // carries the PDF request; off-host popups hand off to the system browser.
+  //
+  // NB: mainWindow.webContents.setWindowOpenHandler (below) fires for popups
+  // opened by the OUTER app-wrapper.html, not by webview guest content — those
+  // two paths must be handled separately.
+  mainWindow.webContents.on('did-attach-webview', (_event, webviewWebContents) => {
+    webviewWebContents.setWindowOpenHandler(({ url }) => {
+      const decision = decideWebviewPopup(url, getActiveTargetUrl());
+      if (decision.action === 'deny') {
+        if (decision.external) {
+          shell.openExternal(decision.external);
+        } else {
+          console.warn('Blocked webview popup with invalid scheme:', url);
+        }
+        return { action: 'deny' };
+      }
+      // Explicit session inheritance: the child window MUST share the webview's
+      // session (persist:main / persist:nas / per-cashier), else the invoice
+      // PDF request 401s exactly like the pre-fix bug. `session:` in
+      // webPreferences takes precedence over `partition:` — pass the object
+      // directly so DR partitions and per-cashier partitions all Just Work.
+      const options = decision.overrideBrowserWindowOptions;
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          ...options,
+          webPreferences: {
+            ...options.webPreferences,
+            session: webviewWebContents.session,
+          },
+        },
+      };
+    });
   });
 
   // Handle navigation with security validation
@@ -1177,6 +1255,7 @@ app.on('before-quit', () => {
 // can unit-test them without loading the Electron app shell.
 module.exports = {
   isNavigationAllowed,
+  decideWebviewPopup,
   // Re-exports for convenience / discoverability (pure, tested in their own specs).
   ReachabilityTracker,
   decideAutoAction,

@@ -1017,11 +1017,16 @@
              repoints/recreates this to the NAS partition (persist:nas) in
              in-store mode and to per-cashier partitions when session management
              is on. Cloud and NAS sessions stay isolated. -->
+        <!-- allowpopups is required so Aeris2's window.open('/sales/{id}/invoice.pdf?_blank')
+             (Sales/Show.tsx "Print Invoice" + POS/ReceiptModal.tsx popup fallback) can
+             surface a child window. The popup's target is gated by main's
+             did-attach-webview → setWindowOpenHandler: same-host only, else system browser. -->
         <webview
             id="content-frame"
             class="content-frame"
             src="http://aeris.local"
-            partition="persist:main">
+            partition="persist:main"
+            allowpopups>
         </webview>
         
         <!-- Loading overlay -->
@@ -1187,6 +1192,9 @@
                 fresh.id = 'content-frame';
                 fresh.className = 'content-frame';
                 fresh.setAttribute('partition', desired);
+                // Popup support for Aeris2's invoice PDF (window.open) — gated by
+                // main's did-attach-webview → setWindowOpenHandler (same-host only).
+                fresh.setAttribute('allowpopups', '');
                 const parent = contentFrame.parentNode;
                 parent.removeChild(contentFrame);
                 parent.appendChild(fresh);
@@ -2153,9 +2161,19 @@
                 hideSessionSwitcher();
             });
 
-            // Print request handlers
+            // Print request handlers. Route toolbar Print fallback through the
+            // webview so it targets the guest page (the Aeris2 sale/invoice view)
+            // rather than the app-wrapper chrome. `printPage()` used to be called
+            // here but was never defined — the fallback path silently threw.
             window.electronAPI.onPrintRequest((options) => {
-                printPage();
+                const contentFrame = document.getElementById('content-frame');
+                if (contentFrame && typeof contentFrame.print === 'function') {
+                    try {
+                        contentFrame.print(options || {});
+                    } catch (e) {
+                        console.warn('webview print failed:', e && e.message);
+                    }
+                }
             });
 
             window.electronAPI.onPrintSilentRequest((options) => {
@@ -2471,7 +2489,10 @@
             // Copy all attributes from original webview
             newWebview.id = 'content-frame';
             newWebview.className = 'content-frame';
-            // Removed allowpopups for security - popups should be handled by main window
+            // Popup support for Aeris2's invoice PDF (window.open). Gated by main's
+            // did-attach-webview → setWindowOpenHandler (same-host only). Without
+            // this the sales-view "Print Invoice" button silently drops.
+            newWebview.setAttribute('allowpopups', '');
             newWebview.partition = partitionName;
             
             // Replace the old webview with the new one
