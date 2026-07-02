@@ -94,6 +94,36 @@ describe('workspaceFeaturesStore', () => {
       });
       expect(useWorkspaceFeaturesStore.getState().repairs_enabled).toBe(false);
     });
+
+    // Shape-tolerant fallbacks — deployment shape drift shouldn't hide the tab.
+    it('workspace.repairs_enabled without features wrapper → lights up', () => {
+      useWorkspaceFeaturesStore.getState().hydrateFromLogin({
+        workspace: {repairs_enabled: true},
+      });
+      expect(useWorkspaceFeaturesStore.getState().repairs_enabled).toBe(true);
+    });
+
+    it('features.repairs_enabled at root (no workspace wrapper) → lights up', () => {
+      useWorkspaceFeaturesStore.getState().hydrateFromLogin({
+        features: {repairs_enabled: true},
+      });
+      expect(useWorkspaceFeaturesStore.getState().repairs_enabled).toBe(true);
+    });
+
+    it('repairs_enabled at root (flat) → lights up', () => {
+      useWorkspaceFeaturesStore.getState().hydrateFromLogin({
+        repairs_enabled: true,
+      });
+      expect(useWorkspaceFeaturesStore.getState().repairs_enabled).toBe(true);
+    });
+
+    it('canonical shape still wins over fallbacks', () => {
+      useWorkspaceFeaturesStore.getState().hydrateFromLogin({
+        workspace: {features: {repairs_enabled: true}},
+        repairs_enabled: false, // fallback should NOT override canonical
+      });
+      expect(useWorkspaceFeaturesStore.getState().repairs_enabled).toBe(true);
+    });
   });
 
   describe('setRepairsEnabled', () => {
