@@ -14,6 +14,7 @@ import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import ApiClient from '../services/ApiClient';
 import PrintService from '../services/PrintService';
+import BarcodePreview from '../components/BarcodePreview';
 import ErrorBanner from '../components/ErrorBanner';
 import EyebrowLabel from '../components/EyebrowLabel';
 import {useHaptics} from '../hooks/useHaptics';
@@ -254,9 +255,15 @@ const RepairLabelPrintSheet: React.FC = () => {
           to this job with the Repairs tab scanner.
         </Text>
 
-        {/* Preview card — mirrors the boxed layout on the web version */}
+        {/* Preview card — mirrors the boxed layout on the web version.
+            The BarcodePreview renders the same CODE128 pattern the printed
+            label carries (shared encodeCode128B), so what shows here is what
+            AirPrint puts on the sticker. */}
         <View style={styles.previewCard}>
           <EyebrowLabel>Repair</EyebrowLabel>
+          <View style={styles.previewBarcode}>
+            <BarcodePreview value={repair.repair_number} />
+          </View>
           <Text style={styles.previewRepairNumber}>{repair.repair_number}</Text>
           <Text style={styles.previewCustomer}>{customerName}</Text>
           <Text style={styles.previewDevice} numberOfLines={1}>
@@ -376,6 +383,13 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     alignItems: 'center',
     marginBottom: SPACING.lg,
+  },
+  previewBarcode: {
+    marginTop: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    backgroundColor: '#ffffff',
+    borderRadius: BORDER_RADIUS.sm,
   },
   previewRepairNumber: {
     color: COLORS.text,

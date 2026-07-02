@@ -82,6 +82,14 @@ export function encodeCode128B(text: string): string | null {
  * `Aeris2/resources/js/Components/Repairs/RepairBarcodeModal.tsx`), with the
  * text baseline drawn under the bars.
  *
+ * NOTE: SVG is NOT used by the print label — iOS `expo-print` renders through
+ * `UIMarkupTextPrintFormatter`, a cut-down HTML engine that does NOT paint
+ * inline `<svg>`, so the bars came out blank on AirPrint. `buildRepairLabelHtml`
+ * uses `renderBarcodeHtml` (div-based bars) instead, which that engine renders
+ * reliably. `renderBarcodeSvg` is kept for any future real-WebView surface
+ * (Android print uses Chromium and would render it, but we use the div path on
+ * both for consistency).
+ *
  * Returns null if the text can't be encoded (falls back to text-only label).
  */
 export function renderBarcodeSvg(
@@ -119,6 +127,59 @@ export function renderBarcodeSvg(
   );
 }
 
+/**
+ * Render a CODE128 barcode as pure HTML — a `white-space: nowrap` row of
+ * inline-block `<div>`s, one per bar/space run, black for a bar run and
+ * transparent for a space run. This is the version the print label uses:
+ * unlike inline SVG, background-coloured block divs paint correctly in iOS
+ * `UIMarkupTextPrintFormatter` (expo-print's iOS engine) AND in the Android
+ * WebView.
+ *
+ * Module width is expressed in millimetres so the barcode scales with the
+ * physical 89×38 mm label rather than depending on the renderer's px→pt
+ * mapping. The default 0.33 mm module × 244 modules ≈ 80 mm, which fits the
+ * 85 mm printable width inside the 2 mm label padding while staying above the
+ * ~0.19 mm minimum X-dimension a handheld scanner needs.
+ *
+ * The wrapper uses `font-size: 0` + `line-height: 0` to kill the whitespace
+ * gaps that would otherwise appear between inline-block elements (those gaps
+ * would read as phantom spaces and break the scan).
+ *
+ * Returns null if the text can't be encoded (caller falls back to text-only).
+ */
+export function renderBarcodeHtml(
+  text: string,
+  opts: {moduleMm?: number; heightMm?: number} = {},
+): string | null {
+  const moduleMm = opts.moduleMm ?? 0.33;
+  const heightMm = opts.heightMm ?? 15;
+  const pattern = encodeCode128B(text);
+  if (!pattern) return null;
+  // Coalesce consecutive equal modules into runs so we emit ~40-80 divs
+  // instead of 244. Each run is one inline-block div; bar runs are black,
+  // space runs transparent (kept in flow so the bar spacing is preserved).
+  const bars: string[] = [];
+  let runStart = 0;
+  for (let i = 1; i <= pattern.length; i++) {
+    if (i === pattern.length || pattern[i] !== pattern[runStart]) {
+      const isBar = pattern[runStart] === '1';
+      const runWidth = (i - runStart) * moduleMm;
+      const color = isBar ? '#000' : 'transparent';
+      bars.push(
+        `<div style="display:inline-block;width:${runWidth.toFixed(
+          3,
+        )}mm;height:${heightMm}mm;background:${color};vertical-align:top;"></div>`,
+      );
+      runStart = i;
+    }
+  }
+  return (
+    `<div style="font-size:0;line-height:0;white-space:nowrap;">` +
+    bars.join('') +
+    `</div>`
+  );
+}
+
 function escapeXml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -149,10 +210,15 @@ export interface RepairLabelOpts {
 export function buildRepairLabelHtml(opts: RepairLabelOpts): string {
   const {repairNumber, customerName, device, receivedAt, checkedInBy} = opts;
   const pieces = Math.max(1, Math.min(20, Math.floor(opts.pieces)));
-  const svg = renderBarcodeSvg(repairNumber);
-  const svgMarkup =
-    svg ??
-    `<p class="fallback">${escapeXml(repairNumber)}</p>`;
+  // Div-based bars (NOT SVG) so iOS UIMarkupTextPrintFormatter paints them —
+  // see renderBarcodeHtml. Human-readable number is drawn underneath in a
+  // monospace row so the label is scannable AND legible if a scan fails.
+  const barcode = renderBarcodeHtml(repairNumber);
+  const barcodeMarkup = barcode
+    ? `<div class="barcode">${barcode}<p class="barcodeText">${escapeXml(
+        repairNumber,
+      )}</p></div>`
+    : `<p class="fallback">${escapeXml(repairNumber)}</p>`;
   const receivedLabel = receivedAt
     ? new Date(receivedAt).toLocaleDateString()
     : '';
@@ -171,7 +237,7 @@ export function buildRepairLabelHtml(opts: RepairLabelOpts): string {
       return `
         <div class="label">
           <p class="title">REPAIR</p>
-          ${svgMarkup}
+          ${barcodeMarkup}
           <p class="customer">${escapeXml(customerName)}</p>
           <p class="device">${escapeXml(device)}</p>
           ${pieceTag}
@@ -220,7 +286,13 @@ export function buildRepairLabelHtml(opts: RepairLabelOpts): string {
   .piece { font-size: 9pt; font-weight: bold; margin: 0.5mm 0 0 0; }
   .meta { font-size: 7pt; color: #555; margin: 0.5mm 0 0 0; }
   .fallback { font-size: 12pt; font-family: monospace; margin: 2mm 0; }
-  svg { max-width: 85mm; flex-shrink: 0; }
+  .barcode { margin: 0 0 0.5mm 0; }
+  .barcodeText {
+    font-family: monospace;
+    font-size: 8pt;
+    letter-spacing: 1px;
+    margin: 0.5mm 0 0 0;
+  }
 </style>
 </head>
 <body>${labelsHtml}</body>

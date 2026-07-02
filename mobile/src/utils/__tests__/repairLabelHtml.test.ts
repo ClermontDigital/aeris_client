@@ -1,6 +1,7 @@
 import {
   buildRepairLabelHtml,
   encodeCode128B,
+  renderBarcodeHtml,
   renderBarcodeSvg,
 } from '../repairLabelHtml';
 
@@ -63,6 +64,50 @@ describe('repairLabelHtml — renderBarcodeSvg', () => {
   });
 });
 
+describe('repairLabelHtml — renderBarcodeHtml (print path)', () => {
+  it('returns div-based bars, NOT svg (iOS UIMarkupTextPrintFormatter cannot paint inline SVG)', () => {
+    const html = renderBarcodeHtml('REP-20260702-000001');
+    expect(html).not.toBeNull();
+    // Must be div-based, not SVG.
+    expect(html).not.toContain('<svg');
+    expect(html).not.toContain('<rect');
+    expect(html).toContain('<div');
+    // Bars are black background block divs.
+    expect(html).toContain('background:#000');
+    // Space runs are kept in flow as transparent divs to preserve spacing.
+    expect(html).toContain('background:transparent');
+    // Widths are millimetre-based so the barcode scales with the physical
+    // label rather than the renderer's px->pt mapping.
+    expect(html).toContain('mm;height:');
+    // Whitespace-gap killers so inline-block divs don't get phantom spaces.
+    expect(html).toContain('font-size:0');
+    expect(html).toContain('white-space:nowrap');
+  });
+
+  it('coalesces runs — far fewer than 244 divs', () => {
+    const html = renderBarcodeHtml('REP-20260702-000001')!;
+    const divCount = (html.match(/<div/g) ?? []).length;
+    // 1 wrapper + coalesced run divs. Comfortably under the 244 raw-module
+    // count — proves adjacent equal modules were merged into one div.
+    expect(divCount).toBeGreaterThan(10);
+    expect(divCount).toBeLessThan(200);
+  });
+
+  it('honours moduleMm + heightMm overrides', () => {
+    const html = renderBarcodeHtml('REP-20260702-000001', {
+      moduleMm: 0.5,
+      heightMm: 20,
+    })!;
+    expect(html).toContain('height:20mm');
+    // A single-module run at 0.5mm renders as width:0.500mm.
+    expect(html).toContain('0.500mm');
+  });
+
+  it('returns null for uncodeable input', () => {
+    expect(renderBarcodeHtml('café')).toBeNull();
+  });
+});
+
 describe('repairLabelHtml — buildRepairLabelHtml', () => {
   const baseOpts = {
     repairNumber: 'REP-20260702-000001',
@@ -75,6 +120,18 @@ describe('repairLabelHtml — buildRepairLabelHtml', () => {
   it('renders the Dymo 89x38 mm @page rule', () => {
     const html = buildRepairLabelHtml(baseOpts);
     expect(html).toContain('@page { size: 89mm 38mm; margin: 0; }');
+  });
+
+  it('renders the barcode as div bars (NOT svg) so iOS AirPrint paints it', () => {
+    const html = buildRepairLabelHtml(baseOpts);
+    // Regression guard for the blank-barcode bug: the label MUST NOT ship
+    // inline SVG (UIMarkupTextPrintFormatter renders it blank).
+    expect(html).not.toContain('<svg');
+    expect(html).toContain('class="barcode"');
+    expect(html).toContain('background:#000');
+    // Human-readable number is drawn under the bars.
+    expect(html).toContain('class="barcodeText"');
+    expect(html).toContain('REP-20260702-000001');
   });
 
   it('renders one label div by default', () => {
@@ -123,7 +180,7 @@ describe('repairLabelHtml — buildRepairLabelHtml', () => {
       ...baseOpts,
       repairNumber: 'café',
     });
-    // Fallback replaces the SVG with a monospace text row rather than
+    // Fallback replaces the barcode with a monospace text row rather than
     // shipping a blank label. Encoded number appears in the fallback row.
     expect(html).toContain('class="fallback"');
     expect(html).toContain('caf&#039;'.replace('&#039;', 'é')); // presence, not escaping
