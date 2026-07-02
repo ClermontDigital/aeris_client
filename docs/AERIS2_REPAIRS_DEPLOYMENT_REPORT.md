@@ -1,363 +1,446 @@
 # Aeris2 Backend Audit — Mobile Repairs Feature Deployment Report
 
-**Prepared for:** Aeris2 deployment/build team
-**Client status:** Mobile Repairs feature ships DARK. `workspace.features.repairs_enabled` defaults `false` (server-side seed already correct). Client is safe to merge; nothing below blocks the mobile release. The list below is what the server must ship before any workspace can flip the flag `true`.
+**Prepared for:** Aeris2 deployment / build team
+**Revision:** v2 — reflects deployment-team progress and endorses their proposed sequencing.
+**Client status:** Mobile Repairs feature ships DARK. `workspace.features.repairs_enabled` defaults `false`. Client is safe to merge and ship independently. Nothing below blocks the mobile release. The list below is what the server must ship before any workspace can flip the flag `true`.
 
 ---
 
-## TL;DR
+## PROGRESS SUMMARY
 
-- **4 BLOCKING** — without these, every mobile Repairs call fails at the wire even for `super_admin`. Mobile UI will show empty lists and error toasts.
-- **3 REQUIRED FOR LAUNCH** — non-`super_admin` roles get 403; auth-response is missing the feature envelope; PendingRepairs mapping is absent.
-- **6 REQUIRED FOR CORRECTNESS** — will pass smoke tests but silently corrupt stock, leak reservations, ignore cross-site scoping, or mis-reconcile GST. Any workspace enabling repairs will regret this within days.
-- **7 FOLLOW-UP** — latent bugs and hygiene items the team can bundle later.
+### ✅ Landed by deployment team (current sprint)
 
-Total: **20 items**. All file references are absolute.
+| Item | Notes |
+|---|---|
+| **B4 — Abilities** | `repairs:read/write/delete` granted per role (cashier read-only per review). No further action required. |
+| **L1 — Workspace features envelope** | `login` + `refresh` responses now surface `workspace.features.repairs_enabled`. Client hydrates it into `workspaceFeaturesStore` correctly. Verified. |
 
----
+### 🟨 Partially landed — finishing work required
 
-## BLOCKING (4)
+| Item | What's landed | What remains |
+|---|---|---|
+| **B1 — Action mappings** | 9 of ~12 done | Missing `repairs.status-history` (waits on **B3**) + `repairs.pending-for-customer` (waits on **L2**) |
+| **B2 — Dispatcher aliases** | `repair` + `item` aliases done | Missing `customer` alias — `repairs.pending-for-customer` sends `customer_id` and needs `{customer}` fill |
+| **L3 — PendingRepair fields** | `issue_description` sourced correctly | Missing `estimated_cost` + `received_at` — the picker rows still render blank cost/date |
+| **C4 — updateItem persistence** | `{item}↔{repair}` ownership guard added | Still drops `unit_price`, `notes`, skips `line_total` recompute, no `stock_reserved` adjust on quantity change |
 
-### B1. Add 12 `repairs.*` action mappings to the marketplace dispatcher
+### 🔴 Still to build
 
-**File:** `/Users/developersteve/devfiles/Aeris2/config/marketplace_rpc.php`
-**What:** Insert a `repairs.*` block (see full diff in Section 1 of the routes/dispatcher audit above). All 12 mobile actions currently resolve to `RpcActionNotFoundException` because zero repair mappings exist (grep of the config file for `repair` returns zero matches).
+7 items — the definitive remaining scope is in the sections below.
 
-Actions to add: `repairs.list`, `repairs.detail`, `repairs.create`, `repairs.update`, `repairs.update-status`, `repairs.add-item`, `repairs.update-item`, `repairs.remove-item`, `repairs.bulk-status`, `repairs.delete`, `repairs.pending-for-customer`, `repairs.status-history` (last one depends on B3).
+### ⏳ In flight from client team
 
-**Why:** Client dispatches these action names from `/Users/developersteve/devfiles/aeris_client/shared/src/constants/actions.ts:69-80` and calls them from `/Users/developersteve/devfiles/aeris_client/shared/src/RelayClient.ts:1067,1084,1104,1160,1178,1209,1261,1280,1381`. Without the mappings, every mobile Repairs screen returns empty + error toast.
-
-**Complexity:** S (single file, ~15 lines).
-**Blocks:** everything else in this document that touches Repairs.
-
----
-
-### B2. Extend `RpcDispatcher::$aliases` to fill `{repair}`, `{item}`, `{customer}` placeholders
-
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Services/Marketplace/RpcDispatcher.php:199-203`
-**What:** Add alias entries so route placeholders match the params the client sends:
-
-```php
-static $aliases = [
-    'id'       => ['sale_id', 'product_id', 'customer_id', 'repair_id'],
-    'code'     => ['barcode'],
-    'term'     => ['query', 'search', 'q'],
-    'repair'   => ['repair_id', 'id'],
-    'item'     => ['item_id'],
-    'customer' => ['customer_id', 'id'],
-];
-```
-
-**Why:** The routes at `/Users/developersteve/devfiles/Aeris2/routes/api.php:338-355` use `{repair}` and `{item}` placeholders. Mobile RelayClient sends `repair_id` and `item_id` (e.g. RelayClient.ts:1084, 1178, 1261, 1280). Without alias entries the dispatcher logs `unfilled path placeholder` and returns 404 on every non-list Repairs call.
-
-**Complexity:** S.
-**Blocks:** all B1 mappings except `repairs.list` and `repairs.create` (which don't need placeholder fill).
+Workshop-workflow amendments (barcode scan/print, technician queue, my-repairs view) are being scoped now. A companion appendix will land in this document when the audit completes — expect additional RPC additions for `repairs.by-barcode`, `repairs.label-pdf-url`, technician assignment, and notify-customer hooks.
 
 ---
 
-### B3. Add `statusHistory` HTTP route + controller method
+## ENDORSED SEQUENCING
 
-**File 1:** `/Users/developersteve/devfiles/Aeris2/routes/api.php` (inside the `repairs` prefix group at line 337-355)
-```php
-Route::get('/{repair}/status-history', [RepairController::class, 'statusHistory'])
-    ->name('repairs.status-history');
-```
-**File 2:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php` — add method returning the eager-loaded `statusHistory` relation, gated by `ability:repairs:read`.
+The deployment team proposed the following order; I concur. Rationale below each.
 
-**Why:** Client calls this at `/Users/developersteve/devfiles/aeris_client/shared/src/RelayClient.ts:1077-1095` as a standalone action. No HTTP route exists today (grep confirmed) — the relation only surfaces via `show()`. Without this, the mobile status-history tab errors on every open.
-
-**Alternative:** Delete the standalone client method and fold history into detail. Not recommended — payload can grow large.
-
-**Complexity:** S (route + 5-line method).
-**Blocks:** `repairs.status-history` entry in B1.
+1. **C1 + C6** — nothing rings up cleanly without them.
+   - C1: mobile hits `Api\POSController::processSale` via `sale.create`. Without repair_id handling there, a repair never flips to `COMPLETED` on mobile even after the T8 checkout flow succeeds.
+   - C6: worth **validating first** before restructuring the GST contract (see note in C6 section below). If the relay POS path is already exercised in prod without 422s, my analysis missed something — best to reproduce a repair-checkout sale end-to-end in staging before touching ProcessSaleRequest.
+2. **C2 + C3** — data integrity and cross-site security. Independent of each other; can be parallelised.
+3. **B3 + L2 + L3-completion + B2-customer-alias + B1-tail** — mapping completeness. These are all "S" complexity and can bundle.
+4. **C4-completion + C5 + follow-ups** — feature-completeness and hygiene.
+5. **Workshop-workflow appendix** — after the mobile-team scoping lands.
 
 ---
 
-### B4. Grant `repairs:*` abilities to non-`super_admin` roles
+## STILL TO BUILD
 
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Support/AuthAbilities.php:22-73`
-**What:** Add `repairs:read`, `repairs:write`, `repairs:delete` to `admin` + `manager`; `repairs:read` + `repairs:write` to `cashier`; `repairs:read` only to `sales_rep`. Full diff in Section 3 of the routes/dispatcher audit above.
+### 🔴 C1. `Api\POSController::processSale` must handle `repair_id` on checkout
 
-**Why:** `RepairController.php:26-28` declares `ability:repairs:read/write/delete` middleware. `AuthAbilities::ROLE_ABILITIES` does not grant these to any role. Result: every non-`super_admin` bearer gets 403 on every Repairs call, even after B1/B2 land. Verified: grep of AuthAbilities.php for `repairs:` returns zero hits.
-
-**Complexity:** S (single file, per-role additions).
-**Blocks:** any non-`super_admin` cashier/manager/admin from using Repairs at all.
-
----
-
-## REQUIRED FOR LAUNCH (3)
-
-### L1. Emit `workspace.features` sub-envelope on login + refresh
-
-**File 1:** `/Users/developersteve/devfiles/Aeris2/app/Services/Marketplace/Rpc/AuthRpcHandler.php:194-204` (login success return)
-**File 2:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/AuthController.php:99-106` (refresh return)
-
-**What:** Add one key to both responses:
-```php
-'workspace' => [
-    'features' => [
-        'repairs_enabled' => (bool) \App\Models\SystemSetting::get('features.repairs_enabled', false),
-    ],
-],
-```
-
-**Why:** Client at `/Users/developersteve/devfiles/aeris_client/mobile/src/stores/workspaceFeaturesStore.ts:43-53` reads `raw.workspace.features.repairs_enabled` on every login AND refresh. Missing key → `false` → feature stays dark. This is the switch each workspace uses to enable Repairs in the mobile UI.
-
-**Note:** `features.repairs_enabled` is already seeded in `SystemSettingsSeeder.php:16-25` (default `false`, `is_public=true`). No migration or new setting row needed — purely surfacing the existing value.
-
-**Recommended follow-up:** extract to `WorkspaceContextBuilder::forUser($user): array` so login + refresh share one call site. Consider surfacing the whole `features` group (`SystemSetting::getGroup('features')`) so future flags (equipment_hire, etc.) are a client-side type extension only.
-
-**Complexity:** S (two 3-line insertions) / M (with helper extraction).
-**Blocks:** enabling the feature per-workspace. Without this, the flag is unreachable.
-
----
-
-### L2. Wire `repairs.pending-for-customer` correctly to `/api/v1/pos/accounts/{customer}/pending-repairs`
-
-**File:** `/Users/developersteve/devfiles/Aeris2/config/marketplace_rpc.php` (part of B1)
-**What:** Ensure the mapping is:
-```php
-'repairs.pending-for-customer' => ['GET', '/api/v1/pos/accounts/{customer}/pending-repairs'],
-```
-(NOT `/api/v1/pos/customers/{id}/pending-repairs` — the URL prefix the client comment hints at doesn't exist. The route is under `Route::prefix('accounts')` at api.php:300.)
-
-**Why:** Client action name is `repairs.pending-for-customer` (shared/src/constants/actions.ts:79) and RelayClient calls it at `RelayClient.ts:1381`. Without the mapping, T8's repair-picker at the till returns `action_not_found`, which `RelayClient.getPendingRepairsForCustomer()` swallows silently — the picker shows empty for every customer. The response shape `{success, repairs, count}` at Frontend/POSController.php:1485-1489 already matches the client's normalizer expectation.
-
-**Complexity:** S (single line, part of B1).
-**Blocks:** T8 repair-at-till checkout flow.
-
----
-
-### L3. Include missing PendingRepair fields in server response
-
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Frontend/POSController.php:1447-1483`
-**What:** Extend the mapped row with:
-```php
-'issue_description' => $repair->issue_description ?? $repair->reported_issue,
-'estimated_cost'    => $repair->estimated_cost,
-'received_at'       => optional($repair->received_at)->toIso8601String(),
-```
-Keep `reported_issue` for backwards compat.
-
-**Why:** Client type at `/Users/developersteve/devfiles/aeris_client/shared/src/types/api.types.ts:696-706` declares `issue_description`, `estimated_cost`, `received_at`. Normalizer at `/Users/developersteve/devfiles/aeris_client/shared/src/normalizers/repair.ts:247-266` already falls back to `reported_issue` (safe), but `estimated_cost` and `received_at` come through `null`. The Ready-for-pickup picker at the till renders blank cost and blank intake date on every row, which cashiers cannot use to reconcile.
-
-**Complexity:** S (three added fields).
-**Blocks:** usable T8 repair-picker UX.
-
----
-
-## REQUIRED FOR CORRECTNESS (6)
-
-### C1. `Api\POSController::processSale` must handle `repair_id` on checkout
+**Blocks:** T8 mobile repair-at-till checkout correctness. **CRITICAL** — this is the one that stops repairs actually working via mobile even after everything else is wired.
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/POSController.php` (add block around line 190, before `DB::commit()`)
 
-**What:** Mirror the Frontend controller's repair-completion block (Frontend/POSController.php:470-508) into the Api handler. On `repair_id` present + status READY, flip repair to COMPLETED, set `sale_id` + `completed_at`, write status_history row. Also delete linked `StockReservation` rows and decrement `stock_reserved` for repair-part items (see C2).
+**What:** Mirror the Frontend controller's repair-completion block (`Frontend/POSController.php:470-508`) into the Api handler:
+- On `repair_id` present + status `READY`: flip repair to `COMPLETED`, set `sale_id` + `completed_at`, write `status_history` row.
+- On non-`READY`: fail loud (see F3 in the original follow-ups — currently the Frontend controller silent-no-ops, and the mobile client pre-flight-guards to compensate, but the server should still fail loud for defence in depth).
+- Also delete linked `StockReservation` rows and decrement `stock_reserved` for repair-part items (this is C2, coupled).
 
-**Why:** BLOCKING WIRE BUG. Route `/api/v1/pos/sales` resolves to `App\Http\Controllers\Api\POSController::processSale` (routes/api.php:293-294) via relay `sale.create` (marketplace_rpc.php:144). Grep of the Api controller for `repair_id`/`Repair`/`RepairStatus` returns ZERO matches. The Frontend controller has the completion logic; the Api handler does not. Result: every mobile relay sale-with-repair_id succeeds as a plain sale, ProcessSaleRequest accepts `repair_id` as `nullable|exists`, the handler ignores it, the repair never flips to COMPLETED, and it stays in the pending-repairs picker forever.
+**Why this is critical:** Route `/api/v1/pos/sales` resolves to `Api\POSController::processSale` (routes/api.php:293-294) via relay `sale.create` (marketplace_rpc.php:144). Grep of the Api controller for `repair_id`/`Repair`/`RepairStatus` returns ZERO matches. Result: every mobile relay sale-with-repair_id succeeds as a plain sale, ProcessSaleRequest accepts `repair_id` as `nullable|exists`, the handler ignores it, the repair never flips to COMPLETED, and it stays in the pending-repairs picker forever.
+
+**Client dependency:** [CheckoutScreen.tsx](../mobile/src/screens/CheckoutScreen.tsx) threads `repair_id` at top level of the `sale.create` payload after the T8 pre-flight guard clears.
 
 **Complexity:** M (mirror ~40 lines from Frontend controller; needs test coverage for READY-status guard).
-**Blocks:** T8 repair-at-till checkout correctness. Without this, cashiers cannot complete a repair through the mobile POS.
 
 ---
 
-### C2. Release `StockReservation` rows + decrement `stock_reserved` on repair checkout
+### 🔴 C2. Release `StockReservation` rows + decrement `stock_reserved` on repair checkout
+
+**Blocks:** stock accuracy across the store within days of enabling repairs.
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/POSController.php` (inside the new C1 block)
-**Also:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Frontend/POSController.php:470-508` (web POS parity)
+**Also:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Frontend/POSController.php:470-508` (web POS parity — currently also missing per my earlier audit)
 
 **What:** For every repair-part `RepairItem` with a `product_id`:
 ```php
 StockReservation::where('repair_item_id', $item->id)->delete();
 $product->decrement('stock_reserved', $item->quantity);
 ```
-Mirror of the existing `processRepairPayment` block (Frontend/POSController.php:1557-1560).
+Mirror of the existing `processRepairPayment` block (`Frontend/POSController.php:1557-1560`).
 
-**Why:** Both `processSale` handlers decrement `stock_quantity` for whatever cart lines the client sends, but neither clears the reservation rows or drops `stock_reserved`. Result: on every repair checkout, `stock_reserved` climbs unboundedly. `getProductAvailability` (Frontend/POSController.php:900) under-reports "available for sale" (`stock_quantity - stock_reserved`) permanently — products silently become "out of stock" from the till's perspective.
+**Dedupe requirement:** if the cart already contains repair-item product_ids (mobile sends them as sale lines — synthesised from `repair.items[]` at [CartScreen.tsx](../mobile/src/screens/CartScreen.tsx) `handlePickRepair` and [RepairDetailScreen.tsx](../mobile/src/screens/RepairDetailScreen.tsx) `handleRepairCheckout`), do NOT double-decrement `stock_quantity`. Either dedupe by product_id in the handler or make the contract "sales with repair_id must NOT restate repair items in `items[]`" and return 422 on overlap. Whichever contract you choose, tell the mobile team so we can adjust the cart synthesis in the same release.
 
-**Dedupe:** if the cart already contains repair-item product_ids (mobile sends them as sale lines), do NOT double-decrement `stock_quantity`. Either dedupe by product_id or make the contract "sales with repair_id must NOT restate repair items in `items[]`" and return 422 on overlap.
+**Why:** Both `processSale` handlers decrement `stock_quantity` for whatever cart lines the client sends, but neither clears the reservation rows or drops `stock_reserved`. Result: on every repair checkout, `stock_reserved` climbs unboundedly. `getProductAvailability` (`Frontend/POSController.php:900`) under-reports "available for sale" (`stock_quantity - stock_reserved`) permanently — products silently become "out of stock" from the till's perspective.
 
-**Complexity:** M.
-**Blocks:** stock accuracy across the store within days of enabling repairs.
+**Complexity:** M. Depends on C1 (same touch site).
 
 ---
 
-### C3. Multi-location scoping is missing across `RepairController`
+### 🔴 C3. Multi-location scoping missing across `RepairController`
+
+**Blocks:** any multi-location workspace enabling Repairs safely. Cross-site data leak.
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php` (all methods)
 
 **What:** Add `hasLocationAccess()` guards:
-- `index()`: scope query to caller's `location_id` (except `super_admin`/`admin`)
-- `show`, `update`, `updateStatus`, `destroy`, `addItem`, `updateItem`, `removeItem`: `abort(403)` if `!$user->hasLocationAccess((int)$repair->location_id)`
-- `store()`: reject `location_id` the caller cannot access
-- `bulkUpdateStatus()`: gate per-ID inside the loop, record skipped in response
+- `index()`: scope query to caller's `location_id` (except `super_admin`/`admin`).
+- `show`, `update`, `updateStatus`, `destroy`, `addItem`, `updateItem`, `removeItem`: `abort(403)` if `!$user->hasLocationAccess((int)$repair->location_id)`.
+- `store()`: reject `location_id` the caller cannot access.
+- `bulkUpdateStatus()`: gate per-ID inside the loop, record skipped in response.
 
-**Why:** Zero calls to `hasLocationAccess()` in RepairController.php or RepairService.php (verified by grep). Contrast with `InvoiceController.php:279`, `InventoryController.php:72`, `SalesAPIController.php:588`, `MessagingRelayController.php:308` which all gate. Result: a cashier at Site A can list, edit, complete, and delete every repair at every other site. This is a data-leak + integrity issue for multi-location workspaces.
+**Why:** Zero calls to `hasLocationAccess()` in `RepairController.php` or `RepairService.php` (verified by grep). Contrast with `InvoiceController.php:279`, `InventoryController.php:72`, `SalesAPIController.php:588` which all gate. A cashier at Site A can currently list, edit, complete, and delete every repair at every other site.
 
-**Complexity:** M (7 methods; consider a `RepairPolicy` — see F1).
-**Blocks:** any multi-location workspace enabling Repairs safely.
+**Client dependency:** none — mobile client sources `location_id` from `authStore.user.location_id` and sends it on `createRepair`. Server enforces the boundary.
 
----
-
-### C4. `updateItem` only persists `quantity`; drops `unit_price`, `notes`, others; skips `line_total` recompute
-
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php:244-293`
-
-**What:**
-- Promote to a `UpdateRepairItemRequest` FormRequest accepting `quantity`, `unit_price`, `notes` (permit `item_name`/`item_sku` only when `item_type === 'labor'`).
-- Recompute `line_total = quantity * unit_price` on save.
-- On quantity delta, adjust `Product::stock_reserved` via `increment`/`decrement` (same pattern as `addItemToRepair` / `removeItem`).
-- Wrap the whole method in `DB::transaction`.
-
-**Why:** Current validation is `$request->validate(['quantity' => 'required|integer|min:1'])` (RepairController.php:246-248) and persistence is `$item->update(['quantity' => $request->quantity])` (line 269). Everything else the mobile edit-line UI sends is silently dropped. `line_total` stays stale, and `Product::stock_reserved` aggregate is not adjusted for quantity changes (only the `StockReservation` row is at :272-275) — leaks reservation stock the same way C2 does.
-
-**Complexity:** M (new FormRequest + transaction + reservation math).
-**Blocks:** any pricing/discount edit workflow on repair line items.
+**Complexity:** M (7 methods). Consider a `RepairPolicy` (see F1) that absorbs this cleanly.
 
 ---
 
-### C5. `bulkUpdateStatus` partial-success reporting + safety cap
+### 🔴 C5. `bulkUpdateStatus` — proper partial-success reporting + safety cap
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php:345-387`
 
 **What:**
-- Return `{ message, updated_count, skipped: [{id, reason}], failed: [{id, reason}] }`.
+- Return `{ message, updated_count, succeeded: [ids], skipped: [{id, reason}], failed: [{id, reason}] }`.
 - Wrap each iteration in its own nested transaction/savepoint OR track success/failure per iteration and reflect in response before the catch.
-- Add `repair_ids` cap (e.g. `max:50`).
+- Add a `repair_ids` cap (e.g. `max:50`).
 - Location-gate each ID (per C3), record rejected ones in `skipped`.
-- Extract to a `BulkUpdateRepairStatusRequest` FormRequest using `RepairStatus::values()` (currently the enum list is duplicated inline vs. `UpdateRepairStatusRequest.php:23-27`).
+- Extract to a `BulkUpdateRepairStatusRequest` FormRequest using `RepairStatus::values()`.
 
-**Why:** Today the loop is `DB::transaction`-wrapped; a mid-loop throw rolls back all writes but `updated_count` retains partial pre-throw values, and the catch at `RepairController.php:377` returns HTTP 500 without the count. Client sees "all failed" for what may be partial success. Client at `/Users/developersteve/devfiles/aeris_client/shared/src/RelayClient.ts:1295+` has no way to reconcile.
+**Why:** Today the loop is `DB::transaction`-wrapped; a mid-loop throw rolls back all writes but `updated_count` retains partial pre-throw values, and the catch at `RepairController.php:377` returns HTTP 500 without the count. Client sees "all failed" for what may be partial success.
+
+**Client dependency:** [RelayClient.bulkUpdateRepairStatus](../shared/src/relay/RelayClient.ts) already tolerates several response shapes and diffs on the client side, but the diff can't reconstruct which specific IDs failed if the server 500s. The `{succeeded, skipped, failed}` shape is the definitive one — client will strip the fallback parsers once server ships this.
 
 **Complexity:** M.
-**Blocks:** bulk operations from being trustworthy on the client.
 
 ---
 
-### C6. ProcessSaleRequest subtotal reconciliation uses inc-GST inputs; client sends ex-GST
+### 🔴 C6. ProcessSaleRequest GST reconciliation — **validate before restructuring**
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Requests/ProcessSaleRequest.php:102-137`
 
-**What:** Either
-- **(a)** Accept `items.*.unit_price_ex_gst` and `items.*.discount_ex_gst` and reconcile against those directly (matches T8 spec on the client side), OR
-- **(b)** Publish the "server divides inc-GST inputs by 1.10" assumption as a hard versioned contract and adjust the mobile normalizer/wire converter to send inc-GST for GST-applicable lines.
+**Deployment team flagged (correctly):** "worth confirming whether the relay POS path is actually exercised in prod, because if so it'd already be 422-ing every GST sale over ~$0.30."
 
-Also drop dead validation rules at `:53-54` (`items.*.price`, `items.*.total`) — never consumed.
+**Recommend: reproduce first, restructure second.** Suggested reproduction:
+1. In staging, put a $50 GST-applicable item in the mobile cart.
+2. Complete a `sale.create` via the relay (not the direct/LAN path — the drift is on the relay handler's expectation of ex-GST vs the client's inc-GST inputs).
+3. Observe whether the response is 200 or 422 with a subtotal-mismatch message.
 
-**Why:** T8/client contract has `unit_price_cents` / `discount_cents` semantically ex-GST. Server does `$unitPriceExGst = $gstApplicable ? round($unitPrice / 1.10, 2) : $unitPrice` at `:113`. If the mobile client sends true-ex-GST with `gst_applicable=true`, the server divides by 1.10 AGAIN → subtotal ~9% lower than the client → trips the 0.02 tolerance for anything over ~$0.30. Real correctness bug for repair checkouts (and every GST-applicable line).
+If it's **200** — my earlier reading missed a client-side conversion; ping me with the trace and I'll re-audit before you touch anything.
 
-**Complexity:** M (contract decision + implementation) / L (if wire schema change).
-**Blocks:** any GST-applicable sale via the relay, not just repairs. High priority given repair spare parts are almost always GST-applicable.
+If it's **422** — the drift is real and the fix is one of:
+- **(a)** Server accepts `items.*.unit_price_ex_gst` and `items.*.discount_ex_gst` directly, matching the T8 client spec.
+- **(b)** Publish "server divides inc-GST inputs by 1.10" as a hard versioned contract and adjust the mobile normalizer/wire converter to send inc-GST for GST-applicable lines.
 
----
+Also drop the dead validation rules at `:53-54` (`items.*.price`, `items.*.total`) — never consumed either way.
 
-## FOLLOW-UP (7)
+**Why this matters beyond repairs:** if the drift is real, it's not repair-specific — it breaks every GST-applicable sale via the relay ≥ ~$0.30. Repair spare parts are almost always GST-applicable so it becomes the trigger, but a canary repair-checkout sale in staging tells you whether every non-repair relay sale is also affected today.
 
-### F1. Introduce `RepairPolicy` and consolidate ability + location gates
-
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Policies/RepairPolicy.php` (new)
-**What:** Standard Laravel policy with `view`, `create`, `update`, `updateStatus`, `delete`, `manageItems` combining `ability` + `hasLocationAccess` checks. Wire via `RepairController` `$this->authorize('view', $repair)` calls.
-**Why:** Matches `SalesAPIController` pattern. Cleaner than the current controller-constructor `middleware()` + missing location guards. Absorbs C3's changes into one class.
-**Complexity:** M.
-**Depends on:** C3.
+**Complexity:** M (server-side reconciliation change) or L (wire schema change with client-side re-audit).
 
 ---
 
-### F2. Codify the `RepairStatus` state machine
+### 🟨 Finish B1 — Two remaining action mappings
 
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Enums/RepairStatus.php`
-**What:** Add `canTransitionTo(RepairStatus $to): bool` (deny e.g. `COMPLETED → PENDING`, `COMPLETED → *` except no-op, `CANCELLED → *`). Enforce in `RepairService::updateRepairStatus()` and `UpdateRepairStatusRequest`.
-**Why:** Today, `pending → completed` skipping `ready` is allowed, and `completed → pending` regression is possible. Neither the FormRequest nor `RepairService.php:151-196` blocks it.
-**Complexity:** S–M.
+**File:** `/Users/developersteve/devfiles/Aeris2/config/marketplace_rpc.php`
 
----
+Add:
+- `repairs.status-history` → depends on **B3** (HTTP route below).
+- `repairs.pending-for-customer` → depends on **L2** (mapping resolution below).
 
-### F3. Non-READY repair on `processSale` should fail loud, not silent
-
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Frontend/POSController.php:486` + Api mirror from C1.
-**What:** Change `if ($repair && $repair->status === RepairStatus::READY)` to fail hard (`throw new \Exception('Repair not ready for checkout')`), matching `processRepairPayment` at :1517-1522.
-**Why:** Silent no-op today means a mis-clicked cashier can process the sale with `repair_id` set but leave the repair in status `in_progress` — client cannot reconcile.
-**Complexity:** S.
-**Depends on:** C1.
+**Complexity:** S (two array entries once B3 + L2 are in place).
 
 ---
 
-### F4. Cross-field validation on `repair_id` in ProcessSaleRequest
+### 🟨 Finish B2 — Customer alias in RpcDispatcher
 
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Requests/ProcessSaleRequest.php:73`
-**What:**
+**File:** `/Users/developersteve/devfiles/Aeris2/app/Services/Marketplace/RpcDispatcher.php:199-203`
+
+Add the `customer` alias entry so `repairs.pending-for-customer` and any future customer-scoped repair action fills correctly:
 ```php
-'repair_id' => 'nullable|integer|exists:repairs,id,sale_id,NULL',
+'customer' => ['customer_id', 'id'],
 ```
-Optionally: `prohibited_with:hire_deposit_id,hire_return_id,backorder_id,backorder_fulfil_id` (single flow discriminator). Optionally: `required_with:customer_id`.
-**Why:** Prevents double-checkout of a repair already tied to a completed sale. Matches the `required_with:` idiom used for `hire_deposit_id`/`backorder_id` at `:74,77`. Currently only `repair_id` lacks a companion rule.
-**Complexity:** S.
+
+**Why:** Mobile sends `customer_id` on `repairs.pending-for-customer` (RelayClient.ts:1381). Without the alias the dispatcher logs "unfilled path placeholder" and 404s.
+
+**Complexity:** S (one line).
 
 ---
 
-### F5. Confirm `pending-repairs` route resolves to `Frontend\POSController` intentionally
+### 🔴 B3. Add `statusHistory` HTTP route + controller method
 
-**File:** `/Users/developersteve/devfiles/Aeris2/routes/api.php:321`
-**What:** Verify this is the only `Api\`-namespace API route resolving to a `Frontend\` controller. Either move `getPendingRepairs` into `Api\POSController` for consistency, or add a code comment explaining the exception so a future refactor doesn't "clean it up".
-**Why:** Every other `/api/v1/pos/*` handler uses the `Api\POSController` alias. This one is a legacy carry-over; risk of accidental deletion in refactor.
-**Complexity:** S (comment) / M (relocation).
+**File 1:** `/Users/developersteve/devfiles/Aeris2/routes/api.php` (inside the `repairs` prefix group at line 337-355)
+```php
+Route::get('/{repair}/status-history', [RepairController::class, 'statusHistory'])
+    ->name('repairs.status-history');
+```
 
----
+**File 2:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php` — add method returning the eager-loaded `statusHistory` relation, gated by `ability:repairs:read`.
 
-### F6. Consolidate `processSale` implementations behind a `SaleProcessor` service
+**Why:** Client calls this at [RelayClient.ts:1077-1095](../shared/src/relay/RelayClient.ts) as a standalone action. No HTTP route exists today. The relation currently only surfaces via `show()`; folding into detail is possible but the payload can grow large for long-lived repairs, so the dedicated endpoint is worth keeping.
 
-**File:** Extract to `/Users/developersteve/devfiles/Aeris2/app/Services/SaleProcessor.php` (new)
-**What:** Extract the shared sale-creation logic from `Api\POSController::processSale` and `Frontend\POSController::processSale`. Both controllers thin-delegate.
-**Why:** Two divergent copies of "single-step POS sale" is the exact reason T8 got missed on the Api handler (see C1). Any future flow (repair, hire, backorder) is implemented twice.
-**Complexity:** L.
-**Depends on:** C1, C2 (get correctness right before refactoring).
+**Complexity:** S (route + ~5-line method).
 
 ---
 
-### F7. Publish full `features` group in auth response
+### 🔴 L2. Wire `repairs.pending-for-customer` correctly
 
-**File:** `/Users/developersteve/devfiles/Aeris2/app/Services/Marketplace/Rpc/AuthRpcHandler.php` + `AuthController.php` (extends L1)
-**What:** Surface the whole `SystemSetting::getGroup('features')` (already cache-backed at `SystemSetting.php:91-98`).
-**Why:** Adding `features.equipment_hire_enabled`, etc., becomes a client-side type extension only. Avoids re-touching the auth path for every new module.
-**Complexity:** S.
-**Depends on:** L1.
+**File:** `/Users/developersteve/devfiles/Aeris2/config/marketplace_rpc.php`
+
+**What:** Mapping entry:
+```php
+'repairs.pending-for-customer' => ['GET', '/api/v1/pos/accounts/{customer}/pending-repairs'],
+```
+
+Note: the URL prefix is `/api/v1/pos/accounts/` (existing route at `api.php:321`), NOT `/customers/`. Client mobile constant `POS_PENDING_REPAIRS_BY_CUSTOMER` at [mobile/src/constants/api.ts](../mobile/src/constants/api.ts) currently points at `/customers/{id}/pending-repairs` — if the server-side route stays under `/accounts/`, I need to update the client constant. Please confirm which path the server exposes and I'll align.
+
+**Why:** T8's repair picker at the till fires this. Without the mapping the picker shows empty for every customer.
+
+**Complexity:** S (single line, plus the client alignment mentioned above).
 
 ---
 
-## Cross-reference by client file
+### 🟨 Finish L3 — Add missing PendingRepair fields
+
+**File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Frontend/POSController.php:1447-1483`
+
+**What:** Extend the mapped row with:
+```php
+'estimated_cost' => $repair->estimated_cost,
+'received_at'    => optional($repair->received_at)->toIso8601String(),
+```
+
+(`issue_description` is already sourced per the deployment team's earlier fix — thank you.)
+
+**Why:** Client `PendingRepair` type at [shared/src/types/api.types.ts:696-706](../shared/src/types/api.types.ts) declares these. Without them, the picker rows render blank cost + blank intake date — cashiers can't reconcile which repair to pick.
+
+**Complexity:** S (two added fields).
+
+---
+
+### 🟨 Finish C4 — updateItem field persistence
+
+**File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php:244-293` (the ownership guard the deployment team added is preserved — this is the remaining work)
+
+**What:**
+- Promote to a `UpdateRepairItemRequest` FormRequest accepting `quantity`, `unit_price`, `notes` (permit `item_name`/`item_sku` only when `item_type === 'labor'`).
+- Recompute `line_total = quantity * unit_price` on save.
+- On quantity delta, adjust `Product::stock_reserved` via `increment`/`decrement`.
+- Wrap the whole method in `DB::transaction`.
+
+**Why:** Current validation is `$request->validate(['quantity' => 'required|integer|min:1'])` and persistence is `$item->update(['quantity' => $request->quantity])`. Everything else the mobile edit-line UI sends is silently dropped. `line_total` stays stale; `Product::stock_reserved` aggregate is not adjusted for quantity changes (only the `StockReservation` row is) — same class of leak as C2.
+
+**Complexity:** M (new FormRequest + transaction + reservation math).
+
+---
+
+## FOLLOW-UP (unchanged from v1, deployment team's call on ordering)
+
+These are hygiene items that can bundle after the above lands:
+
+- **F1** — `RepairPolicy` consolidation (absorbs C3 cleanly)
+- **F2** — Codify `RepairStatus` state machine (block invalid transitions like `completed → pending`)
+- **F3** — Non-READY repair on `processSale` should fail loud (defence in depth on top of client guards)
+- **F4** — Cross-field validation on `repair_id` in ProcessSaleRequest (`exists:repairs,id,sale_id,NULL`)
+- **F5** — Route consistency: `pending-repairs` resolves to `Frontend\POSController` — comment or move
+- **F6** — Extract shared `SaleProcessor` service (would have prevented C1's Api vs Frontend divergence)
+- **F7** — Publish full `SystemSetting::getGroup('features')` in auth response (future-proof for equipment_hire, etc.)
+
+---
+
+## Cross-reference by client file (updated for post-C128473 mobile state)
 
 | Client file | Line | Server dependency |
 |---|---|---|
-| `/Users/developersteve/devfiles/aeris_client/shared/src/constants/actions.ts` | 69-80 | B1 |
-| `/Users/developersteve/devfiles/aeris_client/shared/src/RelayClient.ts` | 1067, 1084, 1104, 1160, 1178, 1209, 1261, 1280, 1381 | B1, B2 |
-| `/Users/developersteve/devfiles/aeris_client/shared/src/RelayClient.ts` | 1077-1095 | B3 |
-| `/Users/developersteve/devfiles/aeris_client/mobile/src/stores/workspaceFeaturesStore.ts` | 43-53 | L1 |
-| `/Users/developersteve/devfiles/aeris_client/shared/src/types/api.types.ts` | 12-24 | L1 |
-| `/Users/developersteve/devfiles/aeris_client/shared/src/types/api.types.ts` | 696-706 | L3 |
-| `/Users/developersteve/devfiles/aeris_client/shared/src/normalizers/repair.ts` | 247-266 | L3 |
+| `shared/src/constants/actions.ts` | REPAIRS_STATUS_HISTORY, REPAIRS_PENDING_FOR_CUSTOMER | B3, L2 |
+| `shared/src/relay/RelayClient.ts` | listRepairs / getRepairDetail / etc. | B1 (9 of 12 done), B2 (customer alias pending) |
+| `shared/src/relay/RelayClient.ts` | getRepairStatusHistory | B3 |
+| `shared/src/relay/RelayClient.ts` | getPendingRepairsForCustomer | L2 |
+| `shared/src/relay/RelayClient.ts` | createSale (with repair_id) | **C1** |
+| `mobile/src/screens/CheckoutScreen.tsx` | pre-flight repair status check | client-side today; C1 makes it authoritative |
+| `mobile/src/screens/CartScreen.tsx` | pending-repairs picker | L2 + L3 completion |
+| `mobile/src/screens/RepairDetailScreen.tsx` | Checkout button hand-off | **C1** + C2 |
+| `mobile/src/stores/workspaceFeaturesStore.ts` | flag hydration | L1 ✅ |
+| `mobile/src/types/RepairCreateInput` | `location_id` required | C3 gate on server |
+| `mobile/src/utils/repairsBulkStatus.ts` | reconcile helper | C5 |
 
-## Server files touched, summary
+---
 
-- `/Users/developersteve/devfiles/Aeris2/config/marketplace_rpc.php` — B1, L2
-- `/Users/developersteve/devfiles/Aeris2/app/Services/Marketplace/RpcDispatcher.php` — B2
-- `/Users/developersteve/devfiles/Aeris2/routes/api.php` — B3, F5
-- `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php` — B3, C3, C4, C5, F1
-- `/Users/developersteve/devfiles/Aeris2/app/Support/AuthAbilities.php` — B4
-- `/Users/developersteve/devfiles/Aeris2/app/Services/Marketplace/Rpc/AuthRpcHandler.php` — L1, F7
-- `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/AuthController.php` — L1, F7
-- `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Frontend/POSController.php` — L3, C2, F3, F5
-- `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/POSController.php` — C1, C2
-- `/Users/developersteve/devfiles/Aeris2/app/Http/Requests/ProcessSaleRequest.php` — C6, F4
-- `/Users/developersteve/devfiles/Aeris2/app/Enums/RepairStatus.php` — F2
-- `/Users/developersteve/devfiles/Aeris2/app/Policies/RepairPolicy.php` (new) — F1
-- `/Users/developersteve/devfiles/Aeris2/app/Services/SaleProcessor.php` (new) — F6
+## Server files summary (post-progress)
 
-## Recommended order of execution
+| File | Remaining touches |
+|---|---|
+| `config/marketplace_rpc.php` | Two mappings (B1 finish + L2) |
+| `app/Services/Marketplace/RpcDispatcher.php` | Customer alias (B2 finish) |
+| `routes/api.php` | Status-history route (B3), F5 route consistency |
+| `app/Http/Controllers/Api/RepairController.php` | statusHistory method (B3), hasLocationAccess (C3), updateItem finish (C4), bulkUpdateStatus shape (C5) |
+| `app/Http/Controllers/Api/POSController.php` | **repair_id handling (C1)**, reservation release (C2) |
+| `app/Http/Controllers/Frontend/POSController.php` | PendingRepair fields (L3 finish), reservation release parity (C2), fail-loud on non-READY (F3) |
+| `app/Http/Requests/ProcessSaleRequest.php` | GST reconciliation after canary validation (C6) |
 
-1. **Sprint 1 (unblock the wire):** B1 + B2 + B3 + B4 → mobile Repairs calls stop failing at the dispatcher/permission layer.
-2. **Sprint 1 (enable the flag):** L1 → workspaces can flip `repairs_enabled=true`.
-3. **Sprint 1 (T8 correctness):** C1 + C2 + L2 + L3 + F3 → mobile can actually check out a repair without corrupting stock.
-4. **Sprint 2 (data integrity):** C3 + C4 + C5 + C6 → multi-location, item edits, bulk ops, GST reconciliation.
-5. **Sprint 3 (hygiene):** F1 + F2 + F4 + F5 + F6 + F7.
+---
 
-No item outside BLOCKING/REQUIRED FOR LAUNCH holds up a workspace pilot — but any FOLLOW-UP left undone will bite within the first few weeks of production use.
+## Workshop-workflow appendix — **in flight**
+
+A mobile-team scoping workflow is currently mapping the Aeris2 web repair workflow (Filament + Inertia + `Components/Repairs/*`) so the mobile app matches it for workshop technicians. Expected additions to this document:
+
+- **New RPC action(s)** — `repairs.by-barcode` for scanner lookup, or an extension of `repairs.list?search=...` if that path already indexes `repair_number`.
+- **Label PDF signed-URL flow** — likely `repairs.label-pdf-url` mirroring the existing `sales.invoice-pdf-url` pattern. Includes a Blade template for the barcode label layout.
+- **Technician assignment** — probably reuses `repairs.update` with `assigned_to`; possibly a dedicated `repairs.assign` action.
+- **Notify customer** — the T7 stub currently Alerts "ships in a later release"; a `repairs.notify` action wrapping the existing SMS/email service unblocks it.
+- **Photo attachment** — pending confirmation of whether the web has this today.
+
+I'll append these to this document as a Section II when the audit lands.
+
+---
+
+## Contact / questions
+
+- Client-side changes for any of the above ship in the same mobile branch (`feat/mobile-repairs`); happy to align in lockstep.
+- If you'd rather I take the frontend contract updates first (client wire alignment) so the server work can proceed independently, say the word.
+- For C6 in particular: recommend a joint 15-minute reproduction session in staging before scoping the change.
+
+---
+
+# Section II — Workshop-workflow amendments (mobile) + server dependencies
+
+**Purpose:** Bring mobile to workflow-parity with the Aeris2 web repair pages (`Pages/Repairs/Show.tsx`, `Components/Repairs/*`, Filament `RepairsTable`). Targets workshop technicians on iPad/Android, not just cashiers at the till.
+
+Deployment-team asks in this section are **NOT blocking the cashier surface** already covered by Section I. They enable the workshop personas (tech doing intake + parts + diagnosis + labelling + status updates on-device).
+
+---
+
+## Mobile amendment plan (client-side waves)
+
+| Wave | Scope | Server dependency |
+|---|---|---|
+| **WSA-1** | Scan a printed repair label to open detail. Adds `mode: 'repair'` branch to existing `BarcodeScannerScreen`. Reuses `ApiClient.listRepairs(1, 1, {search: value})` LIKE fallback. Scanner entry on `RepairsList` header. | **Client-only** (falls back gracefully once **WSB-1** ships) |
+| **WSA-2** | Print a CODE128 repair label from `RepairDetail` (89×38 mm Dymo, matching web `RepairBarcodeModal.tsx`, 1–20 pieces stepper). Uses existing `PrintService.printHtml()` → expo-print → AirPrint / share-to-PDF. Adds `jsbarcode` dep. Also adds "Save & print" variant to `RepairEdit` success path. | **Client-only** |
+| **WSA-3** | Full items editor (add / edit / remove parts + labour) wiring the three unwired RPCs `addRepairItem` / `updateRepairItem` / `removeRepairItem`. Product-barcode scanner card inside the editor. Free-text notes textarea on `RepairDetail`. | Client-only for items (RPCs already shipped in T3). Notes need **WSB-2**. |
+| **WSA-4** | Real "Notify customer" flow (template picker, confirm, send). Swap LIKE-search fallback for exact-match `getRepairByBarcode` RPC. Priority chips + Overdue toggle on `RepairsList`. | **WSB-1** + **WSB-4** |
+| **WSA-5** | Technician assignment picker on `RepairEdit`. "My queue" preset filter on `RepairsList`. Optional bulk-status selection mode (`bulkUpdateRepairStatus` already in T3, unwired). | **WSB-3** |
+
+**Feature-flag posture:** every workshop surface stays under the same `workspace.features.repairs_enabled` gate. No new flag needed.
+
+---
+
+## Deployment-team asks for workshop parity (WSB series)
+
+Complexity conventions match Section I: **S** = single file / small; **M** = new form request / handler; **L** = new subsystem.
+
+### 🟠 WSB-1. Exact-match repair-by-barcode endpoint + RPC mapping
+
+**Blocks:** WSA-4 exact-match scan (WSA-1 works today on LIKE-search fallback, but every scan does an N+1 LIKE across `repair_number` — fine for pilot, not for a busy workshop).
+
+**Files:**
+- **New route** in `/Users/developersteve/devfiles/Aeris2/routes/api.php` inside the `repairs` prefix group:
+  ```php
+  Route::get('/by-barcode/{repairNumber}', [RepairController::class, 'byBarcode'])
+      ->name('repairs.by-barcode');
+  ```
+- **New method** on `RepairController` — `Repair::where('repair_number', $repairNumber)->firstOrFail()` with `repairs:read` ability + `hasLocationAccess` guard (per **C3**).
+- **New dispatcher mapping** in `config/marketplace_rpc.php`:
+  ```php
+  'repairs.by-barcode' => ['GET', '/api/v1/repairs/by-barcode/{repairNumber}'],
+  ```
+
+**Client:** new `RelayClient.getRepairByBarcode(repairNumber)` + `REPAIRS_BY_BARCODE = 'repairs.by-barcode'` action constant. Falls back to existing `listRepairs({search})` when action returns NOT_FOUND, so we can ship WSA-1 immediately without waiting.
+
+**Complexity:** S (route + 5-line method + 1 mapping).
+
+---
+
+### 🟠 WSB-2. Confirm / expose `repairs.add-note` dispatcher mapping
+
+**Blocks:** WSA-3 notes textarea on `RepairDetail`.
+
+**File:** `/Users/developersteve/devfiles/Aeris2/config/marketplace_rpc.php`
+
+**What:** Verify whether the web route `POST /repairs/{id}/notes` (used at `resources/js/Pages/Repairs/Show.tsx:395-457`) has an `/api/v1` equivalent and dispatcher mapping. If not, add:
+- Route (if missing): `Route::post('/{repair}/notes', [RepairController::class, 'addNote'])->name('repairs.add-note');`
+- Dispatcher mapping: `'repairs.add-note' => ['POST', '/api/v1/repairs/{repair}/notes']`
+- Controller method that appends a `RepairStatusHistory` row with `to_status === from_status` (no status change) and the note body — matches the web timeline sort model.
+
+**Complexity:** S (verification + potentially route + mapping).
+
+---
+
+### 🟠 WSB-3. Technician-list RPC
+
+**Blocks:** WSA-5 assignment picker.
+
+**File:** proposal — new action `users.list-technicians` (or reuse an existing user-list if one exists — please advise).
+
+**What:** RPC returning users at the caller's `location_id` with role in `['technician', 'workshop_lead']` (or whatever the workshop roles are). Small payload — `[{id, name, avatar_url?}]`.
+
+**Why:** The `assigned_to` field exists on `Repair` and Filament's `RepairsTable` has a technician filter, but no public endpoint exposes the list. Mobile needs it for the assignment picker + "My queue" filter (assigned_to = current user is trivial from `authStore.user.id`, so "My queue" is client-only; **picking OTHER technicians needs this RPC**).
+
+**Complexity:** S (query + resource) — depends on whether a per-location user list already exists elsewhere.
+
+---
+
+### 🟡 WSB-4. Confirm messaging surface for repair notifications
+
+**Blocks:** WSA-4 real "Notify customer" flow (currently a stub Alert on mobile per T7).
+
+**What:** Confirm the shared messaging RPC / endpoint the web `SendMessageDialog` uses accepts:
+- `contextType: 'repair'`
+- `defaultTemplateType: 'repair_status'` (must-have)
+- Optionally `quote_ready` and `parts_arrived` if those templates ship (nice-to-have for v1 — Alert on mobile stays for those until confirmed).
+
+**Why:** This is the "your device is ready for pickup" text — the single most-sent workshop notification. Web already does it; mobile just needs to know which action name to fire and what payload it expects.
+
+**Complexity:** S (verification only — no code if the surface already exists).
+
+---
+
+### 🟢 WSB-5 (follow-up). Repair notes may or may not need photo attachments
+
+Web notes are text-only today. iPad camera makes photo-at-intake cheap, and mobile already has `ProductImagePicker` we could reuse. If the deployment team plans to add photo support to `RepairStatusHistory` (or a new `RepairAttachment` table), mobile can wire the same picker.
+
+**Complexity:** L (new table + storage + resource + client picker) — defer unless product prioritises.
+
+---
+
+## Open questions (product / workshop lead)
+
+Before we finalise wave scope, need answers on the following. These change what ships in WSA-1 to WSA-5:
+
+1. **Physical label at intake, or on-screen barcode?** Determines whether Print goes on `RepairEdit` save-and-return OR is `RepairDetail`-only.
+2. **Printer surface** — Dymo LabelWriter via AirPrint (assumed), OR Bluetooth thermal (Zebra / Brother)? Second option adds a new integration.
+3. **Labels per intake** — one, or one per piece (bag, charger, case)? Web supports 1-20. Mobile default?
+4. **Scan-to-open scope** — Repairs tab scanner only, OR also on the QuickSale (till) scanner? Latter enables "walk-in returning labelled device to pay" but the scanner needs to disambiguate repair vs product barcodes.
+5. **Notify Customer templates in v1** — just `repair_status`, or also `quote_ready` + `parts_arrived`?
+6. **Self-assign vs lead-assigned** — do techs pick their own repairs (picker on `RepairEdit`), or does a lead dispatch (lead-only field)?
+7. **Overdue metric** — real workshop KPI, or theatre? Determines whether we port the Filament past-due-red styling.
+8. **`repairs.by-barcode` timing** — deployment team bandwidth for WSB-1 in this sprint, or should mobile ship long-term on LIKE-search?
+9. **Photo attachments on notes** — v1 requirement, or defer?
+10. **Cart merge policy on till scan** — when a walk-in scans their ticket at the till, replace cart / merge / block if items?
+
+---
+
+## Cross-reference index — WSB items
+
+| Client wave needing it | WSB item | Server file |
+|---|---|---|
+| WSA-4 (exact-match scan) | WSB-1 | `routes/api.php`, `RepairController.php`, `marketplace_rpc.php` |
+| WSA-3 (notes textarea) | WSB-2 | `marketplace_rpc.php` (+ route if missing) |
+| WSA-5 (assign picker) | WSB-3 | new RPC action, `UserController` / `TechnicianController` |
+| WSA-4 (real notify) | WSB-4 | verification only, or shared messaging RPC touch |
+| Later | WSB-5 | new `RepairAttachment` table (deferred) |
+
