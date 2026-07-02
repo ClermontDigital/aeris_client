@@ -24,6 +24,7 @@ import {useHaptics} from '../hooks/useHaptics';
 import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
+import {getRepairStatusColor, getRepairStatusLabel} from '../utils/repairStatus';
 import type {Repair, RepairStatus} from '../types/api.types';
 import type {RepairsStackParamList} from '../types/navigation.types';
 import {
@@ -70,42 +71,9 @@ const STATUS_CHIPS: {
 
 // Local status → colour map. See CLAUDE.md thread: no shared StatusChip
 // primitive exists yet, so screens duplicate the inline pattern from
-// TransactionListScreen. Pending / cancelled land on muted greys so they
-// don't compete with the actionable "ready" / "in_progress" tones.
-function getRepairStatusColor(status: RepairStatus): string {
-  switch (status) {
-    case 'pending':
-      return COLORS.blue; // Dusty Blue — informational intake, distinct from cancelled/gray
-    case 'diagnosed':
-      return COLORS.blue; // Dusty Blue — informational
-    case 'in_progress':
-      return COLORS.warning; // amber — work in motion
-    case 'waiting_parts':
-      return COLORS.danger; // brand crimson — blocking
-    case 'ready':
-      return COLORS.success; // green — actionable pickup
-    case 'completed':
-      return COLORS.successDark; // darker green — terminal success
-    case 'cancelled':
-      return COLORS.textDim; // muted grey — terminal, non-actionable
-    default:
-      return COLORS.textDim;
-  }
-}
-
-// Copy for the chip. Underscores in wire enums (`in_progress`,
-// `waiting_parts`) don't render well; we swap to a spaced human form.
-function getRepairStatusLabel(status: RepairStatus): string {
-  switch (status) {
-    case 'in_progress':
-      return 'In progress';
-    case 'waiting_parts':
-      return 'Waiting parts';
-    default:
-      // capitalise first letter of the single-word statuses
-      return status.charAt(0).toUpperCase() + status.slice(1);
-  }
-}
+// getRepairStatusColor + getRepairStatusLabel now live in ../utils/repairStatus
+// (T9-2 remediation: shared with CustomerDetailScreen so a future enum
+// addition only needs one edit).
 
 // Two-letter device initials for the avatar circle. Falls back to a wrench
 // glyph via `?` when there's no device string on the row (e.g. the operator

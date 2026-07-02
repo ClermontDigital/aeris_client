@@ -19,7 +19,7 @@ import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constan
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
-import type {Address, Customer, Sale} from '../types/api.types';
+import type {Address, Customer, Repair, RepairStatus, Sale} from '../types/api.types';
 import type {
   AppTabParamList,
   CustomersStackParamList,
@@ -27,6 +27,7 @@ import type {
 import {formatCurrency} from '../utils/format';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
 import {useHeaderBackStore} from '../stores/headerBackStore';
+import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 
 const formatShortDate = (iso: string | null | undefined): string => {
   if (!iso) return '';
@@ -51,6 +52,15 @@ const statusColor = (status: Sale['status']): string => {
       return COLORS.textDim;
   }
 };
+
+// repairStatusColor + repairStatusLabel now live in ../utils/repairStatus
+// (T9-2 remediation: shared with RepairsListScreen so a future enum
+// addition only needs one edit). Aliased at the import site so the
+// short local names inside the JSX below don't need to change.
+import {
+  getRepairStatusColor as repairStatusColor,
+  getRepairStatusLabel as repairStatusLabel,
+} from '../utils/repairStatus';
 
 function renderAddressLines(a: Address): string {
   const parts: string[] = [];
@@ -97,6 +107,20 @@ export default function CustomerDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUnavailable, setIsUnavailable] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // Read via hook (not getState) so a mid-session workspace-flag flip
+  // re-renders this screen and hides the section immediately. Mirrors the
+  // Dashboard's Repairs card.
+  const isRepairsEnabled = useWorkspaceFeaturesStore(s => s.repairs_enabled);
+  // Repairs section state. `recentRepairs === null` means the fetch is
+  // in-flight (renders a small ActivityIndicator inside the card); `[]` is
+  // the empty state. `repairsError` flips on for any fetch failure so the
+  // section shows a subtle 'unavailable' body instead of crashing the
+  // customer view. `repairsTotal` carries the true server-side count so
+  // the section label reads "Repairs (12)" instead of the capped-at-3
+  // slice length (T9T10-05 remediation).
+  const [recentRepairs, setRecentRepairs] = useState<Repair[] | null>(null);
+  const [repairsTotal, setRepairsTotal] = useState<number | null>(null);
+  const [repairsError, setRepairsError] = useState<boolean>(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -127,6 +151,42 @@ export default function CustomerDetailScreen() {
     useCallback(() => {
       load();
     }, [load]),
+  );
+
+  // Fetch the customer's most-recent repairs. Isolated from the main
+  // getCustomerDetail path so a repairs-off workspace pays no round-trip
+  // and a transient repairs failure doesn't taint the customer view.
+  // per_page=3 matches the section slice; anything above 3 is dropped by
+  // the render, so no client-side trimming needed.
+  const loadRepairs = useCallback(async () => {
+    if (!isRepairsEnabled) return;
+    try {
+      setRepairsError(false);
+      const page = await ApiClient.listRepairs(1, 3, {customer_id: customerId});
+      setRecentRepairs(page?.data ?? []);
+      // Server-side total, not the sliced length. Used by the section
+      // label so a customer with 50 repairs doesn't read as "Repairs (3)".
+      setRepairsTotal(page?.meta?.total ?? (page?.data?.length ?? 0));
+    } catch {
+      setRepairsError(true);
+      // Leave `recentRepairs` untouched — the render branches on
+      // `repairsError` first, so a previously-loaded list stays visible
+      // if the refetch fails.
+    }
+  }, [isRepairsEnabled, customerId]);
+
+  useEffect(() => {
+    loadRepairs();
+  }, [loadRepairs]);
+
+  // Refetch on tab return so a repair created / status-changed on a
+  // sibling screen surfaces without needing a manual reload. Duplicate
+  // initial call is a tolerable perf nit — real react-navigation
+  // deduplicates the mount focus internally.
+  useFocusEffect(
+    useCallback(() => {
+      loadRepairs();
+    }, [loadRepairs]),
   );
 
   // Single back handler shared by the brand-header Back button and any
@@ -228,6 +288,43 @@ export default function CustomerDetailScreen() {
     },
     [haptics, navigation, customerId],
   );
+
+  // Cross-tab jump into the Repairs stack for a specific repair. Same
+  // breadcrumb + `initial: false` shape as goToSale so the back handler
+  // returns here rather than dumping the operator on the Repairs list.
+  const goToRepair = useCallback(
+    (repairId: number) => {
+      haptics.light();
+      useNavHistoryStore.getState().push({
+        tab: 'Customers',
+        screen: 'CustomerDetail',
+        params: {customerId},
+      });
+      navigation.navigate('Repairs', {
+        screen: 'RepairDetail',
+        params: {id: repairId},
+        initial: false,
+      });
+    },
+    [haptics, navigation, customerId],
+  );
+
+  // "View all" deep-links into the Repairs list pre-filtered by this
+  // customer. RepairsList reads `customer_id` off route params and passes
+  // it through the listRepairs filter — see RepairsListScreen.tsx:255-260.
+  const goToRepairsList = useCallback(() => {
+    haptics.light();
+    useNavHistoryStore.getState().push({
+      tab: 'Customers',
+      screen: 'CustomerDetail',
+      params: {customerId},
+    });
+    navigation.navigate('Repairs', {
+      screen: 'RepairsList',
+      params: {customer_id: customerId},
+      initial: false,
+    });
+  }, [haptics, navigation, customerId]);
 
   if (isLoading) {
     return (
@@ -508,6 +605,123 @@ export default function CustomerDetailScreen() {
             </View>
           </View>
         )}
+
+        {isRepairsEnabled ? (
+          <>
+            <Text style={styles.sectionLabel}>
+              {`Repairs${
+                !repairsError && repairsTotal != null
+                  ? ` (${repairsTotal})`
+                  : ''
+              }`}
+            </Text>
+            {repairsError ? (
+              <View style={styles.placeholderCard}>
+                <Icon
+                  name="cloud-offline-outline"
+                  size={20}
+                  color={COLORS.textMuted}
+                  style={styles.placeholderIcon}
+                />
+                <View style={styles.placeholderTextWrap}>
+                  <Text style={styles.placeholderTitle}>
+                    Repairs unavailable
+                  </Text>
+                  <Text style={styles.placeholderBody}>
+                    We couldn&apos;t load repairs for this customer right now.
+                  </Text>
+                </View>
+              </View>
+            ) : recentRepairs == null ? (
+              <View style={styles.placeholderCard}>
+                <ActivityIndicator color={COLORS.accent} size="small" />
+                <View style={styles.placeholderTextWrap}>
+                  <Text style={styles.placeholderBody}>
+                    Loading repairs...
+                  </Text>
+                </View>
+              </View>
+            ) : recentRepairs.length === 0 ? (
+              <View style={styles.placeholderCard}>
+                <Icon
+                  name="construct-outline"
+                  size={20}
+                  color={COLORS.textMuted}
+                  style={styles.placeholderIcon}
+                />
+                <View style={styles.placeholderTextWrap}>
+                  <Text style={styles.placeholderTitle}>No repairs on file</Text>
+                  <Text style={styles.placeholderBody}>
+                    No repairs on file for this customer.
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <>
+                <View style={styles.card}>
+                  {recentRepairs.slice(0, 3).map((r, idx) => {
+                    const issueSnippet = (r.issue_description || '').trim();
+                    return (
+                      <TouchableOpacity
+                        key={r.id}
+                        activeOpacity={0.7}
+                        onPress={() => goToRepair(r.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Repair ${r.repair_number}, ${repairStatusLabel(r.status)}. Tap to view.`}
+                        style={[
+                          styles.activityRow,
+                          idx > 0 && styles.activityRowDivider,
+                        ]}>
+                        <View style={styles.activityLeft}>
+                          <Text style={styles.activitySaleNumber}>
+                            {r.repair_number}
+                          </Text>
+                          {issueSnippet ? (
+                            <Text
+                              style={styles.activitySaleDate}
+                              numberOfLines={1}>
+                              {issueSnippet}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={styles.activityRight}>
+                          <View
+                            style={[
+                              styles.activityStatusChip,
+                              {backgroundColor: repairStatusColor(r.status)},
+                            ]}>
+                            <Text style={styles.activityStatusText}>
+                              {repairStatusLabel(r.status)}
+                            </Text>
+                          </View>
+                        </View>
+                        <Icon
+                          name="chevron-forward"
+                          size={16}
+                          color={COLORS.textDim}
+                          style={styles.activityChevron}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <TouchableOpacity
+                  onPress={goToRepairsList}
+                  accessibilityRole="button"
+                  accessibilityLabel={`View all repairs for ${displayName}`}
+                  style={styles.viewAllRow}
+                  hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                  <Text style={styles.viewAllText}>View all repairs</Text>
+                  <Icon
+                    name="chevron-forward"
+                    size={16}
+                    color={COLORS.accent}
+                  />
+                </TouchableOpacity>
+              </>
+            )}
+          </>
+        ) : null}
 
         {(customer.default_address || customer.addresses.length > 0) ? (
           <>
@@ -908,6 +1122,20 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   activityChevron: {marginLeft: 4},
+  viewAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingVertical: SPACING.sm,
+    marginTop: -SPACING.xs,
+    marginBottom: SPACING.md,
+    gap: SPACING.xs,
+  },
+  viewAllText: {
+    color: COLORS.accent,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+  },
   addressDefault: {
     ...cardBase,
     padding: SPACING.md,
