@@ -85,8 +85,11 @@ type RepairDetailRouteProp = RouteProp<RepairsStackParamList, 'RepairDetail'>;
 //    refetch-on-focus effect below reconciles the timeline card whenever
 //    the screen regains focus, so if the notification did fire the delivery
 //    row will show up on the next visit. The "Notify customer" action-row
-//    entry is a stub in this release (Alert only, per T7) - the real send
-//    lands in a follow-up once the deployment team exposes the ability.
+//    entry is now wired (WSA-4) to the `repairs.notify` action with the
+//    only v1 template `repair_status`; marketplace dispatcher whitelist
+//    confirmation is owned by the deployment team, so a server-side
+//    NOT_FOUND / 403 surfaces directly in the failure Alert rather than
+//    a silent no-op.
 //
 // See also mobile/src/utils/repairsBulkStatus.ts for the parallel caveats
 // on the bulk-status endpoint (surfaced by the future BulkStatusScreen).
@@ -435,6 +438,26 @@ const RepairDetailScreen: React.FC = () => {
                 );
                 return;
               }
+              // T8 STOCK CONTRACT (deployment-team-confirmed, option b):
+              // parts land on the sale with REAL product_id so
+              // POSController::processSale's Product::findOrFail passes and
+              // the server's C1/C2 side-effect releases the reservation +
+              // decrements stock_reserved cleanly. Synthetic negative ids
+              // would 422. LABOUR handling is UNRESOLVED — provisional
+              // policy is to block the hand-off with a clear Alert until
+              // the deployment team confirms the surface. Leave cart +
+              // customer + repair-link untouched so the cashier can take
+              // the checkout to the till desktop.
+              const hasLabour = fresh.items.some(
+                ri => ri.item_type === 'labor' || ri.product_id == null,
+              );
+              if (hasLabour) {
+                Alert.alert(
+                  'Repair labour handling',
+                  'This repair has labour lines. Handle this checkout at the till desktop until labour surface is confirmed.',
+                );
+                return;
+              }
               const cart = useCartStore.getState();
               // Clear any pre-existing cart so a mixed retail + repair
               // basket doesn't accidentally carry across into the sale.
@@ -443,13 +466,15 @@ const RepairDetailScreen: React.FC = () => {
                 cart.setCustomer(fresh.customer.id, fresh.customer.name);
               }
               // Money on the repair wire is DOLLARS (per api.types.ts
-              // §Repair). Synthesise a stub Product per repair item —
-              // negative id to avoid colliding with real products in the
-              // cart, tax_rate 0 so the GST math doesn't double-apply
-              // (repair quotes are already GST-inclusive).
+              // §Repair). Synthesise a stub Product per parts row using
+              // the REAL product_id (T8 stock contract); tax_rate 0 so
+              // the GST math doesn't double-apply (repair quotes are
+              // already GST-inclusive).
               fresh.items.forEach(ri => {
+                // Belt-and-braces after the labour block above.
+                if (ri.item_type === 'labor' || ri.product_id == null) return;
                 const synth: Product = {
-                  id: -ri.id,
+                  id: ri.product_id,
                   name: ri.item_name,
                   sku: ri.item_sku ?? '',
                   barcode: null,
@@ -489,6 +514,46 @@ const RepairDetailScreen: React.FC = () => {
       ],
     );
   }, [repair, navigation, haptics]);
+
+  // ---------------- WSA-4 notify customer ----------------
+  // Confirm-then-send flow: server routes through the ability-gated
+  // notification pipeline using the ONLY v1 template ('repair_status').
+  // The confirm copy names the customer + the current status label so the
+  // cashier can eyeball what the customer is about to receive before
+  // committing. On failure we surface the server error verbatim rather
+  // than swallowing it — the operator needs to know the customer was NOT
+  // messaged (dispatcher whitelist rollout is deployment-team-owned).
+  const handleNotifyCustomer = useCallback(() => {
+    if (!repair) return;
+    const customerLabel = repair.customer?.name ?? 'the customer';
+    const statusLabel = getRepairStatusLabel(repair.status);
+    Alert.alert(
+      `Notify ${customerLabel}?`,
+      `They will receive a message about the current repair status (${statusLabel}).`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Send',
+          onPress: async () => {
+            try {
+              await ApiClient.sendRepairNotification(repair.id, {
+                template: 'repair_status',
+              });
+              haptics.success();
+              Alert.alert('Notification sent');
+            } catch (err) {
+              haptics.error();
+              const msg =
+                err instanceof Error && err.message
+                  ? err.message
+                  : 'Please try again.';
+              Alert.alert('Could not send notification', msg);
+            }
+          },
+        },
+      ],
+    );
+  }, [repair, haptics]);
 
   // ---------------- early-return guards (all hooks are declared above) --
   if (isLoading) {
@@ -813,11 +878,14 @@ const RepairDetailScreen: React.FC = () => {
             Order matches the operator's typical decision flow:
               1. "Change status" - the most common repair-board mutation.
               2. "Edit"           - device / customer / notes tweaks.
-              3. "Notify customer" - send a manual update (gated on the
-                                     server-side send-manual-notification
-                                     ability; T7 stub Alert only, real
-                                     multi-channel dialog is deferred per
-                                     the DR-M3 plan).
+              3. "Notify customer" - send a manual update via the
+                                     `repairs.notify` action + `repair_status`
+                                     template (WSA-4). Gated client-side on
+                                     the `send-manual-notification` ability
+                                     (server enforces regardless). Confirm-
+                                     then-send with a success/failure toast;
+                                     dispatcher whitelist rollout is owned
+                                     by the deployment team.
 
             NOTE: no Checkout button here - that action lands in T8, which
             wires the "cash the repair out into a sale" flow. Explicit
@@ -846,12 +914,7 @@ const RepairDetailScreen: React.FC = () => {
             <PillButton
               label="Notify customer"
               variant="tertiary"
-              onPress={() => {
-                Alert.alert(
-                  'Notify customer',
-                  'Customer notifications ship in a later release.',
-                );
-              }}
+              onPress={handleNotifyCustomer}
               accessibilityLabel="Notify customer"
               style={styles.actionBtn}
             />

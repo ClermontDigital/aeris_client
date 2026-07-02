@@ -90,8 +90,12 @@ jest.mock('../../hooks/useHaptics', () => {
   return {useHaptics: () => stable};
 });
 
+// Navigation mock — expose a shared navigate spy so the WSA-1 test can
+// assert the "Scan" button enters the shared Scanner (the scanner itself
+// owns the REP-* pattern short-circuit; see BarcodeScannerScreen.test).
+const mockQuickSaleNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({navigate: jest.fn()}),
+  useNavigation: () => ({navigate: mockQuickSaleNavigate}),
   // QuickSaleScreen registers a header-back reset via useFocusEffect;
   // focus events don't fire in RTL so a no-op stub is enough.
   useFocusEffect: () => undefined,
@@ -154,6 +158,26 @@ describe('QuickSaleScreen out-of-stock gating', () => {
 
     await waitFor(() => {
       expect(getMockAddItem()).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // WSA-1: the inline scan shortcut on the search bar must still open
+  // the shared BarcodeScannerScreen. The scanner itself (see
+  // BarcodeScannerScreen.test) owns the REP-* pattern short-circuit +
+  // Confirm → Cart hand-off; this test just guarantees the entry point
+  // is still wired so the repair-scan flow is reachable from QuickSale.
+  it('opens the shared Scanner when the search-bar scan shortcut is tapped', async () => {
+    (useProductCacheStore as any).__seedProducts([
+      makeProduct({id: 4, name: 'Any product', stock_on_hand: 5}),
+    ]);
+    mockQuickSaleNavigate.mockClear();
+
+    const {findByLabelText} = render(<QuickSaleScreen />);
+    const scanBtn = await findByLabelText('Scan barcode');
+    fireEvent.press(scanBtn);
+
+    await waitFor(() => {
+      expect(mockQuickSaleNavigate).toHaveBeenCalledWith('Scanner');
     });
   });
 

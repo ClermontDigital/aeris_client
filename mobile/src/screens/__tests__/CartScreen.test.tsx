@@ -118,6 +118,7 @@ function resetCart() {
   mockCartState.addItem.mockClear();
   mockCartState.setRepairId.mockClear();
   mockCartState.setRepairNumber.mockClear();
+  mockCartState.clear.mockClear();
   mockWorkspaceState.repairs_enabled = false;
   mockGetPendingRepairsForCustomer.mockReset();
   mockGetRepairDetail.mockReset();
@@ -202,7 +203,86 @@ describe('CartScreen', () => {
     await findByText(/No repairs ready for pickup for this customer/i);
   });
 
-  it('T8 — picking a repair populates the cart and sets repairId + repairNumber', async () => {
+  it('T8 — picking a parts-only repair populates the cart with REAL product_ids and sets repairId + repairNumber', async () => {
+    mockCartState.customerId = 42;
+    mockCartState.customerName = 'Ada Lovelace';
+    mockWorkspaceState.repairs_enabled = true;
+    mockGetPendingRepairsForCustomer.mockResolvedValueOnce([
+      {
+        id: 7,
+        repair_number: '0001',
+        issue_description: 'Cracked screen',
+        device_type: null,
+        brand: null,
+        model: null,
+        estimated_cost: 199,
+        final_cost: null,
+        received_at: null,
+      },
+    ]);
+    // T8 STOCK CONTRACT: parts must land on the sale with the REAL
+    // product_id from ri.product_id (POSController::processSale runs
+    // Product::findOrFail on it; a synthetic negative id would 422).
+    mockGetRepairDetail.mockResolvedValueOnce({
+      id: 7,
+      repair_number: '0001',
+      status: 'ready',
+      items: [
+        {
+          id: 10,
+          repair_id: 7,
+          product_id: 900,
+          item_name: 'iPhone screen',
+          item_sku: 'SCR-1',
+          item_type: 'part',
+          quantity: 1,
+          unit_price: 130,
+          line_total: 130,
+        },
+        {
+          id: 11,
+          repair_id: 7,
+          product_id: 901,
+          item_name: 'Adhesive kit',
+          item_sku: 'ADH-1',
+          item_type: 'part',
+          quantity: 2,
+          unit_price: 30,
+          line_total: 60,
+        },
+      ],
+    });
+
+    const {getByLabelText, findByLabelText} = render(<CartScreen />);
+    await act(async () => {
+      fireEvent.press(getByLabelText('Take payment for repair'));
+    });
+
+    const pickRow = await findByLabelText('Pick repair 0001');
+    await act(async () => {
+      fireEvent.press(pickRow);
+    });
+
+    await waitFor(() => {
+      expect(mockCartState.addItem).toHaveBeenCalledTimes(2);
+    });
+    // Money on the repair wire is DOLLARS — the screen converts to cents
+    // at the boundary via Math.round(unit_price * 100).
+    const firstAdd = mockCartState.addItem.mock.calls[0][0];
+    expect(firstAdd.price_cents).toBe(13000);
+    // T8: id is the REAL Product PK, NOT -ri.id.
+    expect(firstAdd.id).toBe(900);
+    // tax_rate 0 — repair items are quoted GST-inclusive already.
+    expect(firstAdd.tax_rate).toBe(0);
+
+    const secondAdd = mockCartState.addItem.mock.calls[1][0];
+    expect(secondAdd.id).toBe(901);
+
+    expect(mockCartState.setRepairId).toHaveBeenCalledWith(7);
+    expect(mockCartState.setRepairNumber).toHaveBeenCalledWith('0001');
+  });
+
+  it('T8 — picking a repair with a labour line blocks with a "handle at the till desktop" alert and does NOT touch the cart', async () => {
     mockCartState.customerId = 42;
     mockCartState.customerName = 'Ada Lovelace';
     mockWorkspaceState.repairs_enabled = true;
@@ -227,6 +307,7 @@ describe('CartScreen', () => {
         {
           id: 10,
           repair_id: 7,
+          product_id: 900,
           item_name: 'iPhone screen',
           item_sku: 'SCR-1',
           item_type: 'part',
@@ -237,6 +318,7 @@ describe('CartScreen', () => {
         {
           id: 11,
           repair_id: 7,
+          product_id: null,
           item_name: 'Labour',
           item_sku: null,
           item_type: 'labor',
@@ -246,6 +328,10 @@ describe('CartScreen', () => {
         },
       ],
     });
+
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
 
     const {getByLabelText, findByLabelText} = render(<CartScreen />);
     await act(async () => {
@@ -258,20 +344,18 @@ describe('CartScreen', () => {
     });
 
     await waitFor(() => {
-      expect(mockCartState.addItem).toHaveBeenCalledTimes(2);
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Repair labour handling',
+        expect.stringContaining('till desktop'),
+      );
     });
-    // Money on the repair wire is DOLLARS — the screen converts to cents
-    // at the boundary via Math.round(unit_price * 100).
-    const firstAdd = mockCartState.addItem.mock.calls[0][0];
-    expect(firstAdd.price_cents).toBe(13000);
-    // Negative synthetic id keeps repair items from colliding with real
-    // Product ids already in the cart.
-    expect(firstAdd.id).toBe(-10);
-    // tax_rate 0 — repair items are quoted GST-inclusive already.
-    expect(firstAdd.tax_rate).toBe(0);
-
-    expect(mockCartState.setRepairId).toHaveBeenCalledWith(7);
-    expect(mockCartState.setRepairNumber).toHaveBeenCalledWith('0001');
+    // Cart untouched — labour block leaves clear / addItem / setRepairId
+    // untouched so the cashier can take the checkout to the till desktop.
+    expect(mockCartState.clear).not.toHaveBeenCalled();
+    expect(mockCartState.addItem).not.toHaveBeenCalled();
+    expect(mockCartState.setRepairId).not.toHaveBeenCalled();
+    expect(mockCartState.setRepairNumber).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
   });
 
   it('T8 — "Checking out repair REP-…" chip renders when the cart is linked to a repair', () => {

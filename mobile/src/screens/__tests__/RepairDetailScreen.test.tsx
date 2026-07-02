@@ -18,10 +18,13 @@ beforeAll(() => {
 
 // ---------------- mocks ----------------
 const mockGetRepairDetail = jest.fn();
+const mockSendRepairNotification = jest.fn();
 jest.mock('../../services/ApiClient', () => ({
   __esModule: true,
   default: {
     getRepairDetail: (...args: unknown[]) => mockGetRepairDetail(...args),
+    sendRepairNotification: (...args: unknown[]) =>
+      mockSendRepairNotification(...args),
   },
 }));
 
@@ -239,6 +242,7 @@ function makeDetail(over: Partial<RepairDetail> = {}): RepairDetail {
 describe('RepairDetailScreen', () => {
   beforeEach(() => {
     mockGetRepairDetail.mockReset();
+    mockSendRepairNotification.mockReset();
     mockNavigate.mockReset();
     mockGoBack.mockReset();
     mockGetParent.mockReset();
@@ -474,14 +478,15 @@ describe('RepairDetailScreen', () => {
     expect(queryByLabelText('Notify customer')).toBeNull();
   });
 
-  it('T7C - "Notify customer" appears when send-manual-notification is present and opens the stub Alert', async () => {
+  // WSA-4 — Notify customer now issues a real send with the repair_status
+  // template. Confirm-then-send: the button opens a confirm Alert; Send
+  // fires ApiClient.sendRepairNotification({template: 'repair_status'});
+  // Cancel is a pure no-op.
+  it('WSA-4 - "Notify customer" opens a confirm Alert naming the customer + status', async () => {
     mockAuthState.user = {
       name: 'Tester',
       permissions: ['send-manual-notification'],
     };
-    // Silence the Alert side effect and let us assert on its args - the
-    // T7 stub Alert is the only user-visible signal that the button
-    // fired.
     const alertSpy = jest
       .spyOn(require('react-native').Alert, 'alert')
       .mockImplementation(() => undefined);
@@ -492,10 +497,104 @@ describe('RepairDetailScreen', () => {
     const notifyBtn = await findByLabelText('Notify customer');
     fireEvent.press(notifyBtn);
 
+    // Title names the customer; body names the current status label.
     expect(alertSpy).toHaveBeenCalledWith(
-      'Notify customer',
-      'Customer notifications ship in a later release.',
+      'Notify Ada Lovelace?',
+      expect.stringContaining('In progress'),
+      expect.any(Array),
     );
+    // No network hit until Send is pressed.
+    expect(mockSendRepairNotification).not.toHaveBeenCalled();
+
+    alertSpy.mockRestore();
+  });
+
+  it('WSA-4 - Send button fires sendRepairNotification with repair_status template and toasts on success', async () => {
+    mockAuthState.user = {
+      name: 'Tester',
+      permissions: ['send-manual-notification'],
+    };
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+    mockSendRepairNotification.mockResolvedValueOnce(undefined);
+
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
+    const {findByLabelText} = render(<RepairDetailScreen />);
+    fireEvent.press(await findByLabelText('Notify customer'));
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{
+      text: string;
+      onPress?: () => void | Promise<void>;
+    }>;
+    const send = buttons.find(b => b.text === 'Send');
+    await send?.onPress?.();
+
+    expect(mockSendRepairNotification).toHaveBeenCalledWith(1, {
+      template: 'repair_status',
+    });
+    // Success toast (single-arg Alert.alert call). The confirm dialog
+    // ran call #0; the success toast is call #1.
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith('Notification sent');
+    });
+
+    alertSpy.mockRestore();
+  });
+
+  it('WSA-4 - Cancel button leaves sendRepairNotification untouched', async () => {
+    mockAuthState.user = {
+      name: 'Tester',
+      permissions: ['send-manual-notification'],
+    };
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
+    const {findByLabelText} = render(<RepairDetailScreen />);
+    fireEvent.press(await findByLabelText('Notify customer'));
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    const cancel = buttons.find(b => b.text === 'Cancel');
+    cancel?.onPress?.();
+
+    expect(mockSendRepairNotification).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('WSA-4 - Send failure surfaces the server error in a failure Alert', async () => {
+    mockAuthState.user = {
+      name: 'Tester',
+      permissions: ['send-manual-notification'],
+    };
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+    mockSendRepairNotification.mockRejectedValueOnce(
+      new Error('SMS provider unavailable'),
+    );
+
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
+    const {findByLabelText} = render(<RepairDetailScreen />);
+    fireEvent.press(await findByLabelText('Notify customer'));
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{
+      text: string;
+      onPress?: () => void | Promise<void>;
+    }>;
+    const send = buttons.find(b => b.text === 'Send');
+    await send?.onPress?.();
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Could not send notification',
+        'SMS provider unavailable',
+      );
+    });
 
     alertSpy.mockRestore();
   });
@@ -582,13 +681,36 @@ describe('RepairDetailScreen', () => {
     alertSpy.mockRestore();
   });
 
-  it('T8 - Confirm branch clears cart, adds repair items, sets repairId, cross-tab navigates', async () => {
+  it('T8 - Confirm branch on a parts-only repair clears cart, adds items with REAL product_ids, sets repairId, cross-tab navigates', async () => {
     // Two getRepairDetail calls: one for the initial screen render,
     // one for the belt-and-braces re-fetch inside the Confirm handler.
-    const readyDetail = makeDetail({status: 'ready'});
+    // Parts-only fixture: strip the labour row so the Confirm handler
+    // reaches the cart materialisation branch. The default makeDetail
+    // includes a labour row which now (T8 stock contract) blocks with
+    // "This repair has labour lines" — see the labour-block test below.
+    const partsOnlyDetail: RepairDetail = {
+      ...makeDetail({status: 'ready'}),
+      items: [
+        {
+          id: 10,
+          repair_id: 1,
+          product_id: 900,
+          item_name: 'iPhone 13 Screen Assembly',
+          item_sku: 'SCREEN-IP13',
+          item_type: 'part',
+          quantity: 1,
+          unit_price: 130,
+          line_total: 130,
+          notes: null,
+          status: 'reserved',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ],
+    };
     mockGetRepairDetail
-      .mockResolvedValueOnce(readyDetail)
-      .mockResolvedValueOnce(readyDetail);
+      .mockResolvedValueOnce(partsOnlyDetail)
+      .mockResolvedValueOnce(partsOnlyDetail);
     const parent = {navigate: jest.fn()};
     mockGetParent.mockReturnValue(parent);
     const alertSpy = jest
@@ -607,9 +729,55 @@ describe('RepairDetailScreen', () => {
     await waitFor(() => expect(mockGetRepairDetail).toHaveBeenCalledTimes(2));
 
     expect(mockCartState.clear).toHaveBeenCalled();
-    expect(mockCartState.addItem).toHaveBeenCalled();
-    expect(mockCartState.setRepairId).toHaveBeenCalledWith(readyDetail.id);
+    // T8 stock contract: id passed to addItem is the REAL product_id, NOT
+    // -ri.id (POSController::processSale does Product::findOrFail on it).
+    const addCall = mockCartState.addItem.mock.calls[0][0];
+    expect(addCall.id).toBe(900);
+    expect(mockCartState.setRepairId).toHaveBeenCalledWith(partsOnlyDetail.id);
     expect(parent.navigate).toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  // T8 stock contract: labour handling is UNRESOLVED. Provisional policy
+  // is to block the hand-off with an Alert when the repair has any labour
+  // lines (product_id === null OR item_type === 'labor'). Cart, customer,
+  // and repair-link must remain untouched so the cashier can take the
+  // checkout to the till desktop without collateral state pollution.
+  it('T8 - Confirm branch on a repair with labour BLOCKS with a "till desktop" alert and does NOT touch the cart', async () => {
+    // makeDetail's default items include a labour row (product_id: null).
+    const readyWithLabour = makeDetail({status: 'ready'});
+    mockGetRepairDetail
+      .mockResolvedValueOnce(readyWithLabour)
+      .mockResolvedValueOnce(readyWithLabour);
+    const parent = {navigate: jest.fn()};
+    mockGetParent.mockReturnValue(parent);
+    const alertSpy = jest
+      .spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation(() => undefined);
+
+    const {findByLabelText} = render(<RepairDetailScreen />);
+    fireEvent.press(await findByLabelText('Checkout repair'));
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    const confirm = buttons.find(b => b.text === 'Confirm');
+    await confirm?.onPress?.();
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        'Repair labour handling',
+        expect.stringContaining('till desktop'),
+      );
+    });
+
+    // Cart untouched — cashier takes the checkout to the till desktop.
+    expect(mockCartState.clear).not.toHaveBeenCalled();
+    expect(mockCartState.addItem).not.toHaveBeenCalled();
+    expect(mockCartState.setRepairId).not.toHaveBeenCalled();
+    expect(mockCartState.setRepairNumber).not.toHaveBeenCalled();
+    expect(parent.navigate).not.toHaveBeenCalled();
     alertSpy.mockRestore();
   });
 });

@@ -21,6 +21,7 @@ import ErrorBanner from '../components/ErrorBanner';
 import PillButton from '../components/PillButton';
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
+import {useAuthStore} from '../stores/authStore';
 import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
@@ -43,6 +44,11 @@ type RepairsListRouteProp = RouteProp<RepairsStackParamList, 'RepairsList'>;
 // 'all' is the chip-row-only sentinel used to represent "no status filter" —
 // the wire never sees this value. When active, the fetch call omits the
 // `status` field entirely so the server returns every non-cancelled row.
+// 'my_queue' is a cross-status personal filter: it AND-s an
+// `assigned_to: user.id` filter onto whatever status chip is active (so
+// tapping "My queue" then "Pending" narrows to the operator's pending
+// rows). It's a distinct sentinel rather than a chip key so it doesn't
+// collide with status filtering.
 type StatusChipKey = 'all' | RepairStatus;
 
 const PER_PAGE = 20;
@@ -135,9 +141,19 @@ const RepairsListScreen: React.FC = () => {
     }, []),
   );
 
+  // WSA-5: signed-in user id drives the "My queue" toggle. Null / undefined
+  // (unauthenticated) hides the chip entirely so tapping it can't produce
+  // an assigned_to filter with no user context. Type falls back to `null`
+  // via the store's ?? so downstream comparisons don't hit a `?.id`.
+  const userId = useAuthStore(s => s.user?.id ?? null);
+
   // ---------------- state ----------------
   const [repairs, setRepairs] = useState<Repair[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusChipKey>('all');
+  // WSA-5: "My queue" toggle. AND-s an `assigned_to: userId` filter onto
+  // the current status chip so the two axes compose naturally on the wire.
+  // Only settable when userId is non-null (chip hidden otherwise).
+  const [myQueue, setMyQueue] = useState(false);
   // Seeded from the deep-link. Tapping the ✕ on the customer chip clears
   // it in-place without popping the screen (mirrors the TransactionList
   // productId behaviour).
@@ -223,9 +239,14 @@ const RepairsListScreen: React.FC = () => {
         const filters: {
           status?: RepairStatus;
           customer_id?: number;
+          assigned_to?: number;
         } = {};
         if (statusFilter !== 'all') filters.status = statusFilter;
         if (customerId != null) filters.customer_id = customerId;
+        // WSA-5: My queue AND-s onto the status axis. The server-side
+        // deployment scopes repairs.list by the signed-in user's location
+        // already; assigned_to narrows to rows owned by the operator.
+        if (myQueue && userId != null) filters.assigned_to = userId;
 
         const response = await ApiClient.listRepairs(
           pageNum,
@@ -266,7 +287,7 @@ const RepairsListScreen: React.FC = () => {
         }
       }
     },
-    [statusFilter, customerId, haptics, search],
+    [statusFilter, customerId, haptics, search, myQueue, userId],
   );
 
   // Debounced initial + search-driven fetch. Immediate on mount / filter
@@ -318,6 +339,17 @@ const RepairsListScreen: React.FC = () => {
     [haptics],
   );
 
+  // WSA-5: My queue toggle. Fires selection haptic (same as status chips)
+  // so the toggle feels of a piece with the row. Coexists with status —
+  // does NOT reset the status chip so an operator can compose "my queue"
+  // + "in progress" naturally.
+  const handleMyQueueToggle = useCallback(() => {
+    if (userId == null) return; // defensive; chip is hidden in this state
+    haptics.selection();
+    setMyQueue(v => !v);
+    setPage(1);
+  }, [haptics, userId]);
+
   const handleClearCustomerFilter = useCallback(() => {
     haptics.selection();
     setCustomerId(undefined);
@@ -335,6 +367,19 @@ const RepairsListScreen: React.FC = () => {
   const handleNewRepair = useCallback(() => {
     haptics.light();
     navigation.navigate('RepairEdit', {});
+  }, [navigation, haptics]);
+
+  // WSA-1: scan-to-open. Enters the shared BarcodeScannerScreen in
+  // mode='repair' (set via RepairsStack initialParams) so a REP-* label
+  // scan pushes RepairDetail without a manual list-search hop. Gated on
+  // repairs_enabled because the scan target (RepairDetail) itself
+  // bounces when the flag is off — surfacing the button in that state
+  // would just walk the operator into an Alert-then-goBack loop.
+  const handleScanRepair = useCallback(() => {
+    haptics.light();
+    (navigation as unknown as {
+      navigate: (screen: string) => void;
+    }).navigate('RepairScanner');
   }, [navigation, haptics]);
 
   // ---------------- renderers ----------------
@@ -442,57 +487,104 @@ const RepairsListScreen: React.FC = () => {
 
   // Memoize chip rows so the filter row doesn't re-render every time a
   // row taps → causing a haptic pop from unrelated re-renders on iPad.
-  const chipRow = useMemo(
-    () =>
-      STATUS_CHIPS.map(chip => {
-        const active = statusFilter === chip.key;
-        // Ready gets a small decorative dot rendered inside the pill to
-        // read as "actionable now" against the sibling chips. Doesn't
-        // change the tap-target or the shared active-fill treatment.
-        const isReady = chip.key === 'ready';
-        return (
+  const chipRow = useMemo(() => {
+    const chips: React.ReactNode[] = [];
+    for (const chip of STATUS_CHIPS) {
+      const active = statusFilter === chip.key;
+      // Ready gets a small decorative dot rendered inside the pill to
+      // read as "actionable now" against the sibling chips. Doesn't
+      // change the tap-target or the shared active-fill treatment.
+      const isReady = chip.key === 'ready';
+      chips.push(
+        <TouchableOpacity
+          key={chip.key}
+          style={[styles.filterButton, active && styles.filterButtonActive]}
+          onPress={() => handleFilterChange(chip.key)}
+          accessibilityRole="button"
+          accessibilityLabel={`Filter ${chip.label}`}
+          accessibilityState={{selected: active}}>
+          <Icon
+            name={chip.icon}
+            size={ICON_SIZE.action - 2}
+            color={active ? COLORS.cream : COLORS.textMuted}
+            style={styles.filterIcon}
+          />
+          <Text
+            style={[
+              styles.filterButtonText,
+              active && styles.filterButtonTextActive,
+              isReady && !active && styles.filterButtonTextReady,
+            ]}>
+            {chip.label}
+          </Text>
+          {isReady && !active ? <View style={styles.readyDot} /> : null}
+        </TouchableOpacity>,
+      );
+      // WSA-5: splice the "My queue" chip in immediately after "All" so it
+      // reads as a personal peer of "everything on site". Hidden entirely
+      // when the user isn't authenticated (userId null).
+      if (chip.key === 'all' && userId != null) {
+        chips.push(
           <TouchableOpacity
-            key={chip.key}
-            style={[styles.filterButton, active && styles.filterButtonActive]}
-            onPress={() => handleFilterChange(chip.key)}
+            key="my_queue"
+            style={[
+              styles.filterButton,
+              myQueue && styles.filterButtonActive,
+            ]}
+            onPress={handleMyQueueToggle}
             accessibilityRole="button"
-            accessibilityLabel={`Filter ${chip.label}`}
-            accessibilityState={{selected: active}}>
+            accessibilityLabel="Filter My queue"
+            accessibilityState={{selected: myQueue}}>
             <Icon
-              name={chip.icon}
+              name="person-outline"
               size={ICON_SIZE.action - 2}
-              color={active ? COLORS.cream : COLORS.textMuted}
+              color={myQueue ? COLORS.cream : COLORS.textMuted}
               style={styles.filterIcon}
             />
             <Text
               style={[
                 styles.filterButtonText,
-                active && styles.filterButtonTextActive,
-                isReady && !active && styles.filterButtonTextReady,
+                myQueue && styles.filterButtonTextActive,
               ]}>
-              {chip.label}
+              My queue
             </Text>
-            {isReady && !active ? (
-              <View style={styles.readyDot} />
-            ) : null}
-          </TouchableOpacity>
+          </TouchableOpacity>,
         );
-      }),
-    [statusFilter, handleFilterChange],
-  );
+      }
+    }
+    return chips;
+  }, [statusFilter, handleFilterChange, myQueue, handleMyQueueToggle, userId]);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      {/* Header + primary CTA */}
+      {/* Header + primary CTA. WSA-1 adds an icon-only Scan button to
+          the right of "New repair" so a repair-label scan is one tap
+          from the list root. Kept as an icon-only affordance (44pt tap
+          target) so the header stays balanced against the title on
+          narrow phones; the accessibility label carries the semantics. */}
       <View style={[styles.header, tabletColumnCap]}>
         <Text style={styles.headerTitle}>Repairs</Text>
-        <PillButton
-          label="New repair"
-          icon="plus"
-          variant="solid"
-          onPress={handleNewRepair}
-          accessibilityLabel="Create a new repair"
-        />
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.scanButton}
+            onPress={handleScanRepair}
+            accessibilityRole="button"
+            accessibilityLabel="Scan repair label"
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+            <Icon
+              name="barcode-outline"
+              size={ICON_SIZE.hero}
+              color={COLORS.crimson}
+            />
+          </TouchableOpacity>
+          <PillButton
+            label="New repair"
+            icon="plus"
+            variant="solid"
+            onPress={handleNewRepair}
+            accessibilityLabel="Create a new repair"
+          />
+        </View>
       </View>
 
       {/* Deep-link customer filter chip */}
@@ -631,6 +723,23 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY.bold,
     flexShrink: 1,
     marginRight: SPACING.sm,
+  },
+  // WSA-1 header action cluster: icon scan button + New repair PillButton
+  // laid out as a row so the two right-aligned affordances read as a
+  // grouped toolbar rather than free-floating controls.
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  // 44pt tap target per HIG minimum — icon-only affordance so the
+  // header stays balanced against the title on narrow phones.
+  scanButton: {
+    width: 44,
+    height: 44,
+    borderRadius: BORDER_RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Deep-link customer filter chip — crimson pill that reads as "active

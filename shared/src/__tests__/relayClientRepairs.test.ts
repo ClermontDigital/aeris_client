@@ -808,5 +808,180 @@ describe('RelayClient — repairs (T3)', () => {
       expect(result.succeeded).toEqual([]);
       expect(result.skipped).toEqual([1, 2, 3]);
     });
+
+    // Deployment-team-confirmed rich shape (DR-M3): skipped + failed rows
+    // carry an id+reason each. Client flattens to id-only arrays plus the
+    // reasons map so the reconcile helper can surface reasons in the toast.
+    it('flattens the rich {updated_count, succeeded, skipped:[{id,reason}], failed:[{id,reason}]} shape', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.bulk-status', {
+            data: {
+              updated_count: 1,
+              succeeded: [1],
+              skipped: [{id: 2, reason: 'already completed'}],
+              failed: [{id: 3, reason: 'invalid transition'}],
+            },
+          }),
+        ),
+      );
+      const result = await client.bulkUpdateRepairStatus([1, 2, 3], 'ready');
+      expect(result.succeeded).toEqual([1]);
+      expect(result.skipped).toEqual([2]);
+      expect(result.failed).toEqual([3]);
+      expect(result.reasons).toEqual({
+        2: 'already completed',
+        3: 'invalid transition',
+      });
+    });
+  });
+
+  // WSA-4 / WSB-1 — exact-match repair-by-barcode lookup.
+  describe('getRepairByBarcode', () => {
+    it('sends aliased {repair_number, code} params and returns normalized RepairDetail', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.by-barcode', {
+            data: repairFixture({id: 12, repair_number: 'REP-000012'}),
+          }),
+        ),
+      );
+      const detail = await client.getRepairByBarcode('REP-000012');
+      const sent = readBody();
+      expect(sent.action).toBe('repairs.by-barcode');
+      // Both aliases must be on the wire so the dispatcher-side placeholder
+      // rename lights up regardless of which key it expects.
+      expect(sent.params.repair_number).toBe('REP-000012');
+      expect(sent.params.code).toBe('REP-000012');
+      expect(detail).not.toBeNull();
+      expect(detail!.id).toBe(12);
+    });
+
+    it('returns null on NOT_FOUND so the scanner can fall back to search', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.by-barcode', undefined, 'error', {
+            code: 'NOT_FOUND',
+            message: 'record not found',
+          }),
+        ),
+      );
+      const detail = await client.getRepairByBarcode('REP-999999');
+      expect(detail).toBeNull();
+    });
+  });
+
+  // WSA-5 / WSB-3 — technician list.
+  describe('listRepairTechnicians', () => {
+    it('shape-checks each row and returns the normalized list', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.technicians', {
+            data: [
+              {id: 1, name: 'Alice'},
+              // Malformed rows (missing id or non-string name) are dropped;
+              // shape-check keeps the picker robust against schema drift.
+              {name: 'no id here'},
+              {id: 3, name: 'Bob'},
+              {id: 4},
+            ],
+          }),
+        ),
+      );
+      const list = await client.listRepairTechnicians();
+      // Order preserved for id 1, 3, 4 (missing id row dropped); name for
+      // id 4 falls back to "Unknown user" via the shape-check.
+      expect(list).toEqual([
+        {id: 1, name: 'Alice'},
+        {id: 3, name: 'Bob'},
+        {id: 4, name: 'Unknown user'},
+      ]);
+    });
+
+    it('returns [] on NOT_FOUND (dispatcher not yet wired)', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.technicians', undefined, 'error', {
+            code: 'NOT_FOUND',
+            message: 'action not routed',
+          }),
+        ),
+      );
+      const list = await client.listRepairTechnicians();
+      expect(list).toEqual([]);
+    });
+  });
+
+  // WSA-3 / WSB-2 — free-text note append.
+  describe('addRepairNote', () => {
+    it('sends {repair_id, id, note} and returns the normalized status_history row', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.add-note', {
+            data: {
+              id: 200,
+              from_status: 'in_progress',
+              to_status: 'in_progress',
+              notes: 'Waiting on part.',
+              changed_at: '2026-07-02T09:00:00.000000Z',
+              user: {id: 5, name: 'Grace Hopper'},
+            },
+          }),
+        ),
+      );
+      const row = await client.addRepairNote(7, 'Waiting on part.');
+      const sent = readBody();
+      expect(sent.action).toBe('repairs.add-note');
+      expect(sent.params.repair_id).toBe(7);
+      expect(sent.params.id).toBe(7);
+      expect(sent.params.note).toBe('Waiting on part.');
+      expect(row.id).toBe(200);
+      expect(row.notes).toBe('Waiting on part.');
+      expect(row.user).toEqual({id: 5, name: 'Grace Hopper'});
+    });
+
+    it('rejects empty notes before hitting the network', async () => {
+      await expect(client.addRepairNote(7, '')).rejects.toThrow(/empty/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects notes longer than 2000 characters before hitting the network', async () => {
+      const huge = 'x'.repeat(2001);
+      await expect(client.addRepairNote(7, huge)).rejects.toThrow(/too long/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // WSA-4 — manual customer notification, `repair_status` template only in v1.
+  describe('sendRepairNotification', () => {
+    it('sends {repair_id, id, template} aliases with the repair_status template', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(envelope('repairs.notify', {sent: true})),
+      );
+      await client.sendRepairNotification(7, {template: 'repair_status'});
+      const sent = readBody();
+      expect(sent.action).toBe('repairs.notify');
+      // Both id aliases on the wire so the dispatcher placeholder rename
+      // lights up regardless of which key the marketplace settles on.
+      expect(sent.params.repair_id).toBe(7);
+      expect(sent.params.id).toBe(7);
+      expect(sent.params.template).toBe('repair_status');
+    });
+
+    it('propagates server errors (e.g. NOT_FOUND, 403 ability) rather than swallowing', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(
+          envelope('repairs.notify', undefined, 'error', {
+            code: 'NOT_FOUND',
+            message: 'action not routed',
+          }),
+        ),
+      );
+      // A silent no-op would trick the operator into thinking the message
+      // was delivered — WSA-4 requires the failure to reach the UI.
+      await expect(
+        client.sendRepairNotification(7, {template: 'repair_status'}),
+      ).rejects.toBeInstanceOf(RelayError);
+    });
   });
 });
