@@ -261,8 +261,26 @@
 
     <script>
         let originalSettings = {};
-        
+
+        // Wait for the preload's contextBridge.exposeInMainWorld to attach
+        // window.electronAPI. If preload has failed, the settings window
+        // still renders but the user sees a clear error rather than a silent
+        // crash on the first IPC call.
+        async function waitForElectronAPI(timeoutMs = 3000) {
+            const start = Date.now();
+            while (!window.electronAPI) {
+                if (Date.now() - start > timeoutMs) return false;
+                await new Promise(r => setTimeout(r, 50));
+            }
+            return true;
+        }
+
         async function loadSettings() {
+            const apiReady = await waitForElectronAPI();
+            if (!apiReady) {
+                showStatus('Preload script failed to attach — Settings unavailable. Open DevTools (F12) → Console for details, then reinstall.', 'error');
+                return;
+            }
             try {
                 // Defensive: an IPC failure or preload timing race can leave
                 // settings as undefined — treat as empty defaults so the form

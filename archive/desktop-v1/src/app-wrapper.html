@@ -2180,10 +2180,33 @@
         // Update navigation state periodically
         setInterval(updateNavigationState, 2000);
 
+        // Wait for the preload script to attach window.electronAPI. If the
+        // preload throws mid-execution (e.g. dr-partition require fails),
+        // window.electronAPI never appears — every downstream function that
+        // touches it would then crash with "Cannot read properties of
+        // undefined". Poll for up to 3 seconds, then surface a visible error
+        // instead of a cascade of unhandled promise rejections.
+        async function waitForElectronAPI(timeoutMs = 3000) {
+            const start = Date.now();
+            while (!window.electronAPI) {
+                if (Date.now() - start > timeoutMs) return false;
+                await new Promise(r => setTimeout(r, 50));
+            }
+            return true;
+        }
+
         // Initialize privacy overlay system. Uses the readyState-check pattern
         // so the block still runs if DOMContentLoaded fires before this
         // script parses (Chromium race on Windows inline-script-at-EOB).
         async function initPrivacyOverlay() {
+            const apiReady = await waitForElectronAPI();
+            if (!apiReady) {
+                // Surface visibly — this state means preload has crashed and
+                // NO IPC-backed feature will work (settings, session, print,
+                // navigation). User needs to see this rather than a silent
+                // half-broken app.
+                throw new Error('Preload script failed to attach window.electronAPI. Open DevTools (F12) → Console for the preload error. Try uninstalling + reinstalling.');
+            }
             // Check initial session state
             try {
                 const activeSession = await window.electronAPI.getActiveSession();
