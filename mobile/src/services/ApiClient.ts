@@ -1,10 +1,109 @@
 import * as Crypto from 'expo-crypto';
-import {RelayClient} from '@aeris/shared';
+import {Platform, ToastAndroid, Alert} from 'react-native';
+import {RelayClient, REPAIRS_DISABLED_CODE} from '@aeris/shared';
 import type {ConnectionMode, Product, ProductImageType} from '../types/api.types';
 import {DirectClient} from './DirectClient';
 import {uploadProductImage as uploadProductImageImpl} from './ProductImageClient';
 import {useCloudReachabilityStore} from '../stores/cloudReachabilityStore';
 import {useDrStore} from '../stores/drStore';
+import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
+
+// Generic `deployment-*` code the gateway emits when a whole surface is off
+// for the resolved workspace. Accept as a synonym for REPAIRS_DISABLED_CODE
+// per the api.types comment at REPAIRS_DISABLED_CODE — a gateway that reuses
+// the older namespace still triggers the same "repairs off" branch.
+const DEPLOYMENT_UNSUPPORTED_SYNONYM = 'deployment-unsupported';
+
+// Module-level guard so the "Repairs disabled for this site." toast fires
+// AT MOST once per app session. The workspaceFeaturesStore setter would
+// itself deduplicate the state flip, but the toast is a UI side-effect that
+// needs its own single-shot latch.
+let repairsDisabledToastShown = false;
+
+// Cross-user hygiene: authStore.logout resets this so a user B logging into
+// a different deployment on the same device still gets the toast if THEIR
+// workspace flips repairs off later in the session. Without this, the
+// process-lifetime latch would silence the second flip.
+export function resetRepairsDisabledToastLatch(): void {
+  repairsDisabledToastShown = false;
+}
+
+function showRepairsDisabledToast(): void {
+  if (repairsDisabledToastShown) return;
+  repairsDisabledToastShown = true;
+  const msg = 'Repairs disabled for this site.';
+  try {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(msg, ToastAndroid.LONG);
+    } else {
+      // iOS has no native toast; Alert.alert is the pattern used elsewhere in
+      // the codebase for equivalent one-shot notices (see PrintService).
+      Alert.alert('Repairs', msg);
+    }
+  } catch {
+    // Toast is best-effort UX — never break the caller because notification
+    // rendering failed.
+  }
+}
+
+// Extracts the deployment-* error code from either a shared RelayError
+// (`.code`) or a plain HTTP error whose body carries `{code}` / `{error:{code}}`
+// (Direct-mode path). Returns null when the error isn't shaped like a
+// deployment gate.
+function extractDeploymentCode(err: unknown): string | null {
+  if (!err || typeof err !== 'object') return null;
+  const e = err as {
+    code?: unknown;
+    message?: unknown;
+  };
+  if (typeof e.code === 'string') return e.code;
+  // Direct mode surfaces the JSON body at the tail of the Error message:
+  // "Request failed (403): {\"code\":\"deployment-repairs-disabled\",...}".
+  if (typeof e.message === 'string') {
+    const colonIdx = e.message.indexOf(': ');
+    if (colonIdx >= 0) {
+      const tail = e.message.slice(colonIdx + 2);
+      try {
+        const parsed = JSON.parse(tail) as {
+          code?: string;
+          error?: {code?: string};
+        };
+        if (parsed && typeof parsed.code === 'string') return parsed.code;
+        if (parsed?.error && typeof parsed.error.code === 'string') {
+          return parsed.error.code;
+        }
+      } catch {
+        // Not JSON — no code to extract.
+      }
+    }
+  }
+  return null;
+}
+
+// Wraps a repairs.* dispatch: on a REPAIRS_DISABLED_CODE (or the generic
+// `deployment-unsupported` synonym) it flips the workspaceFeaturesStore off
+// and fires a one-shot toast, then re-throws so the caller can surface a
+// screen-level "not available" state. Every other error propagates unchanged.
+async function guardRepairsCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const code = extractDeploymentCode(err);
+    if (
+      code === REPAIRS_DISABLED_CODE ||
+      code === DEPLOYMENT_UNSUPPORTED_SYNONYM
+    ) {
+      try {
+        useWorkspaceFeaturesStore.getState().setRepairsEnabled(false);
+      } catch {
+        // Store not initialised yet in a test harness — swallow so the
+        // caller still gets the original error.
+      }
+      showRepairsDisabledToast();
+    }
+    throw err;
+  }
+}
 
 // Polyfill crypto.randomUUID for the shared RelayClient. Hermes does not
 // reliably expose globalThis.crypto.randomUUID across all OS versions, so
@@ -257,6 +356,41 @@ export class ApiClient {
     this.active.createProduct(...args);
   updateProduct = (...args: Parameters<RelayClient['updateProduct']>) =>
     this.active.updateProduct(...args);
+
+  // --- Repairs ---
+  // Every method is wrapped in `guardRepairsCall` so a gateway
+  // REPAIRS_DISABLED_CODE (or the generic `deployment-unsupported` synonym)
+  // yanks the workspace flag off + fires a one-shot toast. Actual routing is
+  // through `.active` — same DR-cert-mismatch guard applies as everywhere else.
+  listRepairs = (...args: Parameters<RelayClient['listRepairs']>) =>
+    guardRepairsCall(() => this.active.listRepairs(...args));
+  getRepairDetail = (...args: Parameters<RelayClient['getRepairDetail']>) =>
+    guardRepairsCall(() => this.active.getRepairDetail(...args));
+  getRepairStatusHistory = (
+    ...args: Parameters<RelayClient['getRepairStatusHistory']>
+  ) => guardRepairsCall(() => this.active.getRepairStatusHistory(...args));
+  getPendingRepairsForCustomer = (
+    ...args: Parameters<RelayClient['getPendingRepairsForCustomer']>
+  ) =>
+    guardRepairsCall(() => this.active.getPendingRepairsForCustomer(...args));
+  createRepair = (...args: Parameters<RelayClient['createRepair']>) =>
+    guardRepairsCall(() => this.active.createRepair(...args));
+  updateRepair = (...args: Parameters<RelayClient['updateRepair']>) =>
+    guardRepairsCall(() => this.active.updateRepair(...args));
+  updateRepairStatus = (
+    ...args: Parameters<RelayClient['updateRepairStatus']>
+  ) => guardRepairsCall(() => this.active.updateRepairStatus(...args));
+  addRepairItem = (...args: Parameters<RelayClient['addRepairItem']>) =>
+    guardRepairsCall(() => this.active.addRepairItem(...args));
+  updateRepairItem = (...args: Parameters<RelayClient['updateRepairItem']>) =>
+    guardRepairsCall(() => this.active.updateRepairItem(...args));
+  removeRepairItem = (...args: Parameters<RelayClient['removeRepairItem']>) =>
+    guardRepairsCall(() => this.active.removeRepairItem(...args));
+  bulkUpdateRepairStatus = (
+    ...args: Parameters<RelayClient['bulkUpdateRepairStatus']>
+  ) => guardRepairsCall(() => this.active.bulkUpdateRepairStatus(...args));
+  deleteRepair = (...args: Parameters<RelayClient['deleteRepair']>) =>
+    guardRepairsCall(() => this.active.deleteRepair(...args));
 }
 
 // RelayError remains importable from this module for back-compat with

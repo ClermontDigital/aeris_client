@@ -46,6 +46,10 @@ jest.mock('@react-navigation/native', () => ({
   // optional product filter; default to an empty params bag here so
   // the unfiltered baseline still renders.
   useRoute: () => ({params: {}}),
+  // TransactionListScreen registers a header-back reset via
+  // useFocusEffect; focus events don't fire in RTL so a no-op stub is
+  // enough.
+  useFocusEffect: () => undefined,
 }));
 
 import TransactionListScreen from '../TransactionListScreen';

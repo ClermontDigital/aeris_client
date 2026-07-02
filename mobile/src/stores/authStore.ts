@@ -4,6 +4,11 @@ import ApiClient, {RelayError} from '../services/ApiClient';
 import {SecureStorage} from '../services/StorageService';
 import {SilentReauthCredentialStore} from '../services/SilentReauthCredentialStore';
 import {useSettingsStore} from './settingsStore';
+import {
+  hydrationPromise as workspaceFeaturesHydrationPromise,
+  useWorkspaceFeaturesStore,
+} from './workspaceFeaturesStore';
+import {resetRepairsDisabledToastLatch} from '../services/ApiClient';
 import type {User} from '../types/api.types';
 
 // Drop every cookie the WebView accumulated this session. ERPScreen +
@@ -157,6 +162,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error: null,
         errorKind: null,
       });
+      // T2 — hydrate per-deployment feature flags from the login response so
+      // repairs_enabled reflects THIS workspace before any RPC / render. Missing
+      // envelope coerces to false at the store boundary (safe default). NOTE:
+      // no counterpart wipe on logout — a fresh login rehydrates.
+      useWorkspaceFeaturesStore.getState().hydrateFromLogin(response);
       // M3-C — cache the credentials for SILENT re-auth across a future auto
       // mode-switch (failover/failback wipes the audience-specific bearer, and
       // auth.biometric can't run without a live token). SECURITY GATE: only
@@ -236,6 +246,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // mode-switch, which is exactly when the cache is needed to re-auth.
     await SilentReauthCredentialStore.clear();
     await clearWebViewCookies();
+    // Workspace feature flags: reset on explicit logout so a NEXT user
+    // logging into a DIFFERENT deployment on the same device doesn't briefly
+    // see the previous user's repairs_enabled = true before hydrateFromLogin
+    // rewrites it. Also resets the ApiClient toast latch so a mid-session
+    // OFF → next login → OFF cycle still surfaces the "Repairs disabled"
+    // toast on the second flip.
+    useWorkspaceFeaturesStore.getState().reset();
+    resetRepairsDisabledToastLatch();
     // PIN persists across logout — only Settings → Reset PIN clears it.
     // Cross-platform parity with desktop; on next login the cold-start
     // lock effect in App.tsx prompts for the existing PIN.
@@ -301,6 +319,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // branch, which previously left the app on the splash forever if a
     // `SecureStorage.removeItem` call failed mid-wipe.
     try {
+      // Await the workspaceFeaturesStore warm-boot restore BEFORE setting
+      // isAuthenticated. Without this, the app renders with repairs_enabled
+      // stuck at its default `false` and the Repairs tab pops in only after
+      // the async SecureStorage read resolves — a visible flicker on cold
+      // start. Best-effort: a hydration failure just leaves the default in
+      // place, which is the safe posture.
+      await workspaceFeaturesHydrationPromise;
       const token = await SecureStorage.getItem(AUTH_TOKEN_KEY);
       const userJson = await SecureStorage.getItem(AUTH_USER_KEY);
       const expiresAt = await SecureStorage.getItem(AUTH_EXPIRES_KEY);
@@ -349,6 +374,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         expiresAt,
         isAuthenticated: true,
       });
+      // T2 — workspaceFeaturesStore restores its own persisted slice at module
+      // load (SecureStorage key 'aeris.workspace.features'), so the flag is
+      // already populated by the time we get here. The next refreshToken tick
+      // will re-hydrate from a live AuthResponse; until then the last-known
+      // deployment posture stands.
       // Best-effort cleanup of legacy stamp.
       SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY).catch(() => {});
     } catch (e) {
@@ -443,6 +473,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           error: null,
           errorKind: null,
         });
+        // T2 — re-hydrate feature flags on every refresh so an ON→OFF flip on
+        // the deployment side propagates within one Sanctum window. Missing
+        // envelope coerces to false (safe default).
+        useWorkspaceFeaturesStore.getState().hydrateFromLogin(response);
       } catch (e) {
         const status = (e as Error & {status?: number}).status;
         const isAuthRejection =

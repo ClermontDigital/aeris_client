@@ -60,7 +60,18 @@ jest.mock('../../hooks/useHaptics', () => {
 });
 
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({navigate: jest.fn(), canGoBack: () => false, goBack: jest.fn()}),
+  useNavigation: () => ({
+    navigate: jest.fn(),
+    canGoBack: () => false,
+    goBack: jest.fn(),
+    // CartScreen subscribes to `beforeRemove` to clear the shared
+    // header-back handler when the screen unmounts (v1.3.78+); the
+    // subscribe fn must return an unsubscribe fn.
+    addListener: jest.fn(() => jest.fn()),
+  }),
+  // CartScreen registers a header-back reset via useFocusEffect; focus
+  // events don't fire in RTL so a no-op stub is enough.
+  useFocusEffect: () => undefined,
 }));
 
 import CartScreen from '../CartScreen';

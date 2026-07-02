@@ -41,24 +41,32 @@ jest.mock('../../hooks/useHaptics', () => {
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({navigate: jest.fn()}),
+  // ItemsScreen wraps a header-back guard reset in useFocusEffect
+  // (v1.3.32+); the focus event never fires under jest so a no-op stub
+  // is sufficient.
+  useFocusEffect: () => undefined,
 }));
 
 // Mock productCacheStore — ItemsScreen subscribes to it for the Low/Out
 // tile counts (v1.3.23+). The real zustand hook hits the dual-React shim
 // mismatch under jest-expo; expose the selector + getState shape directly.
+// The state is mutable so tests can seed products before render to drive
+// the stat-strip counts (Low / Out are computed off the FULL cached
+// catalog, not the paginated listProducts response — see
+// ItemsScreen.tsx:207+).
+const mockCacheState = {
+  products: [] as unknown[],
+  categories: [] as unknown[],
+  lastSynced: null as number | null,
+  isSyncing: false,
+  lastSyncError: null,
+  syncProducts: jest.fn(() => Promise.resolve()),
+};
 jest.mock('../../stores/productCacheStore', () => {
-  const state = {
-    products: [] as unknown[],
-    categories: [] as unknown[],
-    lastSynced: null,
-    isSyncing: false,
-    lastSyncError: null,
-    syncProducts: jest.fn(() => Promise.resolve()),
-  };
-  const useProductCacheStore = (selector: (s: typeof state) => unknown) =>
-    selector(state);
-  (useProductCacheStore as unknown as {getState: () => typeof state}).getState =
-    () => state;
+  const useProductCacheStore = (selector: (s: typeof mockCacheState) => unknown) =>
+    selector(mockCacheState);
+  (useProductCacheStore as unknown as {getState: () => typeof mockCacheState}).getState =
+    () => mockCacheState;
   return {useProductCacheStore};
 });
 
@@ -89,17 +97,26 @@ describe('ItemsScreen', () => {
   beforeEach(() => {
     mockListProducts.mockReset();
     mockSearchProducts.mockReset();
+    // Reset the shared productCacheStore mock between tests so leaking
+    // seeded products don't spill into a case that expects an empty
+    // cache (e.g. the error-banner path).
+    mockCacheState.products = [];
+    mockCacheState.lastSynced = null;
   });
 
   it('renders the stat strip with total / low-stock / out counts', async () => {
-    mockListProducts.mockResolvedValue(
-      okPage([
-        makeProduct({id: 1, stock_on_hand: 50}),
-        makeProduct({id: 2, stock_on_hand: 5}), // low stock
-        makeProduct({id: 3, stock_on_hand: 0}), // out
-        makeProduct({id: 4, stock_on_hand: 0}), // out
-      ]),
-    );
+    const catalog = [
+      makeProduct({id: 1, stock_on_hand: 50}),
+      makeProduct({id: 2, stock_on_hand: 5}), // low stock
+      makeProduct({id: 3, stock_on_hand: 0}), // out
+      makeProduct({id: 4, stock_on_hand: 0}), // out
+    ];
+    // Seed the cache so the Low / Out tiles have a full catalog to
+    // count over — those tiles read productCacheStore.products, not the
+    // paginated listProducts response (which drives Total via meta).
+    mockCacheState.products = catalog;
+    mockCacheState.lastSynced = Date.now();
+    mockListProducts.mockResolvedValue(okPage(catalog));
 
     const {getByText, getAllByText, getByLabelText} = render(<ItemsScreen />);
 
