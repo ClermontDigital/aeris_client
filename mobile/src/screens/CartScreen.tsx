@@ -140,22 +140,51 @@ export default function CartScreen() {
           setPickerError('Repair no longer ready for checkout.');
           return;
         }
+        // T8 STOCK CONTRACT (deployment-team-confirmed, option b): mobile
+        // MUST restate repair parts as real product-line items on sale.create.
+        // Every reserved part in repair.items[] with a product_id lands on
+        // the sale with the REAL product_id; the server dedupes against the
+        // repair_id side-effect so stock_reserved is released without a
+        // second stock_quantity decrement. Synthetic negative ids would fail
+        // POSController::processSale's Product::findOrFail() with a 422.
+        //
+        // LABOUR HANDLING is UNRESOLVED — the deployment team is confirming
+        // the surface. Provisional policy: if the repair has ANY labour
+        // lines (product_id === null) block the hand-off with a clear
+        // Alert; leave cart + customer + repair-link untouched so the
+        // cashier can take the checkout to the till desktop. Once labour
+        // surface is confirmed we unblock (either accept labour as a
+        // notes line, mint a synth catalog product on-server, or route
+        // labour through a dedicated action).
+        const hasLabour = detail.items.some(
+          ri => ri.item_type === 'labor' || ri.product_id == null,
+        );
+        if (hasLabour) {
+          Alert.alert(
+            'Repair labour handling',
+            'This repair has labour lines. Handle this checkout at the till desktop until labour surface is confirmed.',
+          );
+          return;
+        }
         // T8-C2: clear the cart first so a mixed retail + repair basket
         // doesn't accidentally carry across into the sale. Mirrors
         // RepairDetailScreen.handleRepairCheckout.
         clear();
         // Money on the repair wire travels as DOLLAR FLOATS (per api.types.ts
         // §Repair). cartStore.addItem expects a Product-shaped object whose
-        // price_cents is CENTS. Synthesise a stub Product per repair item:
-        //  - id: negative repair_item.id so it doesn't collide with real
-        //    Product primary keys already in the cart.
+        // price_cents is CENTS. Synthesise a stub Product per parts row:
+        //  - id: REAL ri.product_id (per stock contract above).
         //  - price_cents: Math.round(item.unit_price * 100) - convert
         //    dollars to cents at the boundary.
-        //  - tax_rate: 0 - repair labour + parts are quoted GST-inclusive
-        //    already; a repeat 10% would double-tax.
+        //  - tax_rate: 0 - repair items are quoted GST-inclusive already;
+        //    a repeat 10% would double-tax.
         detail.items.forEach(ri => {
+          // Guard rail — should be unreachable given the labour block above,
+          // but belt-and-braces so a future edit doesn't accidentally slip
+          // a null product_id onto the wire.
+          if (ri.item_type === 'labor' || ri.product_id == null) return;
           const synth: Product = {
-            id: -ri.id,
+            id: ri.product_id,
             name: ri.item_name,
             sku: ri.item_sku ?? '',
             barcode: null,

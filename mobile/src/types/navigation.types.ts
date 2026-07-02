@@ -49,6 +49,11 @@ export type AppTabParamList = {
 export type QuickSaleStackParamList = {
   ProductGrid: undefined;
   // mode = 'cart' (default): show found-product card with Add-to-Cart button.
+  // WSA-1: the QuickSale Scanner also handles REP-YYYYMMDD-NNNNNN repair
+  // tags unconditionally (regex short-circuit inside lookupBarcode, above
+  // the product lookup) so a cashier who scans a repair label mid-sale is
+  // routed to the same "Take payment for repair" flow as RepairDetail's
+  // Checkout button.
   Scanner: {mode?: 'cart'} | undefined;
   Cart: undefined;
   Checkout: undefined;
@@ -116,6 +121,14 @@ export type RepairsStackParamList = {
   // formSheet transition (see RepairsStack.tsx). Requires the target
   // repair id — no "pick from list" affordance here.
   RepairStatusChange: {id: number};
+  // WSA-1: scan-to-open repair-label camera. Reuses BarcodeScannerScreen
+  // with mode='repair' via initialParams. Presented fullScreenModal so it
+  // reads as a dedicated capture surface, and swipe-back-cancel doesn't
+  // leave a Scanner card behind on the RepairsList back stack. mode is
+  // required in the shape so `initialParams={{mode: 'repair'}}` typechecks;
+  // call sites use `navigate('RepairScanner')` since initialParams provides
+  // the default.
+  RepairScanner: {mode: 'repair'} | undefined;
 };
 
 // Screen prop types

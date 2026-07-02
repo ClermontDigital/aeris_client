@@ -5,6 +5,7 @@ import RepairsListScreen from '../screens/RepairsListScreen';
 import RepairDetailScreen from '../screens/RepairDetailScreen';
 import RepairStatusChangeSheet from '../screens/RepairStatusChangeSheet';
 import RepairEditScreen from '../screens/RepairEditScreen';
+import BarcodeScannerScreen from '../screens/BarcodeScannerScreen';
 
 const Stack = createNativeStackNavigator<RepairsStackParamList>();
 
@@ -34,6 +35,19 @@ const RepairsStack: React.FC = () => (
       name="RepairStatusChange"
       component={RepairStatusChangeSheet}
       options={{presentation: 'formSheet'}}
+    />
+    {/* WSA-1 scan-to-open: repair-label camera. Shares the vision-camera
+        surface with the Items/QuickSale scanners; mode='repair' is set
+        via initialParams so BarcodeScannerScreen enforces the
+        REP-YYYYMMDD-NNNNNN pattern and pushes RepairDetail on hit.
+        fullScreenModal presentation keeps the scanner visually dedicated
+        and ensures swipe-back-cancel doesn't leave a stale Scanner card
+        on the RepairsList back stack. */}
+    <Stack.Screen
+      name="RepairScanner"
+      component={BarcodeScannerScreen}
+      initialParams={{mode: 'repair'}}
+      options={{presentation: 'fullScreenModal'}}
     />
   </Stack.Navigator>
 );

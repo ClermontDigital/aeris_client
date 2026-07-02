@@ -1,56 +1,78 @@
 # Aeris2 Backend Audit — Mobile Repairs Feature Deployment Report
 
 **Prepared for:** Aeris2 deployment / build team
-**Revision:** v2 — reflects deployment-team progress and endorses their proposed sequencing.
+**Revision:** v3 — reflects deployment-team confirmation of contracts (T8 stock, 6 new RPCs, bulk-status shape) and moves resolved items to the shipped column.
 **Client status:** Mobile Repairs feature ships DARK. `workspace.features.repairs_enabled` defaults `false`. Client is safe to merge and ship independently. Nothing below blocks the mobile release. The list below is what the server must ship before any workspace can flip the flag `true`.
 
 ---
 
 ## PROGRESS SUMMARY
 
-### ✅ Landed by deployment team (current sprint)
+### ✅ Landed by deployment team (through this sprint)
 
 | Item | Notes |
 |---|---|
 | **B4 — Abilities** | `repairs:read/write/delete` granted per role (cashier read-only per review). No further action required. |
 | **L1 — Workspace features envelope** | `login` + `refresh` responses now surface `workspace.features.repairs_enabled`. Client hydrates it into `workspaceFeaturesStore` correctly. Verified. |
+| **C1 — `repair_id` handling on `Api\POSController::processSale`** | SHIPPED. Server flips a `READY` repair to `COMPLETED` + writes `status_history` + sets `sale_id`/`completed_at` inside the `sale.create` transaction. |
+| **C2 — Reservation release + `stock_reserved` decrement on repair checkout** | SHIPPED, with **stock contract option (b)** as the confirmed contract: mobile MUST restate every reserved part in `repair.items[]` as a real product-line item on `sale.create`. Server dedupes against `repair_id` so `stock_quantity` decrements once and `stock_reserved` is released cleanly. Synthetic negative product ids are rejected by `Product::findOrFail`. Mobile T8 wiring updated to match (see §T8 below). |
+| **C3 — Multi-location scoping on `RepairController`** | SHIPPED. Every relay-reachable repair endpoint is location-scoped to the signed-in user; `super_admin`/`admin` see all. Cross-site data leak closed. |
+| **C4-tail — `updateItem` field persistence** | SHIPPED. Now accepts `unit_price` + `notes` in addition to `quantity`, recomputes `line_total`, adjusts `stock_reserved` on quantity delta, and is blocked once the repair is checked out. |
+| **C5 — `bulkUpdateStatus` response shape + safety cap** | SHIPPED. New shape: `{updated_count, succeeded: [ids], skipped: [{id, reason}], failed: [{id, reason}]}`. Endpoint capped at 50 ids. Mobile `bulkUpdateRepairStatus` + `reconcileBulkStatusResult` consume the reason strings for the operator toast (`3 skipped: 2 already completed, 1 invalid transition`). Legacy shapes retained for backward compat during rollout. |
+| **B1 tail + B2 tail + B3 + L2 + L3 tail** | All action mappings + dispatcher aliases + `status-history` route + `pending-for-customer` mapping + `PendingRepair.estimated_cost`/`received_at` fields SHIPPED. |
+| **WSB series (workshop workflow)** | 6 new RPCs SHIPPED, all ability-gated + location-scoped: `repairs.status-history`, `repairs.add-note`, `repairs.technicians`, `repairs.by-barcode`, `repairs.pending-for-customer`, `repairs.delete`. Path-placeholder aliases: `{repair}←repair_id\|id`, `{item}←item_id`, `{customer}←customer_id\|id`, `{repairNumber}←repair_number\|code`. Notes: **`repairs.technicians` lives at `/api/v1/repairs/technicians` (not `/users/list-technicians`)** — mobile constant + relay method aligned. |
 
-### 🟨 Partially landed — finishing work required
+### 🟨 Remaining / open
 
-| Item | What's landed | What remains |
-|---|---|---|
-| **B1 — Action mappings** | 9 of ~12 done | Missing `repairs.status-history` (waits on **B3**) + `repairs.pending-for-customer` (waits on **L2**) |
-| **B2 — Dispatcher aliases** | `repair` + `item` aliases done | Missing `customer` alias — `repairs.pending-for-customer` sends `customer_id` and needs `{customer}` fill |
-| **L3 — PendingRepair fields** | `issue_description` sourced correctly | Missing `estimated_cost` + `received_at` — the picker rows still render blank cost/date |
-| **C4 — updateItem persistence** | `{item}↔{repair}` ownership guard added | Still drops `unit_price`, `notes`, skips `line_total` recompute, no `stock_reserved` adjust on quantity change |
-
-### 🔴 Still to build
-
-7 items — the definitive remaining scope is in the sections below.
+| Item | Notes |
+|---|---|
+| **C6 — ProcessSaleRequest GST reconciliation** | Deferred pending staging repro. Deployment-team-flagged concern (worth verifying before restructuring) — a canary $50-GST-applicable relay sale in staging is the fastest way to confirm whether the drift is real. Mobile has already shipped the per-line `gst_applicable` split at `RelayClient.createSale` so a mixed repair-parts + retail cart passes the current server invariant, but the underlying schema question is unchanged. |
+| **Marketplace-messaging whitelist for repair `contextType`** | Server side is ready (`contextType='repair'`, template `repair_status`). Marketplace-gateway whitelist confirmation still pending on the deployment team; mobile "Notify customer" flow stays behind that toggle. |
+| **Repair labour handling on checkout** | UNRESOLVED. Deployment team confirming the surface (accept as notes line, mint a synth catalog product on-server, or route through a dedicated action). Mobile **provisionally blocks** the hand-off when a repair has any labour lines, with an Alert: *"This repair has labour lines. Handle this checkout at the till desktop until labour surface is confirmed."* Once confirmed, we unblock. |
 
 ### ⏳ In flight from client team
 
-Workshop-workflow amendments (barcode scan/print, technician queue, my-repairs view) are being scoped now. A companion appendix will land in this document when the audit completes — expect additional RPC additions for `repairs.by-barcode`, `repairs.label-pdf-url`, technician assignment, and notify-customer hooks.
+Mobile T8-remediation, workshop-workflow WSA-1 through WSA-5 (scanner branch, print label, notes editor, technician picker, my-queue filter) all in-flight this branch (`feat/mobile-repairs`).
 
 ---
 
-## ENDORSED SEQUENCING
+## T8 — Stock contract remediation shipped
 
-The deployment team proposed the following order; I concur. Rationale below each.
+Mobile now matches the confirmed contract (option b): every reserved part in `repair.items[]` with a `product_id` lands on `sale.create` as a real product-line item using the REAL `product_id` (was previously a synthetic `-ri.id` PK, which would have failed `Product::findOrFail`). Two call sites fixed:
 
-1. **C1 + C6** — nothing rings up cleanly without them.
-   - C1: mobile hits `Api\POSController::processSale` via `sale.create`. Without repair_id handling there, a repair never flips to `COMPLETED` on mobile even after the T8 checkout flow succeeds.
-   - C6: worth **validating first** before restructuring the GST contract (see note in C6 section below). If the relay POS path is already exercised in prod without 422s, my analysis missed something — best to reproduce a repair-checkout sale end-to-end in staging before touching ProcessSaleRequest.
-2. **C2 + C3** — data integrity and cross-site security. Independent of each other; can be parallelised.
-3. **B3 + L2 + L3-completion + B2-customer-alias + B1-tail** — mapping completeness. These are all "S" complexity and can bundle.
-4. **C4-completion + C5 + follow-ups** — feature-completeness and hygiene.
-5. **Workshop-workflow appendix** — after the mobile-team scoping lands.
+- [CartScreen.tsx](../mobile/src/screens/CartScreen.tsx) `handlePickRepair` — line synth uses `id: ri.product_id`.
+- [RepairDetailScreen.tsx](../mobile/src/screens/RepairDetailScreen.tsx) `handleRepairCheckout` Confirm branch — same fix, same wire shape.
+
+Labour lines (`ri.item_type === 'labor'` OR `ri.product_id == null`) trigger the provisional block Alert described above; cart + customer + repair-link stay untouched so the cashier can take the checkout to the till desktop. Both screens have unit-test coverage for the parts-only success path AND the labour-present block path.
+
+---
+
+## ENDORSED SEQUENCING (historical — items marked ✅ are shipped)
+
+Original v2 sequencing preserved for continuity. Post-v3 the only outstanding waves are C6 (deferred pending staging repro) + labour-handling confirmation + marketplace-messaging whitelist.
+
+1. ✅ **C1 + C2 + C3 + C4-tail + C5** — SHIPPED (see PROGRESS SUMMARY).
+2. ✅ **B1 tail + B2 tail + B3 + L2 + L3 tail** — SHIPPED.
+3. ✅ **6 new WSB RPCs** — SHIPPED (`repairs.status-history`, `repairs.add-note`, `repairs.technicians`, `repairs.by-barcode`, `repairs.pending-for-customer`, `repairs.delete`).
+4. 🟨 **C6** — deferred pending staging repro.
+5. 🟨 **Marketplace-messaging whitelist for `contextType=repair`** — pending deployment-team confirmation.
+6. 🟨 **Labour-line handling at checkout** — pending deployment-team confirmation (mobile provisional block in place).
+
+---
+
+## OPEN ITEMS FROM DEPLOYMENT TEAM
+
+Awaiting confirmation from the deployment team before the corresponding mobile surfaces can unblock:
+
+1. **Labour handling on `sale.create`.** Provisional mobile policy: any repair with `item_type === 'labor'` OR `product_id == null` blocks the hand-off with a "till desktop" Alert. Cart / customer / repair-link stay untouched. Once the surface is confirmed (candidates: notes-line, dedicated action, server-side synth catalog product) mobile unblocks in the same release.
+2. **Marketplace-messaging whitelist for repair `contextType`.** Server side confirmed ready (`contextType='repair'`, template `repair_status`). Marketplace gateway whitelist toggle is the last piece before WSA-4 "Notify customer" can leave stub mode.
+3. **C6 GST reconciliation.** Requires a canary $50-GST-applicable relay sale in staging to determine whether the drift is real. Owner: joint 15-minute reproduction session as originally proposed in v2 §C6.
 
 ---
 
 ## STILL TO BUILD
 
-### 🔴 C1. `Api\POSController::processSale` must handle `repair_id` on checkout
+### ✅ C1. `Api\POSController::processSale` handles `repair_id` on checkout — SHIPPED
 
 **Blocks:** T8 mobile repair-at-till checkout correctness. **CRITICAL** — this is the one that stops repairs actually working via mobile even after everything else is wired.
 
@@ -69,7 +91,7 @@ The deployment team proposed the following order; I concur. Rationale below each
 
 ---
 
-### 🔴 C2. Release `StockReservation` rows + decrement `stock_reserved` on repair checkout
+### ✅ C2. Release `StockReservation` rows + decrement `stock_reserved` on repair checkout — SHIPPED
 
 **Blocks:** stock accuracy across the store within days of enabling repairs.
 
@@ -91,7 +113,7 @@ Mirror of the existing `processRepairPayment` block (`Frontend/POSController.php
 
 ---
 
-### 🔴 C3. Multi-location scoping missing across `RepairController`
+### ✅ C3. Multi-location scoping across `RepairController` — SHIPPED
 
 **Blocks:** any multi-location workspace enabling Repairs safely. Cross-site data leak.
 
@@ -111,7 +133,7 @@ Mirror of the existing `processRepairPayment` block (`Frontend/POSController.php
 
 ---
 
-### 🔴 C5. `bulkUpdateStatus` — proper partial-success reporting + safety cap
+### ✅ C5. `bulkUpdateStatus` — proper partial-success reporting + safety cap — SHIPPED
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php:345-387`
 
@@ -124,7 +146,7 @@ Mirror of the existing `processRepairPayment` block (`Frontend/POSController.php
 
 **Why:** Today the loop is `DB::transaction`-wrapped; a mid-loop throw rolls back all writes but `updated_count` retains partial pre-throw values, and the catch at `RepairController.php:377` returns HTTP 500 without the count. Client sees "all failed" for what may be partial success.
 
-**Client dependency:** [RelayClient.bulkUpdateRepairStatus](../shared/src/relay/RelayClient.ts) already tolerates several response shapes and diffs on the client side, but the diff can't reconstruct which specific IDs failed if the server 500s. The `{succeeded, skipped, failed}` shape is the definitive one — client will strip the fallback parsers once server ships this.
+**Client dependency:** [RelayClient.bulkUpdateRepairStatus](../shared/src/relay/RelayClient.ts) already tolerates several response shapes and diffs on the client side, but the diff can't reconstruct which specific IDs failed if the server 500s. The `{updated_count, succeeded: [ids], skipped: [{id, reason}], failed: [{id, reason}]}` shape is the definitive one — client now consumes it via `reconcileBulkStatusResult` which produces a "3 skipped: 2 already completed, 1 invalid transition" style operator toast. Legacy shapes retained for backward compat during rollout; can be retired once every deployment is on the rich shape.
 
 **Complexity:** M.
 
@@ -155,7 +177,7 @@ Also drop the dead validation rules at `:53-54` (`items.*.price`, `items.*.total
 
 ---
 
-### 🟨 Finish B1 — Two remaining action mappings
+### ✅ Finish B1 — Two remaining action mappings — SHIPPED
 
 **File:** `/Users/developersteve/devfiles/Aeris2/config/marketplace_rpc.php`
 
@@ -167,7 +189,7 @@ Add:
 
 ---
 
-### 🟨 Finish B2 — Customer alias in RpcDispatcher
+### ✅ Finish B2 — Customer alias in RpcDispatcher — SHIPPED
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Services/Marketplace/RpcDispatcher.php:199-203`
 
@@ -182,7 +204,7 @@ Add the `customer` alias entry so `repairs.pending-for-customer` and any future 
 
 ---
 
-### 🔴 B3. Add `statusHistory` HTTP route + controller method
+### ✅ B3. `statusHistory` HTTP route + controller method — SHIPPED
 
 **File 1:** `/Users/developersteve/devfiles/Aeris2/routes/api.php` (inside the `repairs` prefix group at line 337-355)
 ```php
@@ -198,7 +220,7 @@ Route::get('/{repair}/status-history', [RepairController::class, 'statusHistory'
 
 ---
 
-### 🔴 L2. Wire `repairs.pending-for-customer` correctly
+### ✅ L2. `repairs.pending-for-customer` wired — SHIPPED
 
 **File:** `/Users/developersteve/devfiles/Aeris2/config/marketplace_rpc.php`
 
@@ -215,7 +237,7 @@ Note: the URL prefix is `/api/v1/pos/accounts/` (existing route at `api.php:321`
 
 ---
 
-### 🟨 Finish L3 — Add missing PendingRepair fields
+### ✅ Finish L3 — PendingRepair fields — SHIPPED
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Frontend/POSController.php:1447-1483`
 
@@ -233,7 +255,7 @@ Note: the URL prefix is `/api/v1/pos/accounts/` (existing route at `api.php:321`
 
 ---
 
-### 🟨 Finish C4 — updateItem field persistence
+### ✅ Finish C4 — updateItem field persistence — SHIPPED
 
 **File:** `/Users/developersteve/devfiles/Aeris2/app/Http/Controllers/Api/RepairController.php:244-293` (the ownership guard the deployment team added is preserved — this is the remaining work)
 
@@ -343,7 +365,7 @@ Deployment-team asks in this section are **NOT blocking the cashier surface** al
 
 Complexity conventions match Section I: **S** = single file / small; **M** = new form request / handler; **L** = new subsystem.
 
-### 🟠 WSB-1. Exact-match repair-by-barcode endpoint + RPC mapping
+### ✅ WSB-1. Exact-match repair-by-barcode endpoint + RPC mapping — SHIPPED
 
 **Blocks:** WSA-4 exact-match scan (WSA-1 works today on LIKE-search fallback, but every scan does an N+1 LIKE across `repair_number` — fine for pilot, not for a busy workshop).
 
@@ -365,7 +387,7 @@ Complexity conventions match Section I: **S** = single file / small; **M** = new
 
 ---
 
-### 🟠 WSB-2. Confirm / expose `repairs.add-note` dispatcher mapping
+### ✅ WSB-2. `repairs.add-note` dispatcher mapping — SHIPPED
 
 **Blocks:** WSA-3 notes textarea on `RepairDetail`.
 
@@ -380,32 +402,23 @@ Complexity conventions match Section I: **S** = single file / small; **M** = new
 
 ---
 
-### 🟠 WSB-3. Technician-list RPC
+### ✅ WSB-3. Technician-list RPC — SHIPPED (at `/api/v1/repairs/technicians`)
 
 **Blocks:** WSA-5 assignment picker.
 
-**File:** proposal — new action `users.list-technicians` (or reuse an existing user-list if one exists — please advise).
+**File:** `/Users/developersteve/devfiles/Aeris2/routes/api.php` — SHIPPED at `GET /api/v1/repairs/technicians` (inside the `repairs` prefix group, `repairs:read` ability + location-scoped, super_admin/admin see all).
 
-**What:** RPC returning users at the caller's `location_id` with role in `['technician', 'workshop_lead']` (or whatever the workshop roles are). Small payload — `[{id, name, avatar_url?}]`.
-
-**Why:** The `assigned_to` field exists on `Repair` and Filament's `RepairsTable` has a technician filter, but no public endpoint exposes the list. Mobile needs it for the assignment picker + "My queue" filter (assigned_to = current user is trivial from `authStore.user.id`, so "My queue" is client-only; **picking OTHER technicians needs this RPC**).
-
-**Complexity:** S (query + resource) — depends on whether a per-location user list already exists elsewhere.
+**Not `/users/list-technicians`** — mobile constant + relay method aligned to the shipped path. Response shape: `[{id, name}]`, defensive shape check on every row so a schema drift doesn't crash the picker; NOT_FOUND downgrades to `[]` so the picker degrades to "self-assign only" until dispatcher wiring rolls out to every deployment.
 
 ---
 
-### 🟡 WSB-4. Confirm messaging surface for repair notifications
+### 🟨 WSB-4. Messaging surface for repair notifications — awaiting marketplace-gateway whitelist
 
 **Blocks:** WSA-4 real "Notify customer" flow (currently a stub Alert on mobile per T7).
 
-**What:** Confirm the shared messaging RPC / endpoint the web `SendMessageDialog` uses accepts:
-- `contextType: 'repair'`
-- `defaultTemplateType: 'repair_status'` (must-have)
-- Optionally `quote_ready` and `parts_arrived` if those templates ship (nice-to-have for v1 — Alert on mobile stays for those until confirmed).
+**Status:** Server side confirmed ready by deployment team — `contextType: 'repair'` + template `repair_status` are live. **Marketplace-gateway whitelist confirmation is the remaining piece** (deployment-team-owned, not on the mobile side). Once the whitelist ships, mobile's Notify-customer surface swaps the stub Alert for the real send flow in the same release.
 
-**Why:** This is the "your device is ready for pickup" text — the single most-sent workshop notification. Web already does it; mobile just needs to know which action name to fire and what payload it expects.
-
-**Complexity:** S (verification only — no code if the surface already exists).
+**Complexity:** S (whitelist toggle).
 
 ---
 
