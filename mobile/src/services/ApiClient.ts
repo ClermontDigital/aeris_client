@@ -391,6 +391,20 @@ export class ApiClient {
   ) => guardRepairsCall(() => this.active.bulkUpdateRepairStatus(...args));
   deleteRepair = (...args: Parameters<RelayClient['deleteRepair']>) =>
     guardRepairsCall(() => this.active.deleteRepair(...args));
+  // WSA workshop-workflow additions — ability-gated + location-scoped on the
+  // server. Reads fall back to null / [] on NOT_FOUND so the mobile UI
+  // degrades gracefully while the dispatcher wiring rolls out.
+  getRepairByBarcode = (
+    ...args: Parameters<RelayClient['getRepairByBarcode']>
+  ) => guardRepairsCall(() => this.active.getRepairByBarcode(...args));
+  listRepairTechnicians = (
+    ...args: Parameters<RelayClient['listRepairTechnicians']>
+  ) => guardRepairsCall(() => this.active.listRepairTechnicians(...args));
+  addRepairNote = (...args: Parameters<RelayClient['addRepairNote']>) =>
+    guardRepairsCall(() => this.active.addRepairNote(...args));
+  sendRepairNotification = (
+    ...args: Parameters<RelayClient['sendRepairNotification']>
+  ) => guardRepairsCall(() => this.active.sendRepairNotification(...args));
 }
 
 // RelayError remains importable from this module for back-compat with

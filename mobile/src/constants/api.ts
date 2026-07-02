@@ -68,6 +68,26 @@ export const REPAIR_STATUS = (id: number | string): string =>
 export const REPAIR_STATUS_HISTORY = (id: number | string): string =>
   `/api/v1/repairs/${encodeURIComponent(String(id))}/status-history`;
 
+// WSA-3 / WSB-2 — notes subresource (POST /api/v1/repairs/{id}/notes).
+// Server appends a status_history row with from_status === to_status.
+export const REPAIR_NOTES = (id: number | string): string =>
+  `/api/v1/repairs/${encodeURIComponent(String(id))}/notes`;
+
+// WSA-4 — manual customer notification. Server dispatches through the
+// ability-gated notification pipeline using the `repair_status` template.
+export const REPAIR_NOTIFY = (id: number | string): string =>
+  `/api/v1/repairs/${encodeURIComponent(String(id))}/notify`;
+
+// WSA-4 / WSB-1 — exact-match repair lookup by human-readable repair_number.
+// Server route lives under the `repairs` group so the location scope + ability
+// gate carry through.
+export const REPAIRS_BY_BARCODE = (repairNumber: number | string): string =>
+  `/api/v1/repairs/by-barcode/${encodeURIComponent(String(repairNumber))}`;
+
+// WSA-5 / WSB-3 — technician list. Server responds with `[{id, name}]`,
+// location-scoped to the caller.
+export const REPAIRS_TECHNICIANS = '/api/v1/repairs/technicians';
+
 // POS-scoped pending-repairs picker; the endpoint applies the sale_id IS NULL
 // guard so it's the correct source for "which open repairs can I check out?".
 export const POS_PENDING_REPAIRS_BY_CUSTOMER = (

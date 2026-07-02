@@ -77,4 +77,29 @@ export const RELAY_ACTIONS = {
   // action is deployment-team-owned; dispatcher entry pending, so
   // RelayClient.getPendingRepairsForCustomer swallows NOT_FOUND and returns [].
   REPAIRS_PENDING_FOR_CUSTOMER: 'repairs.pending-for-customer',
+  // WSA workshop-workflow additions — deployment team confirmed these are
+  // ability-gated + location-scoped on the server. Dispatcher wiring is
+  // rolling out; where the mapping is still pending the RelayClient
+  // read-methods fall back to `null` / `[]` so the mobile UI degrades
+  // gracefully (WSA-1 scanner falls back to listRepairs({search}) when
+  // by-barcode isn't routed yet, technician picker hides when the list
+  // returns []).
+  REPAIRS_BY_BARCODE: 'repairs.by-barcode',
+  REPAIRS_TECHNICIANS: 'repairs.technicians',
+  // Notes are a distinct action from status-change: server appends a
+  // status_history row where from_status === to_status (see the web
+  // Show.tsx timeline model), so `addRepairNote` returns a full
+  // RepairStatusHistory entry rather than a RepairDetail refresh.
+  // Client validates note length <= 2000 before wiring so a paste of a
+  // giant blob short-circuits before it hits the network.
+  REPAIRS_ADD_NOTE: 'repairs.add-note',
+  // WSA-4 — manual customer notification for a repair. Server routes
+  // this through the existing multi-channel notification stack with the
+  // `repair_status` template, ability-gated on `send-manual-notification`
+  // and location-scoped. Marketplace dispatcher whitelist confirmation is
+  // owned by the deployment team; while pending the client will surface
+  // the server error (401/403/NOT_FOUND) directly through the Notify
+  // customer flow rather than swallowing it — the operator needs to know
+  // the notification didn't go out.
+  REPAIRS_NOTIFY: 'repairs.notify',
 } as const;

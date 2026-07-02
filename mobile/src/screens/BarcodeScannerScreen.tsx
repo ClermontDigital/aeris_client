@@ -1,5 +1,6 @@
 import React, {useState, useCallback, useEffect, useMemo, useRef} from 'react';
 import {
+  Alert,
   View,
   Text,
   TouchableOpacity,
@@ -32,9 +33,18 @@ import {useCartStore} from '../stores/cartStore';
 import {useScannerVisibilityStore} from '../stores/scannerVisibilityStore';
 import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
-import type {Product, ProductDetail} from '../types/api.types';
+import type {Product, ProductDetail, RepairDetail} from '../types/api.types';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
+
+// WSA-1 repair-label pattern. Servers mint labels as
+// REP-YYYYMMDD-NNNNNN (18 chars incl. hyphens); the mobile scanner
+// short-circuits into RepairDetail rather than the product lookup path
+// when a scan matches this shape. Unconditional — a cashier who scans a
+// repair tag mid-sale is routed to the "Take payment for repair" flow
+// (repair mode does the RepairDetail push; QuickSale mode triggers the
+// same Confirm-then-hand-off path RepairDetail's Checkout button uses).
+const REPAIR_BARCODE_RE = /^REP-\d{8}-\d{6}$/;
 
 const formatCents = (cents: number): string => '$' + (cents / 100).toFixed(2);
 
@@ -44,7 +54,15 @@ const formatCents = (cents: number): string => '$' + (cents / 100).toFixed(2);
 // screen's params as `scannedBarcode` and the scanner pops — used by
 // ProductEdit's "Scan" affordance, where the goal is to capture the digits,
 // not look up an existing product.
-type ScanMode = 'cart' | 'detail' | 'capture';
+// In 'repair' mode (WSA-1), the scanner enforces the REP-YYYYMMDD-NNNNNN
+// pattern and routes to RepairDetail via navigation.replace on hit. Non-
+// matching scans surface a 'Not a repair barcode' notFound state (auto
+// re-arms after 1.5s so the operator can try again without tapping through).
+// Note: repair-shape barcodes are ALSO handled unconditionally at the top
+// of lookupBarcode regardless of mode, so a repair label scanned during a
+// 'cart' sale falls into the repair-hand-off path rather than the
+// "no product matched" dead-end.
+type ScanMode = 'cart' | 'detail' | 'capture' | 'repair';
 
 // Scanner is registered in both QuickSaleStack and ItemsStack. The 'detail'
 // mode replace() target ProductDetail only exists in ItemsStackParamList,
@@ -61,6 +79,8 @@ const BarcodeScannerScreen: React.FC = () => {
       ? 'detail'
       : route.params?.mode === 'capture'
       ? 'capture'
+      : route.params?.mode === 'repair'
+      ? 'repair'
       : 'cart';
   const navigation = useNavigation<Nav>();
   const {hasPermission, requestPermission} = useCameraPermission();
@@ -170,6 +190,12 @@ const BarcodeScannerScreen: React.FC = () => {
   >(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // WSA-1: differentiates the two repair-mode miss messages ('Not a repair
+  // barcode' vs 'Not a repair we can find'). null falls back to the legacy
+  // "No product matched" copy used by cart / detail modes.
+  const [notFoundKind, setNotFoundKind] = useState<
+    'repairPattern' | 'repairMiss' | null
+  >(null);
   const [scanLock, setScanLock] = useState(false);
   // Set true the moment the user taps Cancel (or otherwise dismisses the
   // scanner) so we can paint an opaque overlay over the camera surface
@@ -193,6 +219,234 @@ const BarcodeScannerScreen: React.FC = () => {
       if (scanLockRef.current || isLookingUp || scanLock) return;
       scanLockRef.current = true;
       setScanLock(true);
+
+      // Cross-stack repair navigation helpers. These stay local to
+      // lookupBarcode so we don't churn the module surface for a WSA-1
+      // side path. See RepairsStack (RepairScanner) + QuickSaleStack
+      // (Scanner) for where each mode is registered.
+
+      // Route to RepairDetail via getParent()?.navigate('Repairs', ...).
+      // Falls back to a local navigate('RepairDetail', ...) so the
+      // RepairsStack-hosted scanner (mode='repair') stays inside its own
+      // stack, and the QuickSale-hosted scanner (mode='cart') hops
+      // sideways into the Repairs tab. Uses defensive loose typing
+      // because the Nav generic is bound to ItemsStackParamList and
+      // RepairDetail is only reachable from RepairsStackParamList.
+      const navigateToRepairDetail = (repairId: number) => {
+        const loose = navigation as unknown as {
+          replace?: (screen: string, params: object) => void;
+          navigate: (screen: string, params?: object) => void;
+          getState?: () => {routes: Array<{name: string}>};
+          getParent?: () => unknown;
+        };
+        // If the hosting stack already has RepairDetail in its param
+        // list (RepairsStack), stay local + replace so back-swipe from
+        // the detail doesn't return to a stale camera view.
+        const routes = loose.getState?.()?.routes ?? [];
+        const stackHasRepairDetail = routes.some(
+          r => r.name === 'RepairDetail' || r.name === 'RepairsList',
+        );
+        if (stackHasRepairDetail && typeof loose.replace === 'function') {
+          loose.replace('RepairDetail', {id: repairId});
+          return;
+        }
+        // Otherwise cross-tab hand-off via the parent tab navigator.
+        const parent = loose.getParent?.() as
+          | {navigate: (tab: string, params: object) => void}
+          | undefined;
+        if (parent) {
+          parent.navigate('Repairs', {
+            initial: false,
+            screen: 'RepairDetail',
+            params: {id: repairId},
+          });
+          return;
+        }
+        // Last-resort: goBack so we don't strand the user on the camera.
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            'Scanner: could not reach RepairDetail from the current stack.',
+          );
+        }
+        navigation.goBack();
+      };
+
+      // WSA-1 QuickSale confirm-then-hand-off. Mirrors
+      // RepairDetailScreen.handleRepairCheckout: confirm alert with the
+      // "Parts reserved at intake" copy, block-on-labour, cart clear +
+      // real-product-id materialisation, then cross-tab navigate to
+      // the Cart tab. The confirm alert MUST reuse the exact copy so a
+      // cashier sees the same wording whether they came from the
+      // detail-screen Checkout button or from a mid-sale scan.
+      const handleRepairScanFromCart = (detail: RepairDetail) => {
+        haptics.success();
+        Alert.alert(
+          'Take payment for repair',
+          'Parts reserved at intake. Ready to take payment?',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                // Re-arm so the operator can scan again after cancelling.
+                setScanLock(false);
+                scanLockRef.current = false;
+              },
+            },
+            {
+              text: 'Confirm',
+              onPress: async () => {
+                try {
+                  // Belt-and-braces refetch — status may have flipped
+                  // between the scanner's initial getRepairByBarcode
+                  // and the operator's Confirm tap. Mirrors the pattern
+                  // on RepairDetailScreen.handleRepairCheckout.
+                  const fresh = await ApiClient.getRepairDetail(detail.id);
+                  if (!fresh || fresh.status !== 'ready') {
+                    haptics.error();
+                    Alert.alert(
+                      'Repair no longer ready for checkout.',
+                      'Its status has changed since you scanned this label.',
+                    );
+                    return;
+                  }
+                  const hasLabour = fresh.items.some(
+                    ri =>
+                      ri.item_type === 'labor' || ri.product_id == null,
+                  );
+                  if (hasLabour) {
+                    Alert.alert(
+                      'Repair labour handling',
+                      'This repair has labour lines. Handle this checkout at the till desktop until labour surface is confirmed.',
+                    );
+                    return;
+                  }
+                  const cart = useCartStore.getState();
+                  cart.clear();
+                  if (fresh.customer) {
+                    cart.setCustomer(fresh.customer.id, fresh.customer.name);
+                  }
+                  fresh.items.forEach(ri => {
+                    if (ri.item_type === 'labor' || ri.product_id == null)
+                      return;
+                    const synth: Product = {
+                      id: ri.product_id,
+                      name: ri.item_name,
+                      sku: ri.item_sku ?? '',
+                      barcode: null,
+                      price_cents: Math.round(ri.unit_price * 100),
+                      tax_rate: 0,
+                      stock_on_hand: 0,
+                      category_id: null,
+                      category_name: null,
+                      image_url: null,
+                      is_active: true,
+                    };
+                    cart.addItem(synth, ri.quantity);
+                  });
+                  cart.setRepairId(fresh.id);
+                  cart.setRepairNumber(fresh.repair_number);
+                  // Hand off to the Cart screen inside QuickSale. The
+                  // scanner is a QuickSale-stack sibling, so a local
+                  // navigate is sufficient; the parent-tab fallback
+                  // covers the (unlikely) case where the caller
+                  // routed us from outside QuickSale.
+                  const loose = navigation as unknown as {
+                    navigate: (screen: string, params?: object) => void;
+                    getParent?: () => unknown;
+                    getState?: () => {routes: Array<{name: string}>};
+                  };
+                  const routes = loose.getState?.()?.routes ?? [];
+                  const stackHasCart = routes.some(
+                    r => r.name === 'Cart' || r.name === 'ProductGrid',
+                  );
+                  if (stackHasCart) {
+                    loose.navigate('Cart');
+                    return;
+                  }
+                  const parent = loose.getParent?.() as
+                    | {navigate: (tab: string, params: object) => void}
+                    | undefined;
+                  if (parent) {
+                    parent.navigate('QuickSale', {
+                      initial: false,
+                      screen: 'Cart',
+                    });
+                  }
+                } catch {
+                  haptics.error();
+                  Alert.alert(
+                    'Could not open checkout',
+                    'Please check your connection and try again.',
+                  );
+                }
+              },
+            },
+          ],
+        );
+      };
+
+      // WSA-1: repair-label short-circuit. The REP-YYYYMMDD-NNNNNN tag is
+      // an unambiguous 18-char pattern; routing it into the product
+      // lookup path would only ever surface "no product matched", so we
+      // intercept it here (above the capture / cache / API branches).
+      //
+      // Behaviour by mode:
+      //   * 'repair' — enforce the pattern; non-match becomes a 'Not a
+      //     repair barcode' notFound state. Hit calls getRepairByBarcode;
+      //     match navigation.replace('RepairDetail', {id}), miss becomes
+      //     a 'Not a repair we can find' notFound state.
+      //   * All other modes — pattern-match only; a REP-shaped scan does
+      //     the RepairDetail hand-off so a cashier scanning a repair tag
+      //     mid-sale is routed to the confirm-then-cart flow. Non-repair
+      //     scans continue into the existing product-lookup path.
+      const isRepairShape = REPAIR_BARCODE_RE.test(barcode);
+      if (mode === 'repair' && !isRepairShape) {
+        setIsLookingUp(false);
+        setNotFound(true);
+        setNotFoundKind('repairPattern');
+        haptics.error();
+        return;
+      }
+      if (isRepairShape) {
+        setIsLookingUp(true);
+        try {
+          const detail: RepairDetail | null =
+            await ApiClient.getRepairByBarcode(barcode);
+          if (detail == null) {
+            setIsLookingUp(false);
+            setNotFound(true);
+            setNotFoundKind('repairMiss');
+            haptics.error();
+            return;
+          }
+          setIsLookingUp(false);
+          if (mode === 'cart') {
+            // QuickSale flow — pop back to the caller with a confirm
+            // dialog and (on Confirm) hand-off to the Cart tab. See
+            // handleRepairScanFromCart for the details.
+            handleRepairScanFromCart(detail);
+            return;
+          }
+          // 'repair' + 'detail' + 'capture': push RepairDetail via
+          // replace so the Scanner leaves the back stack cleanly.
+          // 'capture' should never be handed a REP-* string in practice
+          // (ProductEdit's barcode field is a product barcode), but if
+          // it happens treat it like 'repair' rather than silently
+          // merging a repair tag onto a product form.
+          haptics.success();
+          navigateToRepairDetail(detail.id);
+          return;
+        } catch {
+          setIsLookingUp(false);
+          setNotFound(true);
+          setNotFoundKind('repairMiss');
+          haptics.error();
+          return;
+        }
+      }
+
       // Capture mode: don't bother looking up the product. We're just
       // sourcing a string for a form field, so hand it straight back to
       // the previous screen with the value merged onto its params. The
@@ -244,6 +498,7 @@ const BarcodeScannerScreen: React.FC = () => {
       }
       setIsLookingUp(true);
       setNotFound(false);
+      setNotFoundKind(null);
       setScannedProduct(null);
 
       const refreshStock = async (productId: number) => {
@@ -314,6 +569,7 @@ const BarcodeScannerScreen: React.FC = () => {
     if (!notFound) return;
     const t = setTimeout(() => {
       setNotFound(false);
+      setNotFoundKind(null);
       setScanLock(false);
       scanLockRef.current = false;
     }, 1500);
@@ -349,6 +605,7 @@ const BarcodeScannerScreen: React.FC = () => {
   const handleDismiss = useCallback(() => {
     setScannedProduct(null);
     setNotFound(false);
+    setNotFoundKind(null);
     setScanLock(false);
     scanLockRef.current = false;
   }, []);
@@ -609,7 +866,11 @@ const BarcodeScannerScreen: React.FC = () => {
           <Text style={styles.cancelButtonText}>Cancel</Text>
         </TouchableOpacity>
         <Text style={styles.topTitle}>
-          {mode === 'capture' ? 'Capture Barcode' : 'Scan Barcode'}
+          {mode === 'capture'
+            ? 'Capture Barcode'
+            : mode === 'repair'
+            ? 'Scan Repair'
+            : 'Scan Barcode'}
         </Text>
         <View style={styles.topOverlayRight}>
           {hasMacroLens ? (
@@ -696,10 +957,20 @@ const BarcodeScannerScreen: React.FC = () => {
         ) : null}
 
         {/* Not found — auto re-arms after a short delay; the button is a
-            shortcut for impatient users. */}
+            shortcut for impatient users. WSA-1 differentiates the two
+            repair-mode miss states so the operator knows whether the
+            scan didn't match the pattern at all (wrong label) vs
+            matched but the server returned nothing (deleted / other
+            location / permission drift). */}
         {notFound && !isLookingUp ? (
           <View style={styles.resultCard}>
-            <Text style={styles.notFoundText}>No product matched</Text>
+            <Text style={styles.notFoundText}>
+              {notFoundKind === 'repairPattern'
+                ? 'Not a repair barcode'
+                : notFoundKind === 'repairMiss'
+                ? 'Not a repair we can find'
+                : 'No product matched'}
+            </Text>
             <TouchableOpacity
               style={styles.dismissButton}
               onPress={handleDismiss}>

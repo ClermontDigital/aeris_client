@@ -76,6 +76,38 @@ const RELAY_BUFFER_MS = 3_000; // client waits this long beyond server-side time
 // the failure mode the marketplace team has hit before. Bail loudly so the
 // caller's screen surfaces a banner instead of silently "succeeding" with a
 // garbage normalized object.
+// Extracts numeric ids (+ optional reason strings) from either a bare id list
+// or a rich `[{id, reason}]` shape. Populates `reasons` in-place for the
+// caller. Returns the flat id list so both shapes converge to a single
+// downstream consumer. Reasons that come back as anything other than a
+// non-empty string are dropped rather than serialised as e.g. "undefined".
+function extractRichIdList(
+  raw: unknown,
+  reasons: Record<number, string>,
+): {ids: number[]} {
+  if (!Array.isArray(raw)) return {ids: []};
+  const ids: number[] = [];
+  for (const entry of raw) {
+    if (entry == null) continue;
+    if (typeof entry === 'number' || typeof entry === 'string') {
+      const id = Number(entry);
+      if (Number.isFinite(id)) ids.push(id);
+      continue;
+    }
+    if (typeof entry === 'object') {
+      const e = entry as Record<string, unknown>;
+      const rawId = e.id;
+      const id = typeof rawId === 'number' ? rawId : Number(rawId);
+      if (!Number.isFinite(id)) continue;
+      ids.push(id);
+      if (typeof e.reason === 'string' && e.reason.length > 0) {
+        reasons[id] = e.reason;
+      }
+    }
+  }
+  return {ids};
+}
+
 function assertWritePersisted(raw: unknown, action: string): void {
   if (raw === null || raw === undefined) {
     throw new RelayError(
@@ -1074,6 +1106,118 @@ export class RelayClient {
     });
   }
 
+  // WSA-4 / WSB-1 — exact-match lookup by human-readable repair_number.
+  // Server route is GET /api/v1/repairs/by-barcode/{repairNumber}; dispatcher
+  // maps `repair.by-barcode` with the `{repairNumber}` placeholder alongside
+  // the older `{code}` alias other read paths use, so we send both keys and
+  // the dispatcher-side rename will Just Work. isNotFound → null so the
+  // WSA-1 scanner can fall back to listRepairs({search}) client-side while
+  // the mapping is rolling out (or when a hand-typed number doesn't match).
+  async getRepairByBarcode(repairNumber: string): Promise<RepairDetail | null> {
+    return withReadRetry(async () => {
+      try {
+        const raw = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.REPAIRS_BY_BARCODE,
+          {repair_number: repairNumber, code: repairNumber},
+        );
+        return raw == null ? null : normalizeRepairDetail(unwrapResource(raw));
+      } catch (e) {
+        if (isNotFound(e, 'relay')) return null;
+        throw e;
+      }
+    });
+  }
+
+  // WSA-5 / WSB-3 — technician picker list, location-scoped server-side.
+  // Server returns `[{id, name}]` — defensive shape-check per row so a
+  // schema drift doesn't crash the picker. NOT_FOUND is treated as "action
+  // not routed yet" and downgraded to [] so the assign picker degrades to
+  // "self-assign only" until the dispatcher mapping ships.
+  async listRepairTechnicians(): Promise<Array<{id: number; name: string}>> {
+    return withReadRetry(async () => {
+      try {
+        const result = await this.relayRpc<unknown>(
+          RELAY_ACTIONS.REPAIRS_TECHNICIANS,
+          {},
+        );
+        const list = unwrapList<unknown>(result);
+        const out: Array<{id: number; name: string}> = [];
+        for (const row of list) {
+          if (!row || typeof row !== 'object') continue;
+          const r = row as Record<string, unknown>;
+          const rawId = r.id;
+          const id = typeof rawId === 'number' ? rawId : Number(rawId);
+          if (!Number.isFinite(id)) continue;
+          const name = typeof r.name === 'string' && r.name !== ''
+            ? r.name
+            : 'Unknown user';
+          out.push({id, name});
+        }
+        return out;
+      } catch (e) {
+        if (isNotFound(e, 'relay')) return [];
+        throw e;
+      }
+    });
+  }
+
+  // WSA-3 / WSB-2 — free-text note appended to the repair. Server appends a
+  // status_history row with from_status === to_status (no status transition)
+  // and returns the row so the client can append it to the timeline card
+  // without a follow-up detail fetch. Client-side validates length <= 2000
+  // BEFORE sending so a giant paste short-circuits instead of round-tripping
+  // just to 422 (mirrors the server-side max:2000 the deployment team
+  // confirmed).
+  async addRepairNote(
+    repairId: number,
+    note: string,
+  ): Promise<RepairStatusHistory> {
+    if (typeof note !== 'string' || note.length === 0) {
+      throw new RelayError(
+        'Note cannot be empty.',
+        'VALIDATION',
+        null,
+        RELAY_ACTIONS.REPAIRS_ADD_NOTE,
+      );
+    }
+    if (note.length > 2000) {
+      throw new RelayError(
+        'Note is too long (max 2000 characters).',
+        'VALIDATION',
+        null,
+        RELAY_ACTIONS.REPAIRS_ADD_NOTE,
+      );
+    }
+    const raw = await this.relayRpc<unknown>(RELAY_ACTIONS.REPAIRS_ADD_NOTE, {
+      repair_id: repairId,
+      id: repairId,
+      note,
+    });
+    assertWritePersisted(raw, RELAY_ACTIONS.REPAIRS_ADD_NOTE);
+    return normalizeRepairStatusHistory(unwrapResource(raw));
+  }
+
+  // WSA-4 — manual customer notification. Server accepts the current release's
+  // ONLY template value ('repair_status') and dispatches through the ability-
+  // gated multi-channel notification pipeline (SMS/email per tenant config).
+  // Marketplace dispatcher whitelist confirmation for `repairs.notify` is
+  // owned by the deployment team; while pending this method will surface
+  // NOT_FOUND directly to the caller so the operator sees "not available"
+  // rather than a silent no-op that pretends the customer was messaged.
+  // Send BOTH `repair_id` and `id` aliases so the dispatcher placeholder
+  // rename lights up regardless of which key it settles on (mirrors the
+  // pattern used by every other {id}-parameterised repair action).
+  async sendRepairNotification(
+    repairId: number,
+    options: {template: 'repair_status'},
+  ): Promise<void> {
+    await this.relayRpc<unknown>(RELAY_ACTIONS.REPAIRS_NOTIFY, {
+      repair_id: repairId,
+      id: repairId,
+      template: options.template,
+    });
+  }
+
   async getRepairStatusHistory(
     repairId: number,
   ): Promise<RepairStatusHistory[]> {
@@ -1294,23 +1438,36 @@ export class RelayClient {
 
   // PATCH /api/v1/repairs/bulk/status. Server-side contract has been through a
   // few iterations, so we accept ANY of:
-  //   1. `{succeeded: [ids], skipped: [ids]}` — canonical.
-  //   2. `{updated_ids: [...], skipped_ids: [...]}` — older alias.
-  //   3. Array of repair objects — the server just echoes the accepted rows,
+  //   1. `{updated_count, succeeded: [ids], skipped: [{id, reason}],
+  //      failed: [{id, reason}]}` — RICH canonical shape confirmed by the
+  //      deployment team (DR-M3). Skipped + failed rows carry a reason string
+  //      so the UI can surface "already completed" / "location denied" /
+  //      "invalid transition" etc. The reasons are preserved on the return
+  //      value via the `reasons` map for the reconcile helper to consume.
+  //   2. `{succeeded: [ids], skipped: [ids]}` — earlier canonical (bare id
+  //      arrays on both sides). Still accepted.
+  //   3. `{updated_ids: [...], skipped_ids: [...]}` — older alias.
+  //   4. Array of repair objects — the server just echoes the accepted rows,
   //      and the client must diff against `requested`.
-  //   4. `{updated_count: N, message?: string}` — count-only shape observed in
-  //      DR-M3. Data-loss branch: if N === requested.length we can mark all
-  //      requested ids as succeeded; if N < requested.length we can't tell
-  //      WHICH succeeded so report all as skipped rather than lie to the UI.
-  //      Deployment-team follow-up: the server SHOULD be updated to return
-  //      explicit succeeded/skipped ID lists — this branch is transitional.
+  //   5. `{updated_count: N, message?: string}` — count-only shape observed in
+  //      DR-M3 early rollout. Data-loss branch: if N === requested.length we
+  //      can mark all requested ids as succeeded; if N < requested.length we
+  //      can't tell WHICH succeeded so report all as skipped rather than lie.
+  // The endpoint is server-side capped at 50 ids; we do NOT re-validate the
+  // cap on the client so a caller passing 51 sees the server's authoritative
+  // 422 rather than a client-side false-reject.
   // Falling back to a client-side diff future-proofs the UI: whichever shape
   // the server settles on, this method returns the same summary.
   async bulkUpdateRepairStatus(
     repairIds: number[],
     status: RepairStatus,
     notes?: string,
-  ): Promise<{succeeded: number[]; skipped: number[]}> {
+  ): Promise<{
+    succeeded: number[];
+    skipped: number[];
+    failed?: number[];
+    reasons?: Record<number, string>;
+  }> {
     const raw = await this.relayRpc<unknown>(RELAY_ACTIONS.REPAIRS_BULK_STATUS, {
       repair_ids: repairIds,
       status,
@@ -1335,31 +1492,48 @@ export class RelayClient {
     } else {
       inner = unwrapResource<unknown>(raw);
     }
-    // Shape 1 / 2 — try both canonical + alias key names.
+    // Shape 1 / 2 / 3 — try both canonical + alias key names. Handles both
+    // the RICH shape (skipped/failed are [{id, reason}]) and the bare-id
+    // list shape.
     if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
       const r = inner as Record<string, unknown>;
       const succeededRaw = (r.succeeded ?? r.updated_ids) as unknown;
       const skippedRaw = (r.skipped ?? r.skipped_ids) as unknown;
+      const failedRaw = r.failed as unknown;
       if (Array.isArray(succeededRaw)) {
         const succeeded = succeededRaw
           .map(v => (typeof v === 'number' ? v : Number(v)))
           .filter(v => Number.isFinite(v));
-        let skipped = Array.isArray(skippedRaw)
-          ? skippedRaw
-              .map(v => (typeof v === 'number' ? v : Number(v)))
-              .filter(v => Number.isFinite(v))
-          : // Server only reported succeeded — diff against requested.
-            repairIds.filter(id => !succeeded.includes(id));
-        // Guard against the "server acknowledged with {succeeded: [], skipped: []}"
-        // shape. Both arrays empty means the server reported nothing usable —
-        // return every requested id as skipped rather than lying to the UI.
-        if (succeeded.length === 0 && skipped.length === 0 && repairIds.length > 0) {
+        const reasons: Record<number, string> = {};
+        const {ids: skippedIds} = extractRichIdList(skippedRaw, reasons);
+        const {ids: failedIds} = extractRichIdList(failedRaw, reasons);
+        let skipped = skippedIds;
+        // Server only reported succeeded — diff against requested (older
+        // shape 2 where `skipped_ids` was absent). Do NOT do this when
+        // failedIds is populated — those are distinct from "no info at all".
+        if (!Array.isArray(skippedRaw) && !Array.isArray(failedRaw)) {
+          skipped = repairIds.filter(id => !succeeded.includes(id));
+        }
+        // Guard against the "server acknowledged with everything empty"
+        // shape. Nothing usable came back — return every requested id as
+        // skipped rather than lying to the UI.
+        if (
+          succeeded.length === 0 &&
+          skipped.length === 0 &&
+          failedIds.length === 0 &&
+          repairIds.length > 0
+        ) {
           skipped = [...repairIds];
         }
-        return {succeeded, skipped};
+        return {
+          succeeded,
+          skipped,
+          ...(failedIds.length > 0 ? {failed: failedIds} : {}),
+          ...(Object.keys(reasons).length > 0 ? {reasons} : {}),
+        };
       }
     }
-    // Shape 3 — array of repair objects. Diff against requested.
+    // Shape 4 — array of repair objects. Diff against requested.
     if (Array.isArray(inner)) {
       const succeeded: number[] = [];
       for (const row of inner) {
@@ -1371,7 +1545,7 @@ export class RelayClient {
       const skipped = repairIds.filter(id => !succeeded.includes(id));
       return {succeeded, skipped};
     }
-    // Shape 4 — `{updated_count: N}` observed in DR-M3. Data-loss branch:
+    // Shape 5 — `{updated_count: N}` observed in DR-M3. Data-loss branch:
     // if N === requested.length we can attribute success to all requested
     // ids; otherwise we can't tell WHICH succeeded so mark all as skipped.
     // Deployment-team follow-up: return succeeded/skipped ID lists so we

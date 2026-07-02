@@ -32,9 +32,19 @@ export type BulkStatusReconciliation = {
   kind: 'success' | 'partial' | 'error';
 };
 
+// Aligned with the rich server shape confirmed by the deployment team
+// (DR-M3): `succeeded` is a bare id list; `skipped` + `failed` come back as
+// `[{id, reason}]` on the wire and are flattened by RelayClient /
+// DirectClient into id-only arrays plus a `reasons` map. Reasons are
+// preserved so this helper can name them in the toast copy — e.g. "3 skipped:
+// 2 already completed, 1 invalid transition." Legacy shapes still produce a
+// `succeeded`/`skipped` pair without `failed` or `reasons`; both are
+// optional so callers on the old contract keep compiling.
 export type BulkStatusResult = {
   succeeded: number[];
   skipped: number[];
+  failed?: number[];
+  reasons?: Record<number, string>;
 };
 
 // Reconcile a bulk-status server response against the requested id list and
@@ -42,8 +52,10 @@ export type BulkStatusResult = {
 //
 // Rules (spec-aligned):
 //   - requested.length === succeeded.length -> full success
-//   - succeeded.length > 0 AND skipped.length > 0 -> partial success
-//   - succeeded.length === 0 -> error (nothing changed)
+//   - succeeded.length > 0 AND (skipped.length > 0 OR failed.length > 0) ->
+//     partial success. Reasons (when present) are surfaced in the toast copy.
+//   - succeeded.length === 0 -> error (nothing changed). Reasons are named
+//     in the toast so the operator knows WHY.
 //   - requested.length === 0 (edge) -> error, treated as "nothing to do"
 export function reconcileBulkStatusResult(
   requested: number[],
@@ -52,6 +64,8 @@ export function reconcileBulkStatusResult(
   const requestedCount = requested.length;
   const succeededCount = result.succeeded.length;
   const skippedCount = result.skipped.length;
+  const failedCount = (result.failed ?? []).length;
+  const nonSuccessCount = skippedCount + failedCount;
 
   // Edge case: nothing was requested. Not really an error the user caused,
   // but there is no positive outcome to announce - treat as error so a
@@ -72,21 +86,54 @@ export function reconcileBulkStatusResult(
     };
   }
 
-  // Partial success - some updated, some skipped.
-  if (succeededCount > 0 && skippedCount > 0) {
+  // Partial success - some updated, some not.
+  if (succeededCount > 0 && nonSuccessCount > 0) {
+    const suffix = summariseReasons(result);
+    // Combined skipped + failed count reads clearer to the operator than
+    // splitting them into two figures.
     return {
-      message: `${succeededCount} of ${requestedCount} repairs updated, ${skippedCount} skipped.`,
+      message:
+        `${succeededCount} of ${requestedCount} repairs updated, ` +
+        `${nonSuccessCount} skipped${suffix}.`,
       kind: 'partial',
     };
   }
 
-  // Nothing updated. Either all skipped or the server acked with an empty
-  // succeeded list. Both read the same to the operator - the batch failed
-  // to move any repairs into the target status.
+  // Nothing updated. Either all skipped/failed or the server acked with an
+  // empty succeeded list. Both read the same to the operator - the batch
+  // failed to move any repairs into the target status.
+  const suffix = summariseReasons(result);
   return {
-    message: 'No repairs were updated.',
+    message: suffix
+      ? `No repairs were updated${suffix}.`
+      : 'No repairs were updated.',
     kind: 'error',
   };
+}
+
+// Roll the per-id reasons up into a short "N reason-a, M reason-b" suffix.
+// Returns "" when reasons aren't populated so the caller can plain-concat.
+// Reason strings are truncated (max 3 distinct reasons named; the rest are
+// bundled as "other") so a giant reason set doesn't blow up the toast.
+function summariseReasons(result: BulkStatusResult): string {
+  const reasons = result.reasons;
+  if (!reasons || Object.keys(reasons).length === 0) return '';
+  const counts = new Map<string, number>();
+  for (const id of [...result.skipped, ...(result.failed ?? [])]) {
+    const reason = reasons[id];
+    if (!reason) continue;
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  if (counts.size === 0) return '';
+  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  const named = entries.slice(0, 3).map(([reason, count]) => `${count} ${reason}`);
+  if (entries.length > 3) {
+    const otherCount = entries
+      .slice(3)
+      .reduce((sum, [, count]) => sum + count, 0);
+    named.push(`${otherCount} other`);
+  }
+  return ` (${named.join(', ')})`;
 }
 
 // ---------------------------------------------------------------------------
