@@ -1,13 +1,14 @@
 // T10 - Bulk-status reconciliation helper.
 //
 // PURPOSE
-// The server-side bulk-status endpoint (`/api/v1/repairs/bulk-status`) can
-// silently skip repairs that are non-transitionable (already `completed`,
+// The server-side bulk-status endpoint (PATCH /api/v1/repairs/bulk/status)
+// can silently skip repairs that are non-transitionable (already `completed`,
 // `cancelled`, or otherwise ineligible) and returns a `{succeeded, skipped}`
 // summary. RelayClient.bulkUpdateRepairStatus + DirectClient.bulkUpdateRepairStatus
-// already reconcile the three server response shapes into a canonical summary
-// (see shared/src/relay/RelayClient.ts lines 1303-1371); this helper takes that
-// canonical summary and produces the human-readable toast/banner message.
+// already reconcile four server response shapes into a canonical summary
+// (see shared/src/relay/RelayClient.ts bulkUpdateRepairStatus); this helper
+// takes that canonical summary and produces the human-readable toast/banner
+// message.
 //
 // FUTURE CONSUMER
 // There is currently NO screen calling bulkUpdateRepairStatus - the intended

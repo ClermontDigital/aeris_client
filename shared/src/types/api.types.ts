@@ -665,11 +665,22 @@ export interface RepairDetail extends Repair {
   } | null;
 }
 
-// StoreRepairRequest mirror. customer_id + issue_description required; the
-// rest optional. Costs travel as dollars (numeric) to match the wire.
+// StoreRepairRequest mirror. customer_id + issue_description + location_id
+// required; the rest optional. Costs travel as dollars (numeric) to match
+// the wire.
+//
+// location_id is REQUIRED because the Aeris2 StoreRepairRequest declares
+// `location_id => required|exists:locations,id`. Prior to H1 the client
+// omitted this field and the server returned 422 on every Direct-mode
+// create-repair. The client MUST source location_id from
+// `authStore.user.location_id` (the cashier's assigned deployment site);
+// there is no user-selectable location picker at the repair-edit surface.
+// A user whose account has no location_id assigned CANNOT create a repair
+// and must contact their administrator.
 export interface RepairCreateInput {
   customer_id: number;
   issue_description: string;
+  location_id: number;
   device_type?: string | null;
   brand?: string | null;
   model?: string | null;
@@ -680,7 +691,6 @@ export interface RepairCreateInput {
   estimated_cost?: number | null;
   estimated_completion?: string | null;
   assigned_to?: number | null;
-  location_id?: number | null;
 }
 
 // UpdateRepairRequest is a full-partial. customer_id is intentionally read-
