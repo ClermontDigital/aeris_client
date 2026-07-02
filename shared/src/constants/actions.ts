@@ -50,4 +50,18 @@ export const RELAY_ACTIONS = {
   // deployment has no `dr` relay_service_config (deployment-404 / NOT_FOUND
   // envelope) — clients treat ANY non-2xx as a silent no-op.
   DR_PRESENCE: 'dr.presence',
+  // Repairs — deployment team wired the 9 actions on this branch (marketplace
+  // gateway dispatcher entries pending). Workspace-level flag
+  // `workspace.features.repairs_enabled` gates the whole surface client-side;
+  // when the gateway hasn't shipped the dispatcher mapping yet these all come
+  // back as NOT_FOUND envelopes, so RelayClient tolerates the miss.
+  REPAIRS_LIST: 'repairs.list',
+  REPAIRS_DETAIL: 'repairs.detail',
+  REPAIRS_CREATE: 'repairs.create',
+  REPAIRS_UPDATE: 'repairs.update',
+  REPAIRS_UPDATE_STATUS: 'repairs.update-status',
+  REPAIRS_ADD_ITEM: 'repairs.add-item',
+  REPAIRS_UPDATE_ITEM: 'repairs.update-item',
+  REPAIRS_REMOVE_ITEM: 'repairs.remove-item',
+  REPAIRS_BULK_STATUS: 'repairs.bulk-status',
 } as const;

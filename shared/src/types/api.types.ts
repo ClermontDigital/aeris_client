@@ -5,6 +5,22 @@ export interface AuthResponse {
   token_type: string;
   expires_at: string;
   user: User;
+  // Optional workspace/deployment context surfaced by AuthController::login
+  // (Aeris2) and mirrored on the marketplace login response. Fields inside are
+  // additive per-deployment feature flags. Missing / partial envelopes MUST
+  // coerce to defaults at the boundary (see workspaceFeaturesStore hydration).
+  workspace?: WorkspaceContext;
+}
+
+// Per-deployment feature flags surfaced at login and refreshed on every
+// refreshToken. Missing fields MUST coerce to `false` client-side — a
+// deployment that hasn't shipped the payload yet gets the safe default.
+export interface WorkspaceContext {
+  features?: {
+    // Enables the Repairs tab + entry points + repairs.* RPC surface. Off by
+    // default at every consumer so pure-retail deployments never see the tab.
+    repairs_enabled?: boolean;
+  };
 }
 
 export interface RelayEnvelope<T = unknown> {
@@ -467,3 +483,187 @@ export interface DrRoutingPayload {
   sync_queue_depth: number;
   served_at: string;
 }
+
+// --- Repairs ---
+//
+// Wire-shape mirrors Aeris2 RepairResource + RepairItemResource. Money fields
+// travel as DOLLAR FLOATS (matches ` (float) $this->estimated_cost` in the PHP
+// resource), NOT cents — this diverges from Product/Sale on purpose. Every
+// consumer converts at the boundary if it wants cents.
+//
+// The `workspace.features.repairs_enabled` flag on AuthResponse gates every
+// entry point that produces or consumes these types; when off, the tab, the
+// dashboard card, and the customer-detail section all hide, and repair.* RPC
+// calls are expected to 403 with REPAIRS_DISABLED as belt-and-braces.
+
+// Closed union — must stay in sync with Aeris2 App\Enums\RepairStatus. Server
+// enforces valid transitions on update-status (422 on invalid).
+export type RepairStatus =
+  | 'pending'
+  | 'diagnosed'
+  | 'in_progress'
+  | 'waiting_parts'
+  | 'ready'
+  | 'completed'
+  | 'cancelled';
+
+// Priority is a free string on the wire today (no server-side enum), but
+// Aeris2 UIs use 'low' | 'normal' | 'high' | 'urgent'. `(string & {})` keeps
+// the literals visible in autocomplete instead of the union collapsing to
+// just `string`, while still permitting an unknown value the server may
+// ship later — the normalizer coerces at the boundary.
+export type RepairPriority =
+  | 'low'
+  | 'normal'
+  | 'high'
+  | 'urgent'
+  | (string & {});
+
+// Repair item type — 'part' consumes stock (server creates a StockReservation
+// when product_id is set), 'labor' is a time-based line with no product FK.
+export type RepairItemType = 'part' | 'labor';
+
+// Per-item install/reservation state used server-side. Only relevant for
+// 'part' items; 'labor' rows leave this at 'reserved'.
+export type RepairItemStatus = 'reserved' | 'installed' | 'returned';
+
+// The list-shape (repairs.list). Whether the customer / assignedTo relations
+// are populated depends on the endpoint — normalizer flattens the nested
+// shape when present, else uses the flat *_id column.
+export interface Repair {
+  id: number;
+  repair_number: string;
+  customer_id: number | null;
+  customer_name: string | null;
+  location_id: number | null;
+  // Non-null once the repair has been checked out via sale.create + repair_id.
+  // Callers use this to distinguish "ready for pickup" (null) from "already
+  // taken payment" (non-null) — mirrors the server-side scopeReadyForCheckout.
+  sale_id: number | null;
+  created_by: number | null;
+  assigned_to: number | null;
+  assigned_to_name: string | null;
+  // Device information (all optional per the server model).
+  device_type: string | null;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  // Issue description is the SOURCE OF TRUTH from the fresh Aeris2 release; the
+  // normalizer keeps a `reported_issue` fallback for older deployments still
+  // running the pre-fix version.
+  issue_description: string;
+  diagnosis: string | null;
+  notes: string | null;
+  // Dollars, floats. Null when unset server-side.
+  estimated_cost: number | null;
+  final_cost: number | null;
+  status: RepairStatus;
+  priority: RepairPriority;
+  // ISO 8601 strings. `received_at` = intake; `estimated_completion` = ETA the
+  // cashier promised; `completed_at`/`picked_up_at` fill in when applicable.
+  received_at: string | null;
+  estimated_completion: string | null;
+  completed_at: string | null;
+  picked_up_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepairItem {
+  id: number;
+  repair_id: number;
+  product_id: number | null;
+  // Snapshot fields — the server records the name/sku at add time so an
+  // in-progress repair's item list doesn't drift if the product is renamed.
+  item_name: string;
+  item_sku: string | null;
+  item_type: RepairItemType;
+  quantity: number;
+  // Dollars, floats. line_total is server-computed on save — callers MUST
+  // NOT send it in add-item / update-item payloads.
+  unit_price: number;
+  line_total: number;
+  notes: string | null;
+  status: RepairItemStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepairStatusHistory {
+  id: number;
+  from_status: RepairStatus | null;
+  to_status: RepairStatus;
+  notes: string | null;
+  changed_at: string | null;
+  // RepairResource embeds `{id, name}` for the acting user. Belt-and-braces:
+  // even though the FK is restrict-on-delete, the normalizer null-safes this
+  // because the deployment team flagged a null-user edge case in a prior bug.
+  user: {
+    id: number;
+    name: string;
+  };
+}
+
+// Full detail — RepairResource with items + statusHistory + customer nested.
+// customer is a subset of Customer (id/name/email/phone) — the detail
+// endpoint doesn't hydrate the full CustomerResource inside. Kept as a small
+// inline shape rather than reusing Customer to reflect the actual wire.
+export interface RepairDetail extends Repair {
+  items: RepairItem[];
+  status_history: RepairStatusHistory[];
+  customer: {
+    id: number;
+    name: string;
+    email: string | null;
+    phone: string | null;
+  } | null;
+}
+
+// StoreRepairRequest mirror. customer_id + issue_description required; the
+// rest optional. Costs travel as dollars (numeric) to match the wire.
+export interface RepairCreateInput {
+  customer_id: number;
+  issue_description: string;
+  device_type?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  serial_number?: string | null;
+  diagnosis?: string | null;
+  notes?: string | null;
+  priority?: RepairPriority;
+  estimated_cost?: number | null;
+  estimated_completion?: string | null;
+  assigned_to?: number | null;
+  location_id?: number | null;
+}
+
+// UpdateRepairRequest is a full-partial. customer_id is intentionally read-
+// only after create — the server ignores it in the update payload, but
+// keeping it out of the type surfaces that at compile time.
+export type RepairUpdateInput = Partial<Omit<RepairCreateInput, 'customer_id'>>;
+
+// The `pending-for-checkout` picker uses the POS-scoped endpoint
+// (/api/v1/pos/customers/{id}/pending-repairs) rather than the generic
+// repairs.list, because only the POS endpoint applies the sale_id IS NULL
+// guard. Response shape is intentionally leaner than RepairResource — just
+// enough for the picker to render a row + hand off to the cart.
+export interface PendingRepair {
+  id: number;
+  repair_number: string;
+  issue_description: string;
+  device_type: string | null;
+  brand: string | null;
+  model: string | null;
+  estimated_cost: number | null;
+  final_cost: number | null;
+  received_at: string | null;
+}
+
+// Distinct error code the gateway is expected to return when the resolved
+// deployment has repairs_enabled=false but the client still calls a repairs.*
+// action (stale flag / race). Follows the same `deployment-*` namespace as
+// PRODUCT_IMAGE_UNSUPPORTED_CODE — the T3 RelayClient consumer will (a) flip
+// the workspaceFeaturesStore off + toast once so the tab yanks itself, and
+// (b) also accept the generic `deployment-unsupported` code as a synonym so
+// a gateway that reuses the older namespace still triggers the same branch.
+export const REPAIRS_DISABLED_CODE = 'deployment-repairs-disabled';

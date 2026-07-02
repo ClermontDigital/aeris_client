@@ -18,3 +18,10 @@ export {normalizeAddress, normalizeCustomer} from './customer';
 export {normalizeReceipt} from './receipt';
 export {normalizeStockAdjustment} from './inventory';
 export {normalizeZReport} from './zReport';
+export {
+  normalizeRepair,
+  normalizeRepairDetail,
+  normalizeRepairItem,
+  normalizeRepairStatusHistory,
+  normalizePendingRepair,
+} from './repair';
