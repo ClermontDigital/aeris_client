@@ -35,6 +35,13 @@ export type AppTabParamList = {
   QuickSale: NavigatorScreenParams<QuickSaleStackParamList> | undefined;
   Items: NavigatorScreenParams<ItemsStackParamList> | undefined;
   Customers: NavigatorScreenParams<CustomersStackParamList> | undefined;
+  // Repairs is a conditional tab — surfaced only when the workspace's
+  // `repairs_enabled` feature flag is on (see useWorkspaceFeaturesStore).
+  // The inner stack is always registered on the AppTab param list so
+  // deep-link resolution and cross-tab navigation still typecheck even
+  // when the tab itself is hidden — an admin who toggles the flag
+  // mid-session gets a live tab without needing a nav rebuild.
+  Repairs: NavigatorScreenParams<RepairsStackParamList> | undefined;
   Transactions: NavigatorScreenParams<TransactionsStackParamList> | undefined;
   ERP: undefined;
 };
@@ -93,6 +100,22 @@ export type CustomersStackParamList = {
   CustomerDetail: {customerId: number};
   // customerId absent → create mode. customerId set → edit mode.
   CustomerEdit: {customerId?: number} | undefined;
+};
+
+export type RepairsStackParamList = {
+  // customer_id pre-filters the list to repairs opened for a given
+  // customer (used from CustomerDetail → "View repairs"). Optional so
+  // the tab-root call site (no params) still typechecks.
+  RepairsList: {customer_id?: number} | undefined;
+  RepairDetail: {id: number};
+  // id absent → create mode. id set → edit mode. Mirrors the shape of
+  // ProductEdit / CustomerEdit so the create+edit screen is a single
+  // component switched by route params.
+  RepairEdit: {id?: number} | undefined;
+  // Sheet-presented status change screen: opens over the detail with a
+  // formSheet transition (see RepairsStack.tsx). Requires the target
+  // repair id — no "pick from list" affordance here.
+  RepairStatusChange: {id: number};
 };
 
 // Screen prop types

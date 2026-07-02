@@ -44,6 +44,7 @@ import {
   Printer,
   Image as ImageIcon,
   RefreshCw,
+  Wrench,
   type LucideProps,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -68,7 +69,7 @@ type IconName =
   | 'user' | 'users' | 'receipt' | 'bar-chart' | 'activity'
   | 'barcode' | 'key-round' | 'alert-circle' | 'alert-triangle'
   | 'zap' | 'zap-off' | 'mail' | 'phone' | 'calendar' | 'filter' | 'list'
-  | 'check' | 'printer' | 'image' | 'refresh-cw'
+  | 'check' | 'printer' | 'image' | 'refresh-cw' | 'wrench'
   // ------- legacy ion-style aliases (kept while we migrate) -------
   | 'add' | 'remove' | 'close' | 'close-circle'
   | 'search-outline' | 'settings-outline' | 'time-outline'
@@ -81,7 +82,8 @@ type IconName =
   | 'flash' | 'flash-off'
   | 'people-outline' | 'cube-outline' | 'alert-circle-outline'
   | 'close-circle-outline' | 'receipt-outline' | 'today-outline'
-  | 'calendar-outline' | 'list-outline';
+  | 'calendar-outline' | 'list-outline'
+  | 'construct-outline';
 
 const ICON_MAP: Record<IconName, LucideIcon> = {
   // lucide canonical names
@@ -100,6 +102,7 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   zap: Zap, 'zap-off': ZapOff, mail: Mail, phone: Phone,
   calendar: Calendar, filter: Filter, check: Check, printer: Printer,
   image: ImageIcon, 'refresh-cw': RefreshCw,
+  wrench: Wrench,
   // ion-name aliases pointing at the same lucide components
   add: Plus, remove: Minus, close: X, 'close-circle': XCircle,
   'search-outline': Search, 'settings-outline': Settings,
@@ -120,6 +123,7 @@ const ICON_MAP: Record<IconName, LucideIcon> = {
   'receipt-outline': Receipt,
   'today-outline': Calendar, 'calendar-outline': CalendarDays,
   list: List, 'list-outline': List,
+  'construct-outline': Wrench,
 };
 
 export interface IconProps {

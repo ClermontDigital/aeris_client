@@ -28,6 +28,7 @@ export type CrumbTab =
   | 'QuickSale'
   | 'Items'
   | 'Customers'
+  | 'Repairs'
   | 'Transactions'
   | 'ERP';
 
