@@ -4,24 +4,23 @@ import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {COLORS, FONT_FAMILY, FONT_SIZE, SPACING} from '../constants/theme';
 import type {RepairsStackParamList} from '../types/navigation.types';
 import RepairsListScreen from '../screens/RepairsListScreen';
+import RepairDetailScreen from '../screens/RepairDetailScreen';
 
 const Stack = createNativeStackNavigator<RepairsStackParamList>();
 
-// T4 stubs kept for the screens T6 / T7 will replace. RepairsListScreen
-// shipped in T5 and now imports from ../screens/RepairsListScreen.
-// Component NAMES on the stub set below must remain stable so the stack
-// registration doesn't churn when the real screens land.
+// T4 stubs kept for the screens T7 will replace. RepairsListScreen shipped
+// in T5, RepairDetailScreen shipped in T6 (read-only render, action row
+// lands in T7 / T8). Component NAMES on the stub set below must remain
+// stable so the stack registration doesn't churn when the real screens
+// land.
 const StubScreen: React.FC<{label: string}> = ({label}) => (
   <View style={styles.stub}>
     <Text style={styles.stubTitle}>Repairs</Text>
     <Text style={styles.stubBody}>{label}</Text>
-    <Text style={styles.stubHint}>Coming in T6 / T7</Text>
+    <Text style={styles.stubHint}>Coming in T7</Text>
   </View>
 );
 
-const RepairDetailScreen: React.FC = () => (
-  <StubScreen label="Repair detail" />
-);
 const RepairEditScreen: React.FC = () => (
   <StubScreen label="Create or edit repair" />
 );
