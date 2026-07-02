@@ -82,11 +82,6 @@ export interface RepairFormValues {
   priority: RepairPriority;
   estimated_cost: string;
   estimated_completion: string;
-  // WSA-5: technician assignment. `null` == Unassigned. Threaded through
-  // buildCreatePayload unconditionally and buildUpdatePayload only when
-  // it differs from the initial hydrated value (so an unchanged repair
-  // doesn't accidentally clobber the assignment via a partial PATCH).
-  assignedTo: number | null;
 }
 
 // Field-error map. Keys match the wire attribute names the server 422s on
@@ -122,7 +117,6 @@ const EMPTY_FORM: RepairFormValues = {
   priority: 'normal',
   estimated_cost: '',
   estimated_completion: '',
-  assignedTo: null,
 };
 
 // Pure helpers - exported for unit testing without mounting the RN tree.
@@ -181,7 +175,6 @@ export function repairDetailToFormValues(r: RepairDetail): RepairFormValues {
     estimated_completion: r.estimated_completion
       ? r.estimated_completion.slice(0, 10)
       : '',
-    assignedTo: r.assigned_to ?? null,
   };
 }
 
@@ -220,20 +213,12 @@ export function buildCreatePayload(
     priority: values.priority,
     estimated_cost: parseDollars(values.estimated_cost),
     estimated_completion: optStr(values.estimated_completion),
-    // WSA-5: intake-time assignment. Sent unconditionally (null == Unassigned)
-    // so a lead who assigns a tech at check-in reaches the server on create.
-    assigned_to: values.assignedTo,
   };
   return out;
 }
 
-// `initialAssignedTo` is the hydrated `assigned_to` value from the loaded
-// RepairDetail. WSA-5 only threads `assigned_to` onto the update payload
-// when it differs from the initial state so an unchanged repair doesn't
-// clobber the server-side assignment via a partial PATCH.
 export function buildUpdatePayload(
   values: RepairFormValues,
-  initialAssignedTo: number | null = null,
 ): RepairUpdateInput {
   const out: RepairUpdateInput = {
     issue_description: values.issue_description.trim(),
@@ -247,9 +232,6 @@ export function buildUpdatePayload(
     estimated_cost: parseDollars(values.estimated_cost),
     estimated_completion: optStr(values.estimated_completion),
   };
-  if (values.assignedTo !== initialAssignedTo) {
-    out.assigned_to = values.assignedTo;
-  }
   return out;
 }
 
@@ -332,11 +314,6 @@ const RepairEditScreen: React.FC = () => {
   // here MUST block Save in create mode. Edit mode never sends location_id
   // (server-locked after create), so a null user.location_id there is fine.
   const userLocationId = useAuthStore(s => s.user?.location_id ?? null);
-  // WSA-5: Me quick-pick reads user.id + user.name from authStore. Null
-  // when the user isn't authenticated (which shouldn't happen at this
-  // screen but the guard keeps type narrowing tight).
-  const userId = useAuthStore(s => s.user?.id ?? null);
-  const userName = useAuthStore(s => s.user?.name ?? null);
   const [values, setValues] = useState<RepairFormValues>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<RepairFormErrors>({});
   const [topError, setTopError] = useState<string | null>(null);
@@ -344,20 +321,6 @@ const RepairEditScreen: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [priorityPickerOpen, setPriorityPickerOpen] = useState(false);
-
-  // WSA-5: technician picker state. Techs are fetched lazily on the FIRST
-  // open of the assignment picker so the create-mode fast-path (never
-  // opens the picker → self-assigns via "Me" or leaves Unassigned) doesn't
-  // pay the RPC round-trip cost. The initial value tracks the assigned_to
-  // at hydration time so buildUpdatePayload can detect unchanged repairs
-  // and skip the field entirely.
-  const [assignedToPickerOpen, setAssignedToPickerOpen] = useState(false);
-  const [technicians, setTechnicians] = useState<
-    Array<{id: number; name: string}>
-  >([]);
-  const [techsLoaded, setTechsLoaded] = useState(false);
-  const [techsLoading, setTechsLoading] = useState(false);
-  const initialAssignedToRef = useRef<number | null>(null);
 
   // Customer picker state (create mode only).
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
@@ -408,21 +371,6 @@ const RepairEditScreen: React.FC = () => {
         } else {
           const next = repairDetailToFormValues(detail);
           setValues(next);
-          // Snapshot the hydrated assignment so buildUpdatePayload can tell
-          // whether the operator changed it. Seeded on the assigned_to FK
-          // (numeric) rather than the display name so a rename of the tech
-          // doesn't spuriously look like a change.
-          initialAssignedToRef.current = next.assignedTo;
-          // If the hydrated repair has a tech assigned, prime the picker
-          // list with `{assigned_to, assigned_to_name}` so the display row
-          // reads the tech's name even before the full technicians list
-          // is fetched. Later, `openAssignmentPicker` merges the server
-          // list on top so the full option set is available.
-          if (detail.assigned_to != null && detail.assigned_to_name) {
-            setTechnicians([
-              {id: detail.assigned_to, name: detail.assigned_to_name},
-            ]);
-          }
         }
       })
       .catch((e: unknown) => {
@@ -536,81 +484,6 @@ const RepairEditScreen: React.FC = () => {
     [setField],
   );
 
-  // WSA-5: technician list fetch. Fires the first time the picker opens
-  // AND on any subsequent open when the previous fetch returned an empty
-  // list (allows a "try again" once the dispatcher mapping ships without
-  // requiring an app reload). Errors are swallowed to a null list so the
-  // picker collapses to "Unassigned only" rather than surfacing a modal
-  // error mid-form — the operator can still self-assign via "Me".
-  const loadTechnicians = useCallback(async () => {
-    if (techsLoading) return;
-    setTechsLoading(true);
-    try {
-      const list = await ApiClient.listRepairTechnicians();
-      // Merge the fetched list with the initial hydrated tech (if any) so
-      // the current assignment doesn't drop off if the server list omits
-      // the assigned user (e.g. inactive tech still on a repair row).
-      setTechnicians(prev => {
-        const merged = new Map<number, {id: number; name: string}>();
-        for (const t of prev) merged.set(t.id, t);
-        for (const t of list) merged.set(t.id, t);
-        return Array.from(merged.values());
-      });
-      setTechsLoaded(true);
-    } catch {
-      // Non-blocking: an empty list is a valid "self-assign only" fallback.
-      setTechsLoaded(true);
-    } finally {
-      setTechsLoading(false);
-    }
-  }, [techsLoading]);
-
-  const openAssignmentPicker = useCallback(() => {
-    haptics.light();
-    setAssignedToPickerOpen(v => {
-      const next = !v;
-      if (next && !techsLoaded) {
-        void loadTechnicians();
-      }
-      return next;
-    });
-  }, [haptics, loadTechnicians, techsLoaded]);
-
-  const selectAssignment = useCallback(
-    (nextId: number | null) => {
-      haptics.selection();
-      dirtyRef.current = true;
-      setValues(prev => ({...prev, assignedTo: nextId}));
-      setAssignedToPickerOpen(false);
-    },
-    [haptics],
-  );
-
-  // WSA-5 "Me" quick-pick. Available whenever userId is non-null — anyone
-  // can self-assign per the product decision. Does NOT open the picker
-  // sheet; taps the value in-line and marks the form dirty. If the current
-  // user isn't in the fetched technician list yet, seed them so the
-  // display row still reads their name after selection.
-  const selectMeAssignment = useCallback(() => {
-    if (userId == null) return;
-    haptics.selection();
-    dirtyRef.current = true;
-    setValues(prev => ({...prev, assignedTo: userId}));
-    setTechnicians(prev => {
-      if (prev.some(t => t.id === userId)) return prev;
-      return [...prev, {id: userId, name: userName ?? 'Me'}];
-    });
-    setAssignedToPickerOpen(false);
-  }, [haptics, userId, userName]);
-
-  const assignedToLabel = useMemo(() => {
-    if (values.assignedTo == null) return 'Unassigned';
-    const match = technicians.find(t => t.id === values.assignedTo);
-    if (match) return match.name;
-    if (values.assignedTo === userId) return userName ?? 'Me';
-    return 'Assigned';
-  }, [values.assignedTo, technicians, userId, userName]);
-
   // ---------------- submit ----------------
   const handleSubmit = useCallback(async () => {
     if (submitLockRef.current) return;
@@ -634,10 +507,7 @@ const RepairEditScreen: React.FC = () => {
     setTopError(null);
     try {
       if (isEdit && repairId !== undefined) {
-        const payload = buildUpdatePayload(
-          values,
-          initialAssignedToRef.current,
-        );
+        const payload = buildUpdatePayload(values);
         await ApiClient.updateRepair(repairId, payload);
         haptics.success();
         dirtyRef.current = false;
@@ -1104,114 +974,6 @@ const RepairEditScreen: React.FC = () => {
             error={fieldErrors.estimated_completion}
           />
 
-          {/* -------- Assignment (WSA-5) -------- */}
-          {/* Interactive technician picker for BOTH create and edit modes.
-              At intake a lead can assign a tech; on an existing repair the
-              same surface reassigns. Fetches technicians lazily on first
-              open, degrades gracefully to "Unassigned + Me" when the list
-              endpoint isn't routed yet. */}
-          <EyebrowLabel>Assignment</EyebrowLabel>
-          <View style={styles.fieldWrap}>
-            {userId != null ? (
-              <TouchableOpacity
-                style={[styles.meChip, values.assignedTo === userId && styles.meChipActive]}
-                onPress={selectMeAssignment}
-                accessibilityRole="button"
-                accessibilityLabel="Assign to me"
-                accessibilityState={{selected: values.assignedTo === userId}}>
-                <Icon
-                  name="person-outline"
-                  size={ICON_SIZE.action - 2}
-                  color={
-                    values.assignedTo === userId ? COLORS.cream : COLORS.crimson
-                  }
-                  style={styles.meChipIcon}
-                />
-                <Text
-                  style={[
-                    styles.meChipText,
-                    values.assignedTo === userId && styles.meChipTextActive,
-                  ]}>
-                  Me
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              style={[styles.input, styles.pickerRow]}
-              onPress={openAssignmentPicker}
-              accessibilityRole="button"
-              accessibilityLabel={`Assigned to ${assignedToLabel}. Tap to change.`}
-              accessibilityState={{expanded: assignedToPickerOpen}}
-              testID="repair-edit-assignment-picker">
-              <Text style={styles.pickerRowText} numberOfLines={1}>
-                {assignedToLabel}
-              </Text>
-              <Icon
-                name={
-                  assignedToPickerOpen ? 'chevron-down' : 'chevron-forward'
-                }
-                size={ICON_SIZE.action}
-                color={COLORS.textMuted}
-              />
-            </TouchableOpacity>
-            {assignedToPickerOpen ? (
-              <View style={styles.pickerList}>
-                {techsLoading ? (
-                  <View style={styles.searchStatusRow}>
-                    <ActivityIndicator
-                      color={COLORS.accent}
-                      size="small"
-                    />
-                    <Text style={styles.searchStatusText}>
-                      Loading technicians…
-                    </Text>
-                  </View>
-                ) : null}
-                {/* Unassigned option is always the first row so a lead can
-                    always clear an assignment even when the tech list is
-                    empty or still loading. */}
-                <TouchableOpacity
-                  style={styles.pickerItem}
-                  onPress={() => selectAssignment(null)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Unassigned">
-                  <Text style={styles.pickerItemText}>Unassigned</Text>
-                  {values.assignedTo == null ? (
-                    <Icon
-                      name="check"
-                      size={ICON_SIZE.action}
-                      color={COLORS.crimson}
-                    />
-                  ) : null}
-                </TouchableOpacity>
-                {technicians.map(t => (
-                  <TouchableOpacity
-                    key={t.id}
-                    style={styles.pickerItem}
-                    onPress={() => selectAssignment(t.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Assign to ${t.name}`}>
-                    <Text style={styles.pickerItemText} numberOfLines={1}>
-                      {t.name}
-                    </Text>
-                    {values.assignedTo === t.id ? (
-                      <Icon
-                        name="check"
-                        size={ICON_SIZE.action}
-                        color={COLORS.crimson}
-                      />
-                    ) : null}
-                  </TouchableOpacity>
-                ))}
-                {!techsLoading && techsLoaded && technicians.length === 0 ? (
-                  <Text style={styles.searchEmptyText}>
-                    No technicians available
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-
           <View style={styles.footerSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1494,39 +1256,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     marginLeft: SPACING.sm,
-  },
-
-  // WSA-5 assignment picker "Me" quick-pick chip. Rendered above the
-  // full picker row so a self-assign is one tap without opening the
-  // sheet. Active state uses the same crimson fill as the status
-  // filter chips on the list screen so the visual language stays
-  // consistent.
-  meChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingVertical: SPACING.sm - 2,
-    paddingHorizontal: SPACING.md,
-    borderRadius: BORDER_RADIUS.full,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.crimson,
-    marginBottom: SPACING.xs,
-    minHeight: 44,
-  },
-  meChipActive: {
-    backgroundColor: COLORS.crimson,
-    borderColor: COLORS.crimson,
-  },
-  meChipIcon: {marginRight: SPACING.xs},
-  meChipText: {
-    color: COLORS.crimson,
-    fontSize: FONT_SIZE.sm,
-    fontFamily: FONT_FAMILY.semibold,
-    letterSpacing: 0.2,
-  },
-  meChipTextActive: {
-    color: COLORS.cream,
   },
 
   // Dollar-prefix row for estimated_cost.
