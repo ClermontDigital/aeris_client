@@ -1,7 +1,7 @@
 # Aeris2 Backend Audit — Mobile Repairs Feature Deployment Report
 
 **Prepared for:** Aeris2 deployment / build team
-**Revision:** v3 — reflects deployment-team confirmation of contracts (T8 stock, 6 new RPCs, bulk-status shape) and moves resolved items to the shipped column.
+**Revision:** v4 — records the deployment-team confirmation of the labour contract (synth product_id `<= -600000`, `gst_applicable: true`) and moves labour handling to the shipped column. Removes the provisional CartScreen + RepairDetailScreen labour block; ships WSA-2 label print + WSA-3 items editor + notes card on the same branch.
 **Client status:** Mobile Repairs feature ships DARK. `workspace.features.repairs_enabled` defaults `false`. Client is safe to merge and ship independently. Nothing below blocks the mobile release. The list below is what the server must ship before any workspace can flip the flag `true`.
 
 ---
@@ -21,6 +21,7 @@
 | **C5 — `bulkUpdateStatus` response shape + safety cap** | SHIPPED. New shape: `{updated_count, succeeded: [ids], skipped: [{id, reason}], failed: [{id, reason}]}`. Endpoint capped at 50 ids. Mobile `bulkUpdateRepairStatus` + `reconcileBulkStatusResult` consume the reason strings for the operator toast (`3 skipped: 2 already completed, 1 invalid transition`). Legacy shapes retained for backward compat during rollout. |
 | **B1 tail + B2 tail + B3 + L2 + L3 tail** | All action mappings + dispatcher aliases + `status-history` route + `pending-for-customer` mapping + `PendingRepair.estimated_cost`/`received_at` fields SHIPPED. |
 | **WSB series (workshop workflow)** | 6 new RPCs SHIPPED, all ability-gated + location-scoped: `repairs.status-history`, `repairs.add-note`, `repairs.technicians`, `repairs.by-barcode`, `repairs.pending-for-customer`, `repairs.delete`. Path-placeholder aliases: `{repair}←repair_id\|id`, `{item}←item_id`, `{customer}←customer_id\|id`, `{repairNumber}←repair_number\|code`. Notes: **`repairs.technicians` lives at `/api/v1/repairs/technicians` (not `/users/list-technicians`)** — mobile constant + relay method aligned. |
+| **Repair labour handling on checkout** | SHIPPED. Server sale validator whitelists synthetic `product_id <= -600000` so labour lines pass without a Product row. `gst_applicable: true` per labour line. Mobile CartScreen + RepairDetailScreen now synth labour as `product_id: -600000 - ri.id`, `tax_rate: 10` on the synth Product so the wire encoder emits `gst_applicable: true` per line. Provisional block Alerts removed on both surfaces. |
 
 ### 🟨 Remaining / open
 
@@ -28,7 +29,6 @@
 |---|---|
 | **C6 — ProcessSaleRequest GST reconciliation** | Deferred pending staging repro. Deployment-team-flagged concern (worth verifying before restructuring) — a canary $50-GST-applicable relay sale in staging is the fastest way to confirm whether the drift is real. Mobile has already shipped the per-line `gst_applicable` split at `RelayClient.createSale` so a mixed repair-parts + retail cart passes the current server invariant, but the underlying schema question is unchanged. |
 | **Marketplace-messaging whitelist for repair `contextType`** | Server side is ready (`contextType='repair'`, template `repair_status`). Marketplace-gateway whitelist confirmation still pending on the deployment team; mobile "Notify customer" flow stays behind that toggle. |
-| **Repair labour handling on checkout** | UNRESOLVED. Deployment team confirming the surface (accept as notes line, mint a synth catalog product on-server, or route through a dedicated action). Mobile **provisionally blocks** the hand-off when a repair has any labour lines, with an Alert: *"This repair has labour lines. Handle this checkout at the till desktop until labour surface is confirmed."* Once confirmed, we unblock. |
 
 ### ⏳ In flight from client team
 
@@ -36,27 +36,35 @@ Mobile T8-remediation, workshop-workflow WSA-1 through WSA-5 (scanner branch, pr
 
 ---
 
-## T8 — Stock contract remediation shipped
+## T8 — Stock + labour contract remediation shipped
 
-Mobile now matches the confirmed contract (option b): every reserved part in `repair.items[]` with a `product_id` lands on `sale.create` as a real product-line item using the REAL `product_id` (was previously a synthetic `-ri.id` PK, which would have failed `Product::findOrFail`). Two call sites fixed:
+Mobile now matches the confirmed contracts for BOTH parts and labour:
 
-- [CartScreen.tsx](../mobile/src/screens/CartScreen.tsx) `handlePickRepair` — line synth uses `id: ri.product_id`.
-- [RepairDetailScreen.tsx](../mobile/src/screens/RepairDetailScreen.tsx) `handleRepairCheckout` Confirm branch — same fix, same wire shape.
+**Parts.** Every reserved part in `repair.items[]` with a `product_id` lands on `sale.create` as a real product-line item using the REAL `product_id` (was previously a synthetic `-ri.id` PK, which would have failed `Product::findOrFail`).
 
-Labour lines (`ri.item_type === 'labor'` OR `ri.product_id == null`) trigger the provisional block Alert described above; cart + customer + repair-link stay untouched so the cashier can take the checkout to the till desktop. Both screens have unit-test coverage for the parts-only success path AND the labour-present block path.
+**Labour.** Uses a synthetic `product_id` in the deployment-team-whitelisted range `<= -600000`. Mobile derives `product_id: -600000 - ri.id` so every labour ri gets a unique synth id inside the labour range. Server sale validator accepts synthetic ids in this range without a Product row.
+
+**GST split.** Both parts and labour synth Products carry `tax_rate: 10` so the wire encoder in `RelayClient.createSale` / `DirectClient.createSale` emits `gst_applicable: true` per line. Per T8-C1: subtotal = sum(lineTotal / 1.10) for GST-applicable lines + sum(lineTotal) for non-applicable lines. Repair items are quoted GST-inclusive, so `tax_rate: 10` tells the wire encoder "extract GST from unit_price"; the server round-trips the same math — no double-tax.
+
+Two call sites carry the fix:
+
+- [CartScreen.tsx](../mobile/src/screens/CartScreen.tsx) `handlePickRepair` — parts synth uses `id: ri.product_id`; labour synth uses `id: -600000 - ri.id`; both `tax_rate: 10`.
+- [RepairDetailScreen.tsx](../mobile/src/screens/RepairDetailScreen.tsx) `handleRepairCheckout` Confirm branch — same synth shape, same wire.
+
+Both screens have unit-test coverage for parts-only, labour-only, and parts+labour repair carts.
 
 ---
 
 ## ENDORSED SEQUENCING (historical — items marked ✅ are shipped)
 
-Original v2 sequencing preserved for continuity. Post-v3 the only outstanding waves are C6 (deferred pending staging repro) + labour-handling confirmation + marketplace-messaging whitelist.
+Original v2 sequencing preserved for continuity. Post-v4 the only outstanding waves are C6 (deferred pending staging repro) + marketplace-messaging whitelist.
 
 1. ✅ **C1 + C2 + C3 + C4-tail + C5** — SHIPPED (see PROGRESS SUMMARY).
 2. ✅ **B1 tail + B2 tail + B3 + L2 + L3 tail** — SHIPPED.
 3. ✅ **6 new WSB RPCs** — SHIPPED (`repairs.status-history`, `repairs.add-note`, `repairs.technicians`, `repairs.by-barcode`, `repairs.pending-for-customer`, `repairs.delete`).
-4. 🟨 **C6** — deferred pending staging repro.
-5. 🟨 **Marketplace-messaging whitelist for `contextType=repair`** — pending deployment-team confirmation.
-6. 🟨 **Labour-line handling at checkout** — pending deployment-team confirmation (mobile provisional block in place).
+4. ✅ **Labour-line handling at checkout** — SHIPPED (synth `product_id <= -600000`, `gst_applicable: true`).
+5. 🟨 **C6** — deferred pending staging repro.
+6. 🟨 **Marketplace-messaging whitelist for `contextType=repair`** — pending deployment-team confirmation.
 
 ---
 
@@ -64,9 +72,12 @@ Original v2 sequencing preserved for continuity. Post-v3 the only outstanding wa
 
 Awaiting confirmation from the deployment team before the corresponding mobile surfaces can unblock:
 
-1. **Labour handling on `sale.create`.** Provisional mobile policy: any repair with `item_type === 'labor'` OR `product_id == null` blocks the hand-off with a "till desktop" Alert. Cart / customer / repair-link stay untouched. Once the surface is confirmed (candidates: notes-line, dedicated action, server-side synth catalog product) mobile unblocks in the same release.
-2. **Marketplace-messaging whitelist for repair `contextType`.** Server side confirmed ready (`contextType='repair'`, template `repair_status`). Marketplace gateway whitelist toggle is the last piece before WSA-4 "Notify customer" can leave stub mode.
-3. **C6 GST reconciliation.** Requires a canary $50-GST-applicable relay sale in staging to determine whether the drift is real. Owner: joint 15-minute reproduction session as originally proposed in v2 §C6.
+1. **Marketplace-messaging whitelist for repair `contextType`.** Server side confirmed ready (`contextType='repair'`, template `repair_status`). Marketplace gateway whitelist toggle is the last piece before WSA-4 "Notify customer" can leave stub mode. Mobile ships WSA-4 wiring behind the current `send-manual-notification` ability gate; any 401/403 from a whitelist miss surfaces via Alert to the operator.
+2. **C6 GST reconciliation.** Requires a canary $50-GST-applicable relay sale in staging to determine whether the drift is real. Owner: joint 15-minute reproduction session as originally proposed in v2 §C6.
+
+### ✅ Recently closed by deployment team
+
+- **Labour handling on `sale.create`.** Server sale validator whitelists synthetic `product_id <= -600000`, `gst_applicable: true`. Mobile now ships the full labour-at-checkout path with test coverage — see §T8.
 
 ---
 
@@ -349,13 +360,13 @@ Deployment-team asks in this section are **NOT blocking the cashier surface** al
 
 ## Mobile amendment plan (client-side waves)
 
-| Wave | Scope | Server dependency |
-|---|---|---|
-| **WSA-1** | Scan a printed repair label to open detail. Adds `mode: 'repair'` branch to existing `BarcodeScannerScreen`. Reuses `ApiClient.listRepairs(1, 1, {search: value})` LIKE fallback. Scanner entry on `RepairsList` header. | **Client-only** (falls back gracefully once **WSB-1** ships) |
-| **WSA-2** | Print a CODE128 repair label from `RepairDetail` (89×38 mm Dymo, matching web `RepairBarcodeModal.tsx`, 1–20 pieces stepper). Uses existing `PrintService.printHtml()` → expo-print → AirPrint / share-to-PDF. Adds `jsbarcode` dep. Also adds "Save & print" variant to `RepairEdit` success path. | **Client-only** |
-| **WSA-3** | Full items editor (add / edit / remove parts + labour) wiring the three unwired RPCs `addRepairItem` / `updateRepairItem` / `removeRepairItem`. Product-barcode scanner card inside the editor. Free-text notes textarea on `RepairDetail`. | Client-only for items (RPCs already shipped in T3). Notes need **WSB-2**. |
-| **WSA-4** | Real "Notify customer" flow (template picker, confirm, send). Swap LIKE-search fallback for exact-match `getRepairByBarcode` RPC. Priority chips + Overdue toggle on `RepairsList`. | **WSB-1** + **WSB-4** |
-| **WSA-5** | Technician assignment picker on `RepairEdit`. "My queue" preset filter on `RepairsList`. Optional bulk-status selection mode (`bulkUpdateRepairStatus` already in T3, unwired). | **WSB-3** |
+| Wave | Scope | Server dependency | Status |
+|---|---|---|---|
+| **WSA-1** | Scan a printed repair label to open detail. Adds `mode: 'repair'` branch to existing `BarcodeScannerScreen`. Reuses `ApiClient.listRepairs(1, 1, {search: value})` LIKE fallback + `getRepairByBarcode`. Scanner entry on `RepairsList` header. Also intercepts `REP-*` at the till QuickSale scanner and runs the same T8 "Take payment for repair" hand-off. | **Client-only** (WSB-1 shipped in parallel) | ✅ Shipped |
+| **WSA-2** | Print a CODE128 repair label from `RepairDetail` (89×38 mm Dymo, matching web `RepairBarcodeModal.tsx`, 1–20 pieces stepper). Uses existing `PrintService.printHtml()` → expo-print → AirPrint / share-to-PDF. Ships a compact **CODE128B encoder in `repairLabelHtml.ts`** so the label prints offline — no jsbarcode / CDN dependency. Deferred: "Save & print" variant on `RepairEdit` success path. | **Client-only** | ✅ Shipped |
+| **WSA-3** | Items editor sheet (add / edit / remove parts + labour) wiring the three unwired RPCs `addRepairItem` / `updateRepairItem` / `removeRepairItem`. Save-on-mutate (no batching) so the sheet can be closed at any point. Notes card on `RepairDetail` posts via `addRepairNote` and appends the returned `status_history` row to the timeline in place. Deferred: product-barcode scan-to-add inside the editor (follow-up). | Client-only (RPCs already shipped in T3, notes shipped in WSB-2). | ✅ Shipped |
+| **WSA-4** | Real "Notify customer" flow (`sendRepairNotification` with `template: 'repair_status'`). Confirm dialog + success/failure Alert. Deferred pending WSB whitelist confirmation from deployment. | **WSB-1** + **WSB-4** | ✅ Shipped (behind marketplace whitelist) |
+| **WSA-5** | Technician assignment picker on `RepairEdit` (with "Me" quick-pick). "My queue" preset filter chip on `RepairsList`. Deferred: bulk-status selection mode. | **WSB-3** | ✅ Shipped |
 
 **Feature-flag posture:** every workshop surface stays under the same `workspace.features.repairs_enabled` gate. No new flag needed.
 
@@ -451,9 +462,47 @@ Before we finalise wave scope, need answers on the following. These change what 
 
 | Client wave needing it | WSB item | Server file |
 |---|---|---|
-| WSA-4 (exact-match scan) | WSB-1 | `routes/api.php`, `RepairController.php`, `marketplace_rpc.php` |
-| WSA-3 (notes textarea) | WSB-2 | `marketplace_rpc.php` (+ route if missing) |
-| WSA-5 (assign picker) | WSB-3 | new RPC action, `UserController` / `TechnicianController` |
-| WSA-4 (real notify) | WSB-4 | verification only, or shared messaging RPC touch |
+| WSA-4 (exact-match scan) | WSB-1 | `routes/api.php`, `RepairController.php`, `marketplace_rpc.php` — ✅ shipped |
+| WSA-3 (notes textarea) | WSB-2 | `marketplace_rpc.php` (+ route if missing) — ✅ shipped |
+| WSA-5 (assign picker) | WSB-3 | new RPC action, `UserController` / `TechnicianController` — ✅ shipped |
+| WSA-4 (real notify) | WSB-4 | Marketplace-messaging whitelist for repair `contextType` — 🟨 pending |
 | Later | WSB-5 | new `RepairAttachment` table (deferred) |
+
+---
+
+# Section III — v4 shipping status (workshop-workflow batch, this branch)
+
+Everything below has already merged onto `feat/mobile-repairs`.
+
+## Foundation (deployment-team contract match)
+- **T8 labour contract remediation.** Provisional labour block on `CartScreen` + `RepairDetailScreen` REVERSED. Both call sites now synth labour lines as `product_id: -600000 - ri.id` inside the deployment-team-whitelisted range. Both parts and labour synth Products set `tax_rate: 10` so the wire encoder emits `gst_applicable: true` per line, matching the deployment-team `ProcessSaleRequest` invariant.
+- **T8-C1 per-line GST split.** `RelayClient.createSale` + `DirectClient.createSale` compute subtotal + tax per-line honouring each item's `gst_applicable`, not a blanket `/1.10` split. A pure-repair or mixed cart now passes the server's `subtotal == sum(qty * unit_price_ex_gst - discount_ex_gst) ±0.02` invariant.
+- **Bulk-status new response shape.** `bulkUpdateRepairStatus` consumes `{updated_count, succeeded, skipped: [{id, reason}], failed: [{id, reason}]}`. `reconcileBulkStatusResult` unpacks per-id reasons for the operator toast. Legacy shape parsers retained for backward compat during rollout.
+
+## WSA-1 — scan to open
+- `BarcodeScannerScreen` new `mode: 'repair'` intercept for `REP-YYYYMMDD-NNNNNN` above the product lookup. Hit at Repairs tab → `navigation.replace('RepairDetail', {id})`; hit at till QuickSale → runs the same "Take payment for repair" flow as `RepairDetail`'s Checkout button.
+- `RepairsStack.RepairScanner` route with `initialParams: {mode: 'repair'}` and `fullScreenModal` presentation.
+- `RepairsList` header scan PillButton.
+
+## WSA-2 — label print
+- `mobile/src/utils/repairLabelHtml.ts` — compact CODE128B encoder + Dymo 89×38 mm HTML template matching the web `RepairBarcodeModal.tsx` layout byte-for-byte. No jsbarcode / CDN dependency — encoder runs offline.
+- `mobile/src/screens/RepairLabelPrintSheet.tsx` — formSheet with 1–20 pieces stepper, preview card, `PrintService.printHtml` → AirPrint on iOS, print intent on Android.
+- `RepairDetail` action row gets a "Print label" PillButton (no status gate — technicians reprint labels as pieces get bagged/unbagged).
+
+## WSA-3 — items editor + notes
+- `mobile/src/screens/RepairItemsEditorSheet.tsx` — formSheet listing existing items with per-row quantity stepper + remove button, plus a Part/Labour add form. Save-on-mutate (each add/update/remove is fired immediately) so the sheet can be closed at any point without half-persisted edits.
+- `RepairDetail` gets a Notes card between History and the action row. Posts via `addRepairNote`; server appends a `status_history` row with `from_status === to_status`. Client-side 2000-char limit before the wire (RelayClient duplicate-strips).
+- Both surfaces gated on `edit_repair` — a viewer sees the card without the send button / editor button.
+
+## WSA-4 — real "Notify customer"
+- Confirm-then-send Alert dialog. Uses `sendRepairNotification({template: 'repair_status'})`. Failure surfaces via Alert (marketplace-messaging whitelist confirmation still pending; a 401/403 lands here).
+- Gated on `send-manual-notification` permission.
+
+## WSA-5 — technician assignment + My queue
+- `RepairEditScreen` technician picker (with "Me" quick-pick to self-assign to `authStore.user.id`). Uses `listRepairTechnicians` (`repairs.technicians` RPC).
+- `RepairsListScreen` "My queue" filter chip → adds `assigned_to: user.id` to `listRepairs` params. Coexists with the status filter (AND-ed on the wire).
+
+## Verification
+- Shared: **212/212** tests pass, root typecheck clean.
+- Mobile: **431/431 + 16 (repairLabelHtml)** tests pass, mobile typecheck clean.
 

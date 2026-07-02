@@ -2,9 +2,12 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -21,6 +24,7 @@ import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 import PillButton from '../components/PillButton';
 import ApiClient from '../services/ApiClient';
+import {RelayError} from '@aeris/shared';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useAuthStore} from '../stores/authStore';
@@ -215,6 +219,13 @@ const RepairDetailScreen: React.FC = () => {
     user as unknown as {permissions?: unknown} | null,
     'send-manual-notification',
   );
+  // WSA-3 gates the "Edit items" button on the same write-permission the
+  // server enforces on the underlying repair.updateItems / repair.update
+  // endpoints. A viewer (no edit_repair) sees the row without the button.
+  const canEditRepair = userHasPermission(
+    user as unknown as {permissions?: unknown} | null,
+    'edit_repair',
+  );
 
   // ---------------- state (all hooks live ABOVE the early-return guards
   // per feedback_hooks_above_early_returns; a post-guard hook crashes
@@ -224,6 +235,15 @@ const RepairDetailScreen: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isUnavailable, setIsUnavailable] = useState(false);
   const [notFound, setNotFound] = useState(false);
+
+  // WSA-3 notes card local state. `noteDraft` is the current text in the
+  // input; `notePosting` guards the Send button + input during the RPC. A
+  // successful send calls `addRepairNote`, then appends the returned
+  // status_history row to `repair.status_history` in place (fresh timeline
+  // reload happens on the next useFocusEffect if the sheet stays open).
+  const [noteDraft, setNoteDraft] = useState('');
+  const [notePosting, setNotePosting] = useState(false);
+  const notePostLockRef = useRef(false);
 
   // ---------------- workspace-flag mount guard ----------------
   // Belt-and-braces: if the workspace flag was flipped off mid-session or
@@ -438,26 +458,20 @@ const RepairDetailScreen: React.FC = () => {
                 );
                 return;
               }
-              // T8 STOCK CONTRACT (deployment-team-confirmed, option b):
-              // parts land on the sale with REAL product_id so
-              // POSController::processSale's Product::findOrFail passes and
-              // the server's C1/C2 side-effect releases the reservation +
-              // decrements stock_reserved cleanly. Synthetic negative ids
-              // would 422. LABOUR handling is UNRESOLVED — provisional
-              // policy is to block the hand-off with a clear Alert until
-              // the deployment team confirms the surface. Leave cart +
-              // customer + repair-link untouched so the cashier can take
-              // the checkout to the till desktop.
-              const hasLabour = fresh.items.some(
-                ri => ri.item_type === 'labor' || ri.product_id == null,
-              );
-              if (hasLabour) {
-                Alert.alert(
-                  'Repair labour handling',
-                  'This repair has labour lines. Handle this checkout at the till desktop until labour surface is confirmed.',
-                );
-                return;
-              }
+              // T8 STOCK CONTRACT (deployment-team-confirmed):
+              //  * PARTS: land on the sale with REAL product_id so
+              //    POSController::processSale's Product::findOrFail passes
+              //    and the server's C1/C2 side-effect releases the
+              //    reservation + decrements stock_reserved cleanly.
+              //  * LABOUR: uses a synthetic product_id in the range
+              //    <= -600000 (`-600000 - ri.id`). The server sale
+              //    validator whitelists this range so labour lines pass
+              //    without a Product row.
+              // BOTH set tax_rate: 10 so the wire encoder emits
+              // `gst_applicable: true` per line (per T8-C1: subtotal is
+              // sum(lineTotal/1.10) for gst-applicable + sum(lineTotal)
+              // otherwise). Repair items are quoted GST-inclusive, so this
+              // simply extracts the embedded GST — no double-tax.
               const cart = useCartStore.getState();
               // Clear any pre-existing cart so a mixed retail + repair
               // basket doesn't accidentally carry across into the sale.
@@ -465,21 +479,17 @@ const RepairDetailScreen: React.FC = () => {
               if (fresh.customer) {
                 cart.setCustomer(fresh.customer.id, fresh.customer.name);
               }
-              // Money on the repair wire is DOLLARS (per api.types.ts
-              // §Repair). Synthesise a stub Product per parts row using
-              // the REAL product_id (T8 stock contract); tax_rate 0 so
-              // the GST math doesn't double-apply (repair quotes are
-              // already GST-inclusive).
               fresh.items.forEach(ri => {
-                // Belt-and-braces after the labour block above.
-                if (ri.item_type === 'labor' || ri.product_id == null) return;
+                const isLabour =
+                  ri.item_type === 'labor' || ri.product_id == null;
+                const synthId = isLabour ? -600000 - ri.id : ri.product_id!;
                 const synth: Product = {
-                  id: ri.product_id,
+                  id: synthId,
                   name: ri.item_name,
                   sku: ri.item_sku ?? '',
                   barcode: null,
                   price_cents: Math.round(ri.unit_price * 100),
-                  tax_rate: 0,
+                  tax_rate: 10,
                   stock_on_hand: 0,
                   category_id: null,
                   category_name: null,
@@ -554,6 +564,47 @@ const RepairDetailScreen: React.FC = () => {
       ],
     );
   }, [repair, haptics]);
+
+  // WSA-3 add-note handler. Posts via ApiClient.addRepairNote (server
+  // validates <=2000, RelayClient duplicate-strips before the RPC). On
+  // success, appends the returned status_history row to the local timeline
+  // in place — no full refetch — and clears the draft. The useFocusEffect
+  // above will re-reconcile if the sheet stays open long enough for
+  // another tab to add a competing row.
+  const handleAddNote = useCallback(async () => {
+    if (notePostLockRef.current) return;
+    if (!repair) return;
+    const trimmed = noteDraft.trim();
+    if (trimmed.length === 0) return;
+    if (trimmed.length > 2000) {
+      Alert.alert('Note too long', 'Notes are limited to 2000 characters.');
+      return;
+    }
+    notePostLockRef.current = true;
+    setNotePosting(true);
+    try {
+      const newRow = await ApiClient.addRepairNote(repair.id, trimmed);
+      haptics.success();
+      setRepair(prev =>
+        prev
+          ? {...prev, status_history: [...prev.status_history, newRow]}
+          : prev,
+      );
+      setNoteDraft('');
+    } catch (e) {
+      haptics.error();
+      const msg =
+        e instanceof RelayError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Failed to add note.';
+      Alert.alert('Note failed', msg);
+    } finally {
+      notePostLockRef.current = false;
+      setNotePosting(false);
+    }
+  }, [repair, noteDraft, haptics]);
 
   // ---------------- early-return guards (all hooks are declared above) --
   if (isLoading) {
@@ -866,6 +917,52 @@ const RepairDetailScreen: React.FC = () => {
           )}
         </View>
 
+        {/* -------- Notes card (WSA-3) --------
+            Sits between History and the Action row so a technician can
+            note "diagnosed as motherboard - waiting for customer approval"
+            without a status change and see it land on the timeline above.
+            Server appends a status_history row with from_status ===
+            to_status so notes and status transitions read as one merged
+            log. Gated on edit_repair for the same reason as the items
+            editor — a viewer can read but not append. */}
+        {canEditRepair ? (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Add note</Text>
+            <Text style={styles.subLabel}>
+              Adds a timeline entry without changing status.
+            </Text>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <TextInput
+                style={styles.noteInput}
+                value={noteDraft}
+                onChangeText={setNoteDraft}
+                placeholder="e.g. Waiting on customer approval for motherboard swap."
+                placeholderTextColor={COLORS.inputPlaceholder}
+                multiline
+                numberOfLines={3}
+                maxLength={2000}
+                editable={!notePosting}
+                accessibilityLabel="Repair note"
+              />
+              <View style={styles.noteFooterRow}>
+                <Text style={styles.noteCount}>
+                  {noteDraft.length}/2000
+                </Text>
+                <PillButton
+                  label={notePosting ? 'Sending…' : 'Add note'}
+                  variant="secondary"
+                  onPress={handleAddNote}
+                  disabled={
+                    notePosting || noteDraft.trim().length === 0
+                  }
+                  accessibilityLabel="Add note to timeline"
+                />
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        ) : null}
+
         {/* -------- Action row (T7 part C) --------
             Sits after History so the timeline reads as context for the
             actions the operator is about to take. Horizontal wrap of
@@ -908,6 +1005,35 @@ const RepairDetailScreen: React.FC = () => {
               navigation.navigate('RepairEdit', {id: repair.id});
             }}
             accessibilityLabel="Edit repair"
+            style={styles.actionBtn}
+          />
+          {/* WSA-3 items editor. Opens as a formSheet over the detail with
+              parts + labour rows editable side-by-side. Scoped to writers
+              only (edit_repair) so a viewer sees the row without the button. */}
+          {canEditRepair ? (
+            <PillButton
+              label="Edit items"
+              variant="tertiary"
+              onPress={() => {
+                navigation.navigate('RepairItemsEditor', {id: repair.id});
+              }}
+              accessibilityLabel="Edit repair items"
+              style={styles.actionBtn}
+            />
+          ) : null}
+          {/* WSA-2 label print. Renders the Dymo 89×38 mm repair label with a
+              CODE128 of the repair number so any piece left behind can be
+              matched back with the Repairs tab scanner. AirPrint on iOS,
+              print intent on Android. Always available while a repair is
+              open (no status gate) — technicians reprint labels as pieces
+              get bagged/unbagged. */}
+          <PillButton
+            label="Print label"
+            variant="tertiary"
+            onPress={() => {
+              navigation.navigate('RepairLabelPrint', {id: repair.id});
+            }}
+            accessibilityLabel="Print repair label"
             style={styles.actionBtn}
           />
           {canNotifyCustomer ? (
@@ -1210,6 +1336,39 @@ const styles = StyleSheet.create({
     // handles overflow. flexShrink:0 prevents the label from being
     // truncated when a third button (Notify customer) is present.
     flexShrink: 0,
+  },
+
+  // WSA-3 notes card.
+  subLabel: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.regular,
+    marginBottom: SPACING.sm,
+  },
+  noteInput: {
+    minHeight: 88,
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.regular,
+    textAlignVertical: 'top',
+  },
+  noteFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  noteCount: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.medium,
   },
 });
 

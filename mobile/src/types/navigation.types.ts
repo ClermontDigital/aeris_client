@@ -129,6 +129,15 @@ export type RepairsStackParamList = {
   // call sites use `navigate('RepairScanner')` since initialParams provides
   // the default.
   RepairScanner: {mode: 'repair'} | undefined;
+  // WSA-2: label print sheet. Presented as a formSheet over RepairDetail
+  // so it reads as a focused sub-task, not a push. Requires the target
+  // repair id — the sheet fetches its own detail so it doesn't rely on
+  // RepairDetail passing the full record through params.
+  RepairLabelPrint: {id: number};
+  // WSA-3: items editor sheet. Same formSheet presentation as the label
+  // sheet. Requires the target repair id; the editor pulls its initial
+  // items from a fresh getRepairDetail so it always shows server state.
+  RepairItemsEditor: {id: number};
 };
 
 // Screen prop types

@@ -272,17 +272,21 @@ describe('CartScreen', () => {
     expect(firstAdd.price_cents).toBe(13000);
     // T8: id is the REAL Product PK, NOT -ri.id.
     expect(firstAdd.id).toBe(900);
-    // tax_rate 0 — repair items are quoted GST-inclusive already.
-    expect(firstAdd.tax_rate).toBe(0);
+    // tax_rate 10 — labour contract: BOTH parts and labour set tax_rate 10
+    // so the wire encoder emits gst_applicable: true per line (T8-C1 per-
+    // line GST math). Repair items are quoted GST-inclusive, so this
+    // extracts the embedded GST — no double-tax.
+    expect(firstAdd.tax_rate).toBe(10);
 
     const secondAdd = mockCartState.addItem.mock.calls[1][0];
     expect(secondAdd.id).toBe(901);
+    expect(secondAdd.tax_rate).toBe(10);
 
     expect(mockCartState.setRepairId).toHaveBeenCalledWith(7);
     expect(mockCartState.setRepairNumber).toHaveBeenCalledWith('0001');
   });
 
-  it('T8 — picking a repair with a labour line blocks with a "handle at the till desktop" alert and does NOT touch the cart', async () => {
+  it('T8 - picking a repair with parts + labour synthesises BOTH lines (parts use real product_id, labour uses -600000-id, both tax_rate 10)', async () => {
     mockCartState.customerId = 42;
     mockCartState.customerName = 'Ada Lovelace';
     mockWorkspaceState.repairs_enabled = true;
@@ -329,10 +333,6 @@ describe('CartScreen', () => {
       ],
     });
 
-    const alertSpy = jest
-      .spyOn(require('react-native').Alert, 'alert')
-      .mockImplementation(() => undefined);
-
     const {getByLabelText, findByLabelText} = render(<CartScreen />);
     await act(async () => {
       fireEvent.press(getByLabelText('Take payment for repair'));
@@ -344,18 +344,31 @@ describe('CartScreen', () => {
     });
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith(
-        'Repair labour handling',
-        expect.stringContaining('till desktop'),
-      );
+      expect(mockCartState.setRepairId).toHaveBeenCalledWith(7);
     });
-    // Cart untouched — labour block leaves clear / addItem / setRepairId
-    // untouched so the cashier can take the checkout to the till desktop.
-    expect(mockCartState.clear).not.toHaveBeenCalled();
-    expect(mockCartState.addItem).not.toHaveBeenCalled();
-    expect(mockCartState.setRepairId).not.toHaveBeenCalled();
-    expect(mockCartState.setRepairNumber).not.toHaveBeenCalled();
-    alertSpy.mockRestore();
+    expect(mockCartState.clear).toHaveBeenCalled();
+    expect(mockCartState.setRepairNumber).toHaveBeenCalledWith('0001');
+    expect(mockCartState.addItem).toHaveBeenCalledTimes(2);
+    // Parts row: REAL product_id, tax_rate 10.
+    expect(mockCartState.addItem).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        id: 900,
+        price_cents: 13000,
+        tax_rate: 10,
+      }),
+      1,
+    );
+    // Labour row: synthetic id -600000 - ri.id (= -600011), tax_rate 10.
+    expect(mockCartState.addItem).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        id: -600011,
+        price_cents: 7000,
+        tax_rate: 10,
+      }),
+      1,
+    );
   });
 
   it('T8 — "Checking out repair REP-…" chip renders when the cart is linked to a repair', () => {
