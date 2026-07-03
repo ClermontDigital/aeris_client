@@ -51,7 +51,33 @@ export interface User {
   name: string;
   email: string;
   role: string;
-  location_id: number | null;
+  // The Aeris2 UserResource sends the assigned deployment site NESTED as
+  // `location: {id, name, code}` (and only `whenLoaded`), NOT as a flat
+  // `location_id`. Both shapes are declared here so a consumer can read
+  // whichever the deployment actually surfaces; resolveUserLocationId()
+  // below is the single source of truth for "which location is this user
+  // assigned to". A deployment that eager-loads the relation populates
+  // `location`; older/flat shapes may populate `location_id`. When neither
+  // is present the user has no resolvable location (repairs create blocks).
+  location_id?: number | null;
+  location?: {id: number; name?: string | null; code?: string | null} | null;
+}
+
+/**
+ * Resolve the user's assigned location id from whichever shape the
+ * deployment surfaced: flat `location_id` OR nested `location.id`. Returns
+ * null when neither is present. Used by the repair-create flow, which the
+ * server requires a location for.
+ */
+export function resolveUserLocationId(
+  user: {location_id?: number | null; location?: {id?: number} | null} | null | undefined,
+): number | null {
+  if (!user) return null;
+  if (typeof user.location_id === 'number') return user.location_id;
+  if (user.location && typeof user.location.id === 'number') {
+    return user.location.id;
+  }
+  return null;
 }
 
 export interface Product {
