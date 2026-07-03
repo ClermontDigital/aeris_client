@@ -20,7 +20,10 @@ import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 import EyebrowLabel from '../components/EyebrowLabel';
 import PillButton from '../components/PillButton';
+import KeyboardDoneAccessory from '../components/KeyboardDoneAccessory';
+import CalendarDatePicker from '../components/CalendarDatePicker';
 import ApiClient from '../services/ApiClient';
+import {resolveUserLocationId} from '@aeris/shared';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useAuthStore} from '../stores/authStore';
@@ -66,6 +69,10 @@ const CUSTOMER_SEARCH_DEBOUNCE_MS = 300;
 // polish. We surface a friendly inline error rather than let the server
 // 422 with a "not a valid date" message.
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+// Shared iOS keyboard-accessory id so every text input on this form gets the
+// same "Done" bar (multiline + decimal-pad have no return key otherwise).
+const REPAIR_EDIT_INPUT_BAR = 'repair-edit-input-bar';
 
 // Local form shape - all strings so RN inputs bind directly. Cast happens
 // at submit-time in buildCreatePayload / buildUpdatePayload.
@@ -313,7 +320,11 @@ const RepairEditScreen: React.FC = () => {
   // site. Server StoreRepairRequest declares location_id required, so a null
   // here MUST block Save in create mode. Edit mode never sends location_id
   // (server-locked after create), so a null user.location_id there is fine.
-  const userLocationId = useAuthStore(s => s.user?.location_id ?? null);
+  // Resolve the assigned-site id from whichever shape the deployment
+  // surfaces — flat `location_id` OR nested `location.id` (Aeris2's
+  // UserResource sends the nested shape, and only when the relation is
+  // eager-loaded). See resolveUserLocationId in @aeris/shared.
+  const userLocationId = useAuthStore(s => resolveUserLocationId(s.user));
   const [values, setValues] = useState<RepairFormValues>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<RepairFormErrors>({});
   const [topError, setTopError] = useState<string | null>(null);
@@ -614,6 +625,10 @@ const RepairEditScreen: React.FC = () => {
     [values.priority],
   );
 
+  // iOS-only accessory id passed to each TextInput's inputAccessoryViewID.
+  // undefined on Android (system keyboard exposes its own dismiss).
+  const iosBar = Platform.OS === 'ios' ? REPAIR_EDIT_INPUT_BAR : undefined;
+
   // ---------------- early-return guards -----------------------------------
   if (isLoading) {
     return (
@@ -652,7 +667,8 @@ const RepairEditScreen: React.FC = () => {
         style={styles.flex}>
         <ScrollView
           contentContainerStyle={[styles.scroll, tabletColumnCap]}
-          keyboardShouldPersistTaps="handled">
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
           {/* Header: Back on the left, Save on the right, title beneath. */}
           <View style={styles.headerRow}>
             <TouchableOpacity
@@ -833,6 +849,7 @@ const RepairEditScreen: React.FC = () => {
             onChangeText={t => setField('device_type', t)}
             placeholder="Phone, laptop, watch…"
             autoCapitalize="sentences"
+            inputAccessoryViewID={iosBar}
             error={fieldErrors.device_type}
           />
           <FormField
@@ -841,6 +858,7 @@ const RepairEditScreen: React.FC = () => {
             onChangeText={t => setField('brand', t)}
             placeholder="Apple, Samsung, HP…"
             autoCapitalize="words"
+            inputAccessoryViewID={iosBar}
             error={fieldErrors.brand}
           />
           <FormField
@@ -849,6 +867,7 @@ const RepairEditScreen: React.FC = () => {
             onChangeText={t => setField('model', t)}
             placeholder="iPhone 13, Galaxy S22…"
             autoCapitalize="sentences"
+            inputAccessoryViewID={iosBar}
             error={fieldErrors.model}
           />
           <FormField
@@ -858,6 +877,7 @@ const RepairEditScreen: React.FC = () => {
             placeholder="Optional"
             autoCapitalize="characters"
             autoCorrect={false}
+            inputAccessoryViewID={iosBar}
             error={fieldErrors.serial_number}
           />
 
@@ -870,6 +890,7 @@ const RepairEditScreen: React.FC = () => {
             placeholder="What's wrong with the device?"
             multiline
             required
+            inputAccessoryViewID={iosBar}
             error={fieldErrors.issue_description}
             testID="repair-edit-issue-description"
           />
@@ -879,6 +900,7 @@ const RepairEditScreen: React.FC = () => {
             onChangeText={t => setField('diagnosis', t)}
             placeholder="Technician diagnosis, if known"
             multiline
+            inputAccessoryViewID={iosBar}
             error={fieldErrors.diagnosis}
           />
           <FormField
@@ -887,6 +909,7 @@ const RepairEditScreen: React.FC = () => {
             onChangeText={t => setField('notes', t)}
             placeholder="Any additional notes"
             multiline
+            inputAccessoryViewID={iosBar}
             error={fieldErrors.notes}
           />
 
@@ -953,6 +976,7 @@ const RepairEditScreen: React.FC = () => {
                 placeholder="0.00"
                 placeholderTextColor={COLORS.inputPlaceholder}
                 keyboardType="decimal-pad"
+                inputAccessoryViewID={iosBar}
                 accessibilityLabel="Estimated cost"
                 testID="repair-edit-estimated-cost"
               />
@@ -963,20 +987,34 @@ const RepairEditScreen: React.FC = () => {
               </Text>
             ) : null}
           </View>
-          <FormField
+          <CalendarDatePicker
             label="Estimated completion"
-            value={values.estimated_completion}
-            onChangeText={t => setField('estimated_completion', t)}
-            placeholder="YYYY-MM-DD"
-            autoCapitalize="none"
-            autoCorrect={false}
-            hint="A proper date picker lands in a follow-up polish"
+            value={values.estimated_completion || null}
+            onChange={next => setField('estimated_completion', next ?? '')}
+            placeholder="Pick a completion date"
+            hint="Optional — when you expect the repair to be ready"
             error={fieldErrors.estimated_completion}
+            testID="repair-edit-estimated-completion"
+          />
+
+          {/* Bottom Save — mirrors the header Save so a cashier who has
+              scrolled to the end of the form doesn't have to scroll back up.
+              Same handler + disabled state so the two stay in lockstep. */}
+          <PillButton
+            label={isSubmitting ? 'Saving…' : isEdit ? 'Save changes' : 'Save repair'}
+            variant="solid"
+            onPress={handleSubmit}
+            disabled={!canSubmit}
+            accessibilityLabel={
+              isEdit ? 'Save changes (bottom)' : 'Save new repair (bottom)'
+            }
+            style={styles.bottomSave}
           />
 
           <View style={styles.footerSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
+      <KeyboardDoneAccessory nativeID={REPAIR_EDIT_INPUT_BAR} />
     </SafeAreaView>
   );
 };
@@ -999,6 +1037,7 @@ interface FormFieldProps {
   keyboardType?: 'default' | 'email-address' | 'phone-pad' | 'number-pad';
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   autoCorrect?: boolean;
+  inputAccessoryViewID?: string;
   testID?: string;
 }
 
@@ -1014,6 +1053,7 @@ const FormField: React.FC<FormFieldProps> = ({
   keyboardType,
   autoCapitalize,
   autoCorrect,
+  inputAccessoryViewID,
   testID,
 }) => {
   return (
@@ -1036,6 +1076,7 @@ const FormField: React.FC<FormFieldProps> = ({
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         autoCorrect={autoCorrect}
+        inputAccessoryViewID={inputAccessoryViewID}
         accessibilityLabel={label}
         accessibilityHint={hint}
         testID={testID}
@@ -1278,6 +1319,7 @@ const styles = StyleSheet.create({
   },
 
   footerSpacer: {height: SPACING.lg},
+  bottomSave: {marginTop: SPACING.lg, alignSelf: 'stretch'},
 });
 
 export default RepairEditScreen;

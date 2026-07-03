@@ -19,6 +19,7 @@ import ApiClient from '../services/ApiClient';
 import ErrorBanner from '../components/ErrorBanner';
 import EyebrowLabel from '../components/EyebrowLabel';
 import PillButton from '../components/PillButton';
+import KeyboardDoneAccessory from '../components/KeyboardDoneAccessory';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
@@ -39,6 +40,11 @@ type Nav = NativeStackNavigationProp<
   'RepairItemsEditor'
 >;
 type RouteProps = RouteProp<RepairsStackParamList, 'RepairItemsEditor'>;
+
+// iOS keyboard-accessory id shared by the add-item form's inputs (number-pad
+// / decimal-pad have no return key to dismiss).
+const ITEMS_INPUT_BAR = 'repair-items-input-bar';
+const iosBar = Platform.OS === 'ios' ? ITEMS_INPUT_BAR : undefined;
 
 type NewItemType = 'part' | 'labor';
 
@@ -353,7 +359,8 @@ const RepairItemsEditorSheet: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={[styles.scroll, tabletCap]}
-          keyboardShouldPersistTaps="handled">
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
           {banner ? (
             <View style={styles.bannerWrap}>
               <ErrorBanner
@@ -527,6 +534,7 @@ const RepairItemsEditorSheet: React.FC = () => {
                 }
                 placeholderTextColor={COLORS.inputPlaceholder}
                 autoCapitalize="sentences"
+                inputAccessoryViewID={iosBar}
                 accessibilityLabel="Item name"
               />
               {draft.type === 'part' ? (
@@ -540,6 +548,7 @@ const RepairItemsEditorSheet: React.FC = () => {
                     placeholderTextColor={COLORS.inputPlaceholder}
                     autoCapitalize="characters"
                     autoCorrect={false}
+                    inputAccessoryViewID={iosBar}
                     accessibilityLabel="SKU"
                   />
                 </>
@@ -552,6 +561,7 @@ const RepairItemsEditorSheet: React.FC = () => {
                     value={draft.quantity}
                     onChangeText={q => setDraft(d => ({...d, quantity: q}))}
                     keyboardType="number-pad"
+                    inputAccessoryViewID={iosBar}
                     accessibilityLabel="Quantity"
                   />
                 </View>
@@ -566,6 +576,7 @@ const RepairItemsEditorSheet: React.FC = () => {
                     keyboardType="decimal-pad"
                     placeholder="0.00"
                     placeholderTextColor={COLORS.inputPlaceholder}
+                    inputAccessoryViewID={iosBar}
                     accessibilityLabel="Unit price in dollars"
                   />
                 </View>
@@ -601,6 +612,7 @@ const RepairItemsEditorSheet: React.FC = () => {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      <KeyboardDoneAccessory nativeID={ITEMS_INPUT_BAR} />
     </SafeAreaView>
   );
 };
