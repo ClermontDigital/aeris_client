@@ -98,6 +98,28 @@ jest.mock('@react-navigation/native', () => ({
   useFocusEffect: () => undefined,
 }));
 
+// react-native-modal (used by the CalendarDatePicker) calls
+// BackHandler.removeEventListener, removed in RN 0.83 — it throws in the
+// jest env. Replace with an isVisible-gated passthrough (same approach as
+// StockAdjustModal.test / SettingsModal test).
+jest.mock('react-native-modal', () => {
+  const RN = require('react-native');
+  const RreactModal = require('react');
+  return {
+    __esModule: true,
+    default: ({
+      isVisible,
+      children,
+    }: {
+      isVisible: boolean;
+      children: unknown;
+    }) =>
+      isVisible
+        ? RreactModal.createElement(RN.View, {testID: 'rn-modal'}, children)
+        : null,
+  };
+});
+
 import RepairEditScreen, {
   validateRepairForm,
   parseServerFieldErrors,

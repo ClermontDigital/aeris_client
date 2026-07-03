@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -23,6 +24,7 @@ import Icon from '../components/Icon';
 import EmptyState from '../components/EmptyState';
 import ErrorBanner from '../components/ErrorBanner';
 import PillButton from '../components/PillButton';
+import KeyboardDoneAccessory from '../components/KeyboardDoneAccessory';
 import ApiClient from '../services/ApiClient';
 import {RelayError} from '@aeris/shared';
 import {useHaptics} from '../hooks/useHaptics';
@@ -48,6 +50,10 @@ import {
   ICON_SIZE,
   SPACING,
 } from '../constants/theme';
+
+// iOS keyboard-accessory id for the WSA-3 add-note textarea (multiline has
+// no return key to dismiss the keyboard).
+const REPAIR_NOTE_INPUT_BAR = 'repair-note-input-bar';
 
 type Nav = NativeStackNavigationProp<RepairsStackParamList, 'RepairDetail'>;
 type RepairDetailRouteProp = RouteProp<RepairsStackParamList, 'RepairDetail'>;
@@ -591,6 +597,9 @@ const RepairDetailScreen: React.FC = () => {
           : prev,
       );
       setNoteDraft('');
+      // Dismiss the keyboard on success so the freshly-appended timeline row
+      // is visible without the keyboard covering it.
+      Keyboard.dismiss();
     } catch (e) {
       haptics.error();
       const msg =
@@ -683,7 +692,10 @@ const RepairDetailScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
-      <ScrollView contentContainerStyle={[styles.scroll, tabletColumnCap]}>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, tabletColumnCap]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
         {/* -------- Header: title + status chip + assignment strip -------- */}
         <View style={styles.card}>
           <View style={styles.headerRow}>
@@ -943,6 +955,9 @@ const RepairDetailScreen: React.FC = () => {
                 numberOfLines={3}
                 maxLength={2000}
                 editable={!notePosting}
+                inputAccessoryViewID={
+                  Platform.OS === 'ios' ? REPAIR_NOTE_INPUT_BAR : undefined
+                }
                 accessibilityLabel="Repair note"
               />
               <View style={styles.noteFooterRow}>
@@ -1065,6 +1080,7 @@ const RepairDetailScreen: React.FC = () => {
         {/* Back lives in the shared brand header (top-left of the chrome)
             via useHeaderBackStore above. */}
       </ScrollView>
+      <KeyboardDoneAccessory nativeID={REPAIR_NOTE_INPUT_BAR} />
     </SafeAreaView>
   );
 };
