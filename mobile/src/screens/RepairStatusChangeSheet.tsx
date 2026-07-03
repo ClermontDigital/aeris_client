@@ -19,6 +19,7 @@ import ApiClient from '../services/ApiClient';
 import ErrorBanner from '../components/ErrorBanner';
 import EyebrowLabel from '../components/EyebrowLabel';
 import PillButton from '../components/PillButton';
+import KeyboardDoneAccessory from '../components/KeyboardDoneAccessory';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useTransactionActivityStore} from '../stores/transactionActivityStore';
@@ -36,6 +37,9 @@ import {
 
 type Nav = NativeStackNavigationProp<RepairsStackParamList, 'RepairStatusChange'>;
 type RouteProps = RouteProp<RepairsStackParamList, 'RepairStatusChange'>;
+
+// iOS keyboard-accessory id for the multiline notes field.
+const STATUS_NOTE_INPUT_BAR = 'repair-status-note-input-bar';
 
 // Closed union - kept in the same order as RepairStatus for the picker to
 // read left-to-right through the normal repair lifecycle. Cancelled sits
@@ -372,7 +376,8 @@ const RepairStatusChangeSheet: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={[styles.scroll, tabletCap]}
-          keyboardShouldPersistTaps="handled">
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag">
           {submitError ? (
             <View style={styles.bannerWrap}>
               <ErrorBanner
@@ -471,11 +476,15 @@ const RepairStatusChangeSheet: React.FC = () => {
               placeholderTextColor={COLORS.inputPlaceholder}
               multiline
               numberOfLines={3}
+              inputAccessoryViewID={
+                Platform.OS === 'ios' ? STATUS_NOTE_INPUT_BAR : undefined
+              }
               accessibilityLabel="Status change notes"
             />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      <KeyboardDoneAccessory nativeID={STATUS_NOTE_INPUT_BAR} />
     </SafeAreaView>
   );
 };
