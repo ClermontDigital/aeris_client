@@ -9,9 +9,14 @@ Google Play / sideload APK (Android).
 
 ---
 
+> **Android release process:** see
+> [`ANDROID_RELEASE_GUIDE.md`](./ANDROID_RELEASE_GUIDE.md) for the full
+> Play Console setup + tag-based release flow.
+
 ## iOS — Xcode Cloud → TestFlight
 
-**Trigger:** push to `release` branch.
+**Trigger:** push to the `apple` branch (each push runs a billed Xcode
+Cloud build — only push when a TestFlight build is actually wanted).
 
 **Config:** App Store Connect → Xcode Cloud → Workflow. The build
 script lives at `mobile/ios/ci_scripts/ci_post_clone.sh` and:
@@ -28,7 +33,7 @@ script lives at `mobile/ios/ci_scripts/ci_post_clone.sh` and:
 (Xcode Cloud's monotonic counter), so every TestFlight build is
 unique even if the marketing `version` in `app.json` hasn't changed.
 
-**To cut a TestFlight build:** commit + push to `release`.
+**To cut a TestFlight build:** commit + push to `apple`.
 
 ---
 
