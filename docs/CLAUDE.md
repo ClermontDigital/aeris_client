@@ -76,7 +76,7 @@ Per-app release tagging:
 | Tag prefix             | Effect                                            |
 |------------------------|---------------------------------------------------|
 | `client-vX.Y.Z`        | Cut Aeris v2 GitHub Release (dmg/zip/exe/AppImage/deb + electron-updater channel manifests) |
-| `mobile-vX.Y.Z`        | Triggers `android-build.yml` (signed APK + AAB artifacts). iOS uses its own Xcode Cloud trigger on `release` branch push. |
+| `mobile-vX.Y.Z`        | `android-build.yml` cuts a GitHub Release with the signed APK + AAB attached (`aeris-X.Y.Z.apk` / `.aab`). iOS uses its own Xcode Cloud trigger on `release`/`apple` branch push. |
 | `desktop-v1-vX.Y.Z`    | Archived v1 security-patch GitHub Release        |
 
 Required secrets: `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`,
