@@ -66,6 +66,15 @@ const RepairsStack: React.FC = () => (
       component={RepairItemsEditorSheet}
       options={{presentation: 'formSheet'}}
     />
+    {/* Scan-to-add: product-barcode scanner presented over the items editor.
+        mode='repair-item' resolves the product and hands it back via
+        repairItemScanStore. fullScreenModal so the camera is dedicated. */}
+    <Stack.Screen
+      name="RepairItemScanner"
+      component={BarcodeScannerScreen}
+      initialParams={{mode: 'repair-item'}}
+      options={{presentation: 'fullScreenModal'}}
+    />
   </Stack.Navigator>
 );
 

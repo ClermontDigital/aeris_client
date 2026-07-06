@@ -20,10 +20,12 @@ import ErrorBanner from '../components/ErrorBanner';
 import EyebrowLabel from '../components/EyebrowLabel';
 import PillButton from '../components/PillButton';
 import KeyboardDoneAccessory from '../components/KeyboardDoneAccessory';
+import Icon from '../components/Icon';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import {useTransactionActivityStore} from '../stores/transactionActivityStore';
+import {useRepairItemScanStore} from '../stores/repairItemScanStore';
 import {RelayError, productAllowsDecimalQuantity} from '@aeris/shared';
 import type {Product, RepairDetail, RepairItem} from '../types/api.types';
 import type {RepairsStackParamList} from '../types/navigation.types';
@@ -32,6 +34,7 @@ import {
   COLORS,
   FONT_FAMILY,
   FONT_SIZE,
+  ICON_SIZE,
   SPACING,
 } from '../constants/theme';
 
@@ -183,6 +186,12 @@ const RepairItemsEditorSheet: React.FC = () => {
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      // Drop any un-consumed scan hand-off on the way out so a product that
+      // was resolved after this editor was torn down (stack popped between the
+      // scanner's setPendingProduct and the consume effect) can't leak into
+      // the next editor open. The fresh-mount ref-gate already defuses it, but
+      // clearing here keeps the singleton store honest.
+      useRepairItemScanStore.getState().clear();
     };
   }, []);
 
@@ -330,12 +339,22 @@ const RepairItemsEditorSheet: React.FC = () => {
       haptics.selection();
       setDraft(d => ({
         ...d,
+        // A scanned/selected product is always a Part (labour has no catalogue
+        // link) — force the type so a scan while the draft was on Labour still
+        // lands correctly.
+        type: 'part',
         product_id: product.id,
         name: product.name,
         sku: product.sku ?? '',
         // Pre-fill the sell price (dollars) but leave it editable — a
         // technician may quote a repair part differently than the shelf price.
-        unit_price: (product.price_cents / 100).toFixed(2),
+        // A catalogue item with no sell price on file (price_cents === 0) is
+        // left BLANK, not "0.00", so the cashier is forced to enter a price
+        // rather than silently booking the part at $0.00.
+        unit_price:
+          product.price_cents > 0
+            ? (product.price_cents / 100).toFixed(2)
+            : '',
         stock_on_hand: product.stock_on_hand,
         // Snapshot the unit of measure + decimal capability. A metered part
         // (hose by the metre, etc.) unlocks fractional quantity entry.
@@ -364,6 +383,36 @@ const RepairItemsEditorSheet: React.FC = () => {
     }));
     clearProductSearch();
   }, [haptics, clearProductSearch]);
+
+  // ---------------- scan-to-add ----------------
+  // Only a scan initiated from THIS editor should auto-link a product — a
+  // stale hand-off from a previous session (or another surface) must be
+  // ignored. This ref gates the consume effect below.
+  const scanRequestedRef = useRef(false);
+  const pendingScanned = useRepairItemScanStore(s => s.pendingProduct);
+
+  const handleScanToAdd = useCallback(() => {
+    haptics.light();
+    // Clean slate so the effect only ever sees a fresh hit.
+    useRepairItemScanStore.getState().clear();
+    scanRequestedRef.current = true;
+    navigation.navigate('RepairItemScanner');
+  }, [navigation, haptics]);
+
+  // When the scanner pops back having resolved a product, link it (same path
+  // as tapping a search result). Gated on scanRequestedRef so a stale store
+  // value can't auto-add on mount.
+  useEffect(() => {
+    if (!pendingScanned) return;
+    if (!scanRequestedRef.current) {
+      useRepairItemScanStore.getState().clear();
+      return;
+    }
+    scanRequestedRef.current = false;
+    setShowAdd(true);
+    handleSelectProduct(pendingScanned);
+    useRepairItemScanStore.getState().clear();
+  }, [pendingScanned, handleSelectProduct]);
 
   // ---------------- add-new-item form ----------------
   const handleOpenAdd = useCallback(() => {
@@ -734,17 +783,31 @@ const RepairItemsEditorSheet: React.FC = () => {
                 ) : (
                   <>
                     <Text style={styles.fieldLabel}>Add from stock</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={productQuery}
-                      onChangeText={setProductQuery}
-                      placeholder="Search parts by name or SKU"
-                      placeholderTextColor={COLORS.inputPlaceholder}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      inputAccessoryViewID={iosBar}
-                      accessibilityLabel="Search stock parts"
-                    />
+                    <View style={styles.searchRow}>
+                      <TextInput
+                        style={[styles.input, styles.searchInput]}
+                        value={productQuery}
+                        onChangeText={setProductQuery}
+                        placeholder="Search parts by name or SKU"
+                        placeholderTextColor={COLORS.inputPlaceholder}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        inputAccessoryViewID={iosBar}
+                        accessibilityLabel="Search stock parts"
+                      />
+                      <TouchableOpacity
+                        style={styles.scanBtn}
+                        onPress={handleScanToAdd}
+                        accessibilityRole="button"
+                        accessibilityLabel="Scan a product barcode to add">
+                        <Icon
+                          name="barcode-outline"
+                          size={ICON_SIZE.action}
+                          color={COLORS.crimson}
+                        />
+                        <Text style={styles.scanBtnText}>Scan</Text>
+                      </TouchableOpacity>
+                    </View>
                     {productSearching ? (
                       <View style={styles.searchStatusRow}>
                         <ActivityIndicator
@@ -1190,7 +1253,29 @@ const styles = StyleSheet.create({
   qtyField: {flex: 1},
   priceField: {flex: 1},
 
-  // Stock search results + linked-part chip.
+  // Stock search input row (search field + Scan button) + results + chip.
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  searchInput: {flex: 1},
+  scanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 44,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.crimson,
+    backgroundColor: 'rgba(193, 18, 31, 0.06)',
+  },
+  scanBtnText: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.semibold,
+  },
   searchStatusRow: {
     flexDirection: 'row',
     alignItems: 'center',

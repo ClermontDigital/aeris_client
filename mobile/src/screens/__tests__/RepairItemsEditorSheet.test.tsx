@@ -65,12 +65,14 @@ jest.mock('../../stores/workspaceFeaturesStore', () => ({
 }));
 
 const mockGoBack = jest.fn();
+const mockNavigate = jest.fn();
 jest.mock('@react-navigation/native', () => ({
-  useNavigation: () => ({goBack: mockGoBack}),
+  useNavigation: () => ({goBack: mockGoBack, navigate: mockNavigate}),
   useRoute: () => ({params: {id: 1}}),
 }));
 
 import RepairItemsEditorSheet from '../RepairItemsEditorSheet';
+import {useRepairItemScanStore} from '../../stores/repairItemScanStore';
 
 // ---------------- fixtures ----------------
 function makeDetail(over: Partial<RepairDetail> = {}): RepairDetail {
@@ -141,6 +143,8 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
       .mockImplementation(() => Promise.resolve(makeDetail()));
     mockSearchProducts.mockReset().mockResolvedValue(okPage([makeProduct()]));
     mockGoBack.mockReset();
+    mockNavigate.mockReset();
+    useRepairItemScanStore.getState().clear();
     mockSetSettlementOrPrintInFlight.mockReset();
   });
 
@@ -192,6 +196,55 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
       item_sku: 'SCREEN-IP13',
       unit_price: 130, // prefilled from price_cents/100
       quantity: 1,
+    });
+  });
+
+  it('a stock product with no sell price prefills a BLANK price and blocks Add until one is typed', async () => {
+    mockSearchProducts
+      .mockReset()
+      .mockResolvedValue(
+        okPage([
+          makeProduct({
+            id: 901,
+            name: 'Warranty gasket',
+            sku: 'GKT-901',
+            price_cents: 0,
+          }),
+        ]),
+      );
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Search stock parts'), 'gasket');
+    });
+    const result = await utils.findByLabelText(/Add Warranty gasket/);
+    await act(async () => {
+      fireEvent.press(result);
+    });
+
+    // No price on file -> the cashier must enter one; a bare Add is rejected
+    // rather than silently booking the part at $0.00.
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+    expect(mockAddRepairItem).not.toHaveBeenCalled();
+    await utils.findByText('Unit price must be a positive number.');
+
+    // Enter a price -> Add now goes through with the typed value.
+    await act(async () => {
+      fireEvent.changeText(
+        utils.getByLabelText('Unit price in dollars'),
+        '4.00',
+      );
+    });
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
+    expect(mockAddRepairItem.mock.calls[0][1]).toMatchObject({
+      product_id: 901,
+      unit_price: 4,
     });
   });
 
@@ -472,6 +525,62 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
     await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
     const [, payload] = mockAddRepairItem.mock.calls[0];
     expect(payload).toMatchObject({product_id: null, quantity: 1});
+  });
+
+  it('Scan opens the product scanner, and a scanned product links + adds with its real product_id', async () => {
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+
+    // Tap Scan → navigates to the product-barcode scanner.
+    await act(async () => {
+      fireEvent.press(
+        utils.getByLabelText('Scan a product barcode to add'),
+      );
+    });
+    expect(mockNavigate).toHaveBeenCalledWith('RepairItemScanner');
+
+    // Simulate the scanner resolving a product and handing it back via the
+    // store (what BarcodeScannerScreen does in 'repair-item' mode).
+    await act(async () => {
+      useRepairItemScanStore
+        .getState()
+        .setPendingProduct(
+          makeProduct({id: 970, name: 'Scanned Widget', sku: 'WIDGET-1', price_cents: 4500}),
+        );
+    });
+
+    // The editor links it (name prefilled) — submit sends the real id.
+    expect(utils.getByLabelText('Item name').props.value).toBe(
+      'Scanned Widget',
+    );
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
+    const [, payload] = mockAddRepairItem.mock.calls[0];
+    expect(payload).toMatchObject({
+      item_type: 'part',
+      product_id: 970,
+      item_name: 'Scanned Widget',
+    });
+    // Store consumed (cleared) so it can't re-link on the next render.
+    expect(useRepairItemScanStore.getState().pendingProduct).toBeNull();
+  });
+
+  it('ignores a stale scanned product when no scan was requested from this editor', async () => {
+    // A pending product present WITHOUT the user tapping Scan (e.g. stale
+    // from a prior session) must NOT auto-link.
+    useRepairItemScanStore
+      .getState()
+      .setPendingProduct(makeProduct({id: 971, name: 'Stale Widget'}));
+
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+
+    // Name field is empty (nothing auto-linked); store was cleared.
+    expect(utils.getByLabelText('Item name').props.value).toBe('');
+    expect(useRepairItemScanStore.getState().pendingProduct).toBeNull();
+    expect(mockAddRepairItem).not.toHaveBeenCalled();
   });
 
   it('rejects a metered quantity below the 0.001 minimum with a banner', async () => {

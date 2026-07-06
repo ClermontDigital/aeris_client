@@ -30,6 +30,7 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
 import {useProductCacheStore} from '../stores/productCacheStore';
 import {useCartStore} from '../stores/cartStore';
+import {useRepairItemScanStore} from '../stores/repairItemScanStore';
 import {useScannerVisibilityStore} from '../stores/scannerVisibilityStore';
 import {useHaptics} from '../hooks/useHaptics';
 import ApiClient from '../services/ApiClient';
@@ -62,7 +63,7 @@ const formatCents = (cents: number): string => '$' + (cents / 100).toFixed(2);
 // of lookupBarcode regardless of mode, so a repair label scanned during a
 // 'cart' sale falls into the repair-hand-off path rather than the
 // "no product matched" dead-end.
-type ScanMode = 'cart' | 'detail' | 'capture' | 'repair';
+type ScanMode = 'cart' | 'detail' | 'capture' | 'repair' | 'repair-item';
 
 // Scanner is registered in both QuickSaleStack and ItemsStack. The 'detail'
 // mode replace() target ProductDetail only exists in ItemsStackParamList,
@@ -81,6 +82,8 @@ const BarcodeScannerScreen: React.FC = () => {
       ? 'capture'
       : route.params?.mode === 'repair'
       ? 'repair'
+      : route.params?.mode === 'repair-item'
+      ? 'repair-item'
       : 'cart';
   const navigation = useNavigation<Nav>();
   const {hasPermission, requestPermission} = useCameraPermission();
@@ -409,7 +412,11 @@ const BarcodeScannerScreen: React.FC = () => {
         haptics.error();
         return;
       }
-      if (isRepairShape) {
+      // 'repair-item' mode is scanning a PRODUCT barcode to add it to a
+      // repair, so a REP-* label isn't meaningful here — fall through to the
+      // product lookup (which will miss and re-arm) rather than hand off to
+      // RepairDetail. Every other mode keeps the repair-label short-circuit.
+      if (isRepairShape && mode !== 'repair-item') {
         setIsLookingUp(true);
         try {
           const detail: RepairDetail | null =
@@ -522,9 +529,25 @@ const BarcodeScannerScreen: React.FC = () => {
         navigation.replace('ProductDetail', {productId});
       };
 
+      // 'repair-item' — scanned a product to add to a repair. Resolve it and
+      // hand it back to the RepairItemsEditorSheet via the scan store, then
+      // pop. A cache miss falls through to the API; an API miss re-arms with
+      // the standard not-found flow.
+      const handleRepairItemHit = (product: Product) => {
+        haptics.success();
+        useRepairItemScanStore.getState().setPendingProduct(product);
+        setIsExiting(true);
+        navigation.goBack();
+      };
+
       // Try local cache first
       const cached = getByBarcode(barcode);
       if (cached) {
+        if (mode === 'repair-item') {
+          setIsLookingUp(false);
+          handleRepairItemHit(cached);
+          return;
+        }
         if (mode === 'detail') {
           setIsLookingUp(false);
           goDetail(cached.id);
@@ -541,6 +564,10 @@ const BarcodeScannerScreen: React.FC = () => {
       try {
         const product = await ApiClient.getProductByBarcode(barcode);
         if (product) {
+          if (mode === 'repair-item') {
+            handleRepairItemHit(product);
+            return;
+          }
           if (mode === 'detail') {
             goDetail(product.id);
             return;
