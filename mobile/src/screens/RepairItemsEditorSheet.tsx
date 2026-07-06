@@ -24,7 +24,7 @@ import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import {useTransactionActivityStore} from '../stores/transactionActivityStore';
-import {RelayError} from '@aeris/shared';
+import {RelayError, productAllowsDecimalQuantity} from '@aeris/shared';
 import type {Product, RepairDetail, RepairItem} from '../types/api.types';
 import type {RepairsStackParamList} from '../types/navigation.types';
 import {
@@ -66,6 +66,12 @@ interface NewItemDraft {
   product_id: number | null;
   // Snapshot of the picked product's on-hand for the "N in stock" indicator.
   stock_on_hand: number | null;
+  // Unit of measure + decimal capability, snapshotted from the picked product.
+  // A metered part (unit_type !== 'each') unlocks fractional quantity entry
+  // (e.g. 1.3 m of hose); an off-catalogue / labour line stays 'each' /
+  // whole-number. See productAllowsDecimalQuantity + the `isMetered` gate.
+  unit_type: string | null;
+  allows_decimal: boolean;
 }
 
 const EMPTY_DRAFT: NewItemDraft = {
@@ -76,7 +82,16 @@ const EMPTY_DRAFT: NewItemDraft = {
   sku: '',
   product_id: null,
   stock_on_hand: null,
+  unit_type: null,
+  allows_decimal: false,
 };
+
+// Format a measured (fractional) quantity for display: clamp to the server's
+// DECIMAL(12,3) precision and drop trailing zeros so 1.300 -> "1.3" and a
+// computed 1.2999999 -> "1.3".
+function formatMeasuredQty(qty: number): string {
+  return String(Number(qty.toFixed(3)));
+}
 
 /**
  * WSA-3 repair items editor. Presented as a formSheet over RepairDetail.
@@ -322,6 +337,10 @@ const RepairItemsEditorSheet: React.FC = () => {
         // technician may quote a repair part differently than the shelf price.
         unit_price: (product.price_cents / 100).toFixed(2),
         stock_on_hand: product.stock_on_hand,
+        // Snapshot the unit of measure + decimal capability. A metered part
+        // (hose by the metre, etc.) unlocks fractional quantity entry.
+        unit_type: product.unit_type ?? 'each',
+        allows_decimal: productAllowsDecimalQuantity(product),
       }));
       clearProductSearch();
     },
@@ -332,7 +351,17 @@ const RepairItemsEditorSheet: React.FC = () => {
     haptics.light();
     // Drop the catalogue link but keep the typed name/sku/price so the row can
     // be re-purposed as an off-catalogue part rather than forcing a re-type.
-    setDraft(d => ({...d, product_id: null, stock_on_hand: null}));
+    // An off-catalogue part has no unit of measure -> whole-number 'each'.
+    setDraft(d => ({
+      ...d,
+      product_id: null,
+      stock_on_hand: null,
+      unit_type: null,
+      allows_decimal: false,
+      // A metered qty typed while a stock item was linked would be invalid for
+      // a plain 'each' line; snap back to a whole number.
+      quantity: String(Math.max(1, Math.floor(Number(d.quantity) || 1))),
+    }));
     clearProductSearch();
   }, [haptics, clearProductSearch]);
 
@@ -354,12 +383,19 @@ const RepairItemsEditorSheet: React.FC = () => {
   const handleDraftTypeChange = useCallback(
     (type: NewItemType) => {
       haptics.selection();
-      // Leaving Part clears any stock link + search — labour never has one.
+      // Leaving Part clears any stock link + search — labour never has one,
+      // and labour is always whole-number 'each' (no metered labour lines).
       setDraft(d => ({
         ...d,
         type,
         ...(type === 'labor'
-          ? {product_id: null, stock_on_hand: null}
+          ? {
+              product_id: null,
+              stock_on_hand: null,
+              unit_type: null,
+              allows_decimal: false,
+              quantity: String(Math.max(1, Math.floor(Number(d.quantity) || 1))),
+            }
           : null),
       }));
       clearProductSearch();
@@ -370,7 +406,21 @@ const RepairItemsEditorSheet: React.FC = () => {
   const handleSubmitAdd = useCallback(async () => {
     if (!repair) return;
     const name = draft.name.trim();
-    const qty = parseInt(draft.quantity, 10);
+    // Metered parts (a stock item whose unit_type != 'each') may be entered
+    // fractionally — 1.3 m of hose. Everything else is whole-number. The
+    // server enforces the same rule (ProcessSaleRequest rejects a fractional
+    // qty on an 'each' item), so gating on draft.allows_decimal keeps the two
+    // in lockstep. off-catalogue / labour lines have allows_decimal === false.
+    const metered = draft.type === 'part' && draft.allows_decimal;
+    const rawQty = metered
+      ? parseFloat(draft.quantity)
+      : parseInt(draft.quantity, 10);
+    // Clamp a metered quantity to the server's DECIMAL(12,3) precision before
+    // it hits the wire — a decimal-pad lets a cashier type "1.2345", which
+    // would otherwise silently round (or, under MySQL strict mode, throw a
+    // truncation error). Display uses the same 3dp clamp (formatMeasuredQty).
+    const qty =
+      metered && Number.isFinite(rawQty) ? Number(rawQty.toFixed(3)) : rawQty;
     const price = parseFloat(draft.unit_price);
     // Field guards — inline validation avoids a round-trip 422 for the
     // most common typos.
@@ -378,7 +428,14 @@ const RepairItemsEditorSheet: React.FC = () => {
       setBanner('Item name is required.');
       return;
     }
-    if (!Number.isFinite(qty) || qty < 1) {
+    // Metered floor is the server's DECIMAL(12,3) minimum (0.001); unit items
+    // stay whole-number >= 1.
+    if (metered) {
+      if (!Number.isFinite(qty) || qty < 0.001) {
+        setBanner('Quantity must be greater than 0.');
+        return;
+      }
+    } else if (!Number.isFinite(qty) || qty < 1) {
       setBanner('Quantity must be at least 1.');
       return;
     }
@@ -453,6 +510,14 @@ const RepairItemsEditorSheet: React.FC = () => {
   const items = repair.items;
   const totalDollars = items.reduce((sum, i) => sum + i.line_total, 0);
 
+  // The draft is "metered" when a stock part whose unit_type allows fractional
+  // quantity is linked. Drives the decimal keyboard, the qty label unit, and
+  // the "N <unit> in stock" chip. `draftUnit` is the display unit (null for a
+  // plain 'each' item so we don't clutter the label).
+  const draftMetered = draft.type === 'part' && draft.allows_decimal;
+  const draftUnit =
+    draft.unit_type && draft.unit_type !== 'each' ? draft.unit_type : null;
+
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       <SheetHeader
@@ -522,35 +587,48 @@ const RepairItemsEditorSheet: React.FC = () => {
                       <Text style={styles.itemSku}>SKU {item.item_sku}</Text>
                     ) : null}
                     <View style={styles.itemMetaRow}>
-                      <View style={styles.qtyGroup}>
-                        <TouchableOpacity
-                          style={[
-                            styles.qtyBtn,
-                            item.quantity <= 1 || mutating
-                              ? styles.qtyBtnDisabled
-                              : null,
-                          ]}
-                          onPress={() => handleAdjustQty(item, -1)}
-                          disabled={item.quantity <= 1 || mutating}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Decrease quantity of ${item.item_name}`}>
-                          <Text style={styles.qtyBtnText}>−</Text>
-                        </TouchableOpacity>
-                        <Text style={styles.qtyText}>{item.quantity}</Text>
-                        <TouchableOpacity
-                          style={[
-                            styles.qtyBtn,
-                            mutating ? styles.qtyBtnDisabled : null,
-                          ]}
-                          onPress={() => handleAdjustQty(item, 1)}
-                          disabled={mutating}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Increase quantity of ${item.item_name}`}>
-                          <Text style={styles.qtyBtnText}>+</Text>
-                        </TouchableOpacity>
-                      </View>
+                      {Number.isInteger(item.quantity) ? (
+                        <View style={styles.qtyGroup}>
+                          <TouchableOpacity
+                            style={[
+                              styles.qtyBtn,
+                              item.quantity <= 1 || mutating
+                                ? styles.qtyBtnDisabled
+                                : null,
+                            ]}
+                            onPress={() => handleAdjustQty(item, -1)}
+                            disabled={item.quantity <= 1 || mutating}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Decrease quantity of ${item.item_name}`}>
+                            <Text style={styles.qtyBtnText}>−</Text>
+                          </TouchableOpacity>
+                          <Text style={styles.qtyText}>{item.quantity}</Text>
+                          <TouchableOpacity
+                            style={[
+                              styles.qtyBtn,
+                              mutating ? styles.qtyBtnDisabled : null,
+                            ]}
+                            onPress={() => handleAdjustQty(item, 1)}
+                            disabled={mutating}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Increase quantity of ${item.item_name}`}>
+                            <Text style={styles.qtyBtnText}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        // Fractional (metered) line — a whole-number +/- step
+                        // is nonsensical and the Math.max(1,…) floor would
+                        // destroy the fraction. Show the measured quantity;
+                        // to change it, remove + re-add the line. (RepairItem
+                        // doesn't carry unit_type, so the unit label isn't
+                        // shown here — see the optional server note.)
+                        <Text style={styles.qtyMeasured}>
+                          {formatMeasuredQty(item.quantity)}
+                        </Text>
+                      )}
                       <Text style={styles.priceText}>
-                        ${item.unit_price.toFixed(2)} each
+                        ${item.unit_price.toFixed(2)}
+                        {Number.isInteger(item.quantity) ? ' each' : ''}
                       </Text>
                     </View>
                     <Text style={styles.lineTotal}>
@@ -639,7 +717,9 @@ const RepairItemsEditorSheet: React.FC = () => {
                       <Text style={styles.stockChipMeta}>
                         {draft.sku ? `SKU ${draft.sku} · ` : ''}
                         {draft.stock_on_hand != null
-                          ? `${draft.stock_on_hand} in stock`
+                          ? `${draft.stock_on_hand}${
+                              draftUnit ? ` ${draftUnit}` : ''
+                            } in stock`
                           : 'linked to stock'}
                       </Text>
                     </View>
@@ -676,31 +756,40 @@ const RepairItemsEditorSheet: React.FC = () => {
                     ) : null}
                     {productResults.length > 0 ? (
                       <View style={styles.resultsList}>
-                        {productResults.map(p => (
-                          <TouchableOpacity
-                            key={p.id}
-                            style={styles.resultRow}
-                            onPress={() => handleSelectProduct(p)}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Add ${p.name}${
-                              p.sku ? `, ${p.sku}` : ''
-                            }, $${(p.price_cents / 100).toFixed(2)}, ${
-                              p.stock_on_hand
-                            } in stock`}>
-                            <View style={styles.resultBody}>
-                              <Text
-                                style={styles.resultName}
-                                numberOfLines={1}>
-                                {p.name}
-                              </Text>
-                              <Text style={styles.resultMeta}>
-                                {p.sku ? `${p.sku} · ` : ''}
-                                ${(p.price_cents / 100).toFixed(2)} ·{' '}
-                                {p.stock_on_hand} in stock
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                        ))}
+                        {productResults.map(p => {
+                          // Suffix the on-hand with the unit for metered items
+                          // ("12.5 m in stock"); plain for 'each'.
+                          const u =
+                            p.unit_type && p.unit_type !== 'each'
+                              ? ` ${p.unit_type}`
+                              : '';
+                          return (
+                            <TouchableOpacity
+                              key={p.id}
+                              style={styles.resultRow}
+                              onPress={() => handleSelectProduct(p)}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Add ${p.name}${
+                                p.sku ? `, ${p.sku}` : ''
+                              }, $${(p.price_cents / 100).toFixed(2)}, ${
+                                p.stock_on_hand
+                              }${u} in stock`}>
+                              <View style={styles.resultBody}>
+                                <Text
+                                  style={styles.resultName}
+                                  numberOfLines={1}>
+                                  {p.name}
+                                </Text>
+                                <Text style={styles.resultMeta}>
+                                  {p.sku ? `${p.sku} · ` : ''}
+                                  ${(p.price_cents / 100).toFixed(2)} ·{' '}
+                                  {p.stock_on_hand}
+                                  {u} in stock
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
                       </View>
                     ) : null}
                     {productQuery.trim().length > 0 &&
@@ -753,14 +842,18 @@ const RepairItemsEditorSheet: React.FC = () => {
               ) : null}
               <View style={styles.rowFields}>
                 <View style={styles.qtyField}>
-                  <Text style={styles.fieldLabel}>Quantity</Text>
+                  <Text style={styles.fieldLabel}>
+                    {draftUnit ? `Quantity (${draftUnit})` : 'Quantity'}
+                  </Text>
                   <TextInput
                     style={styles.input}
                     value={draft.quantity}
                     onChangeText={q => setDraft(d => ({...d, quantity: q}))}
-                    keyboardType="number-pad"
+                    keyboardType={draftMetered ? 'decimal-pad' : 'number-pad'}
                     inputAccessoryViewID={iosBar}
-                    accessibilityLabel="Quantity"
+                    accessibilityLabel={
+                      draftUnit ? `Quantity in ${draftUnit}` : 'Quantity'
+                    }
                   />
                 </View>
                 <View style={styles.priceField}>
@@ -981,6 +1074,11 @@ const styles = StyleSheet.create({
   qtyText: {
     minWidth: 28,
     textAlign: 'center',
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.semibold,
+  },
+  qtyMeasured: {
     color: COLORS.text,
     fontSize: FONT_SIZE.md,
     fontFamily: FONT_FAMILY.semibold,

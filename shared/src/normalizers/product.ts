@@ -81,6 +81,20 @@ export function normalizeProduct(input: unknown): Product {
     featured_image: featuredImage,
     gallery_images: galleryImages,
     ...(supplierId !== undefined ? {supplier_id: supplierId} : {}),
+    // Unit of measure + decimal-quantity capability (Aeris2 M4). Surfaced so
+    // the mobile POS/repair flows can allow fractional entry for metered
+    // items (hose by the metre, etc.) and gate whole-number-only for 'each'.
+    // Default unit_type to 'each' when absent so a missing field reads as a
+    // normal unit item. allows_decimal_quantity is only carried when the
+    // server sends the boolean; productAllowsDecimalQuantity() falls back to
+    // unit_type otherwise.
+    unit_type:
+      typeof raw.unit_type === 'string' && raw.unit_type !== ''
+        ? raw.unit_type
+        : 'each',
+    ...(typeof raw.allows_decimal_quantity === 'boolean'
+      ? {allows_decimal_quantity: raw.allows_decimal_quantity}
+      : {}),
     is_active: isActive,
   };
 }
