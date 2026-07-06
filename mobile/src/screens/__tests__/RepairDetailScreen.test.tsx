@@ -338,7 +338,7 @@ describe('RepairDetailScreen', () => {
   });
 
   // T6-COV-06 - empty state coverage. Screen has 3 empty-state branches:
-  // 'No device details recorded', 'No quote yet', 'No items added yet',
+  // 'No device details recorded', 'No quote yet', the items empty hint,
   // plus an empty status_history array. None were previously exercised.
   it('renders the empty-state fallbacks when device/costs/items/history are all absent', async () => {
     mockGetRepairDetail.mockResolvedValueOnce(
@@ -354,11 +354,17 @@ describe('RepairDetailScreen', () => {
       }),
     );
 
-    const {findByText, queryByText} = render(<RepairDetailScreen />);
+    const {findByText, findByLabelText, queryByText} = render(
+      <RepairDetailScreen />,
+    );
     await findByText('Repair REP-0001');
     expect(await findByText('No device details recorded')).toBeTruthy();
     expect(await findByText('No quote yet')).toBeTruthy();
-    expect(await findByText('No items added yet')).toBeTruthy();
+    expect(await findByText(/No items yet/)).toBeTruthy();
+    // The empty state must offer the add affordance (the bug this fixes).
+    expect(
+      await findByLabelText('Add parts or labour to this repair'),
+    ).toBeTruthy();
     // No history rows render - the Unknown user placeholder shouldn't appear.
     expect(queryByText(/Unknown user/)).toBeNull();
   });
@@ -460,6 +466,23 @@ describe('RepairDetailScreen', () => {
     fireEvent.press(statusBtn);
 
     expect(mockNavigate).toHaveBeenCalledWith('RepairStatusChange', {id: 1});
+  });
+
+  it('the Parts & Labour "Add / edit items" button renders (NOT permission-gated) and opens the items editor', async () => {
+    // Regression guard: this entry point was hidden behind a client
+    // permission the server never sends, making the whole items feature
+    // unreachable. It must render unconditionally (beforeEach sets
+    // permissions: []) and navigate to the items editor.
+    mockGetRepairDetail.mockResolvedValueOnce(makeDetail());
+
+    const {findByLabelText} = render(<RepairDetailScreen />);
+
+    const addItemsBtn = await findByLabelText(
+      'Add or edit repair parts and labour',
+    );
+    fireEvent.press(addItemsBtn);
+
+    expect(mockNavigate).toHaveBeenCalledWith('RepairItemsEditor', {id: 1});
   });
 
   it('T7C - "Notify customer" is hidden when the send-manual-notification permission is absent', async () => {

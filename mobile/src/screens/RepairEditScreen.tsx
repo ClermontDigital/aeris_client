@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
@@ -27,6 +27,7 @@ import {resolveUserLocationId} from '@aeris/shared';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useAuthStore} from '../stores/authStore';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import type {
   Customer,
@@ -399,6 +400,16 @@ const RepairEditScreen: React.FC = () => {
     };
   }, [isEdit, repairId]);
 
+  // This screen renders its OWN in-content Back (the headerRow below), so
+  // clear the shared brand-header chrome back that RepairDetail set on its
+  // way in — otherwise both render and the user sees two "Back" buttons.
+  useFocusEffect(
+    useCallback(() => {
+      useHeaderBackStore.getState().clearOnBack();
+      return undefined;
+    }, []),
+  );
+
   // ---------------- form field setter ----------------
   const setField = useCallback(
     <K extends keyof RepairFormValues>(
@@ -633,6 +644,24 @@ const RepairEditScreen: React.FC = () => {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
+        {/* Back stays present during the edit-mode fetch — this screen
+            renders its own Back (and clears the shared chrome back on focus),
+            so without this the loading window would have no way out. */}
+        <View style={styles.loadingHeader}>
+          <TouchableOpacity
+            onPress={handleBack}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            style={styles.backTap}>
+            <Icon
+              name="chevron-back"
+              size={ICON_SIZE.hero}
+              color={COLORS.navy}
+            />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.accent} size="large" />
           <Text style={styles.loadingText}>Loading repair…</Text>
@@ -1111,6 +1140,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: SPACING.sm,
+  },
+  loadingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
   },
   backTap: {
     flexDirection: 'row',
