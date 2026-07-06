@@ -3,14 +3,17 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
+import type {LayoutAnimationConfig} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
@@ -88,6 +91,29 @@ const EMPTY_DRAFT: NewItemDraft = {
   unit_type: null,
   allows_decimal: false,
 };
+
+// Old-architecture Android needs LayoutAnimation opted-in explicitly; on
+// Fabric it's already on and this is a harmless no-op. iOS needs nothing.
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// Ease the NEXT layout commit so the add-form's section swaps (search ↔ manual
+// ↔ linked, qty/price surfacing, list growth after an add) glide instead of
+// snapping. Fades things in/out and eases height changes. Call right before a
+// setState that changes which sections render.
+const LAYOUT_ANIM: LayoutAnimationConfig = {
+  duration: 220,
+  create: {type: 'easeInEaseOut', property: 'opacity'},
+  update: {type: 'easeInEaseOut'},
+  delete: {type: 'easeInEaseOut', property: 'opacity'},
+};
+function animateNextLayout(): void {
+  LayoutAnimation.configureNext(LAYOUT_ANIM);
+}
 
 // Format a measured (fractional) quantity for display: clamp to the server's
 // DECIMAL(12,3) precision and drop trailing zeros so 1.300 -> "1.3" and a
@@ -372,6 +398,8 @@ const RepairItemsEditorSheet: React.FC = () => {
   const handleSelectProduct = useCallback(
     (product: Product) => {
       haptics.selection();
+      // Glide from the search list to the linked chip + qty/price fields.
+      animateNextLayout();
       setDraft(d => ({
         ...d,
         product_id: product.id,
@@ -402,6 +430,7 @@ const RepairItemsEditorSheet: React.FC = () => {
     // "Change" on a linked stock part means "this isn't the right one — pick
     // another". Reset to a clean search state and re-focus the search field so
     // the operator can immediately type the replacement part.
+    animateNextLayout();
     setDraft(EMPTY_DRAFT);
     setManualEntry(false);
     clearProductSearch();
@@ -411,6 +440,7 @@ const RepairItemsEditorSheet: React.FC = () => {
   // Reveal the off-catalogue name/SKU fields (secondary path); focus the name.
   const handleRevealManual = useCallback(() => {
     haptics.selection();
+    animateNextLayout();
     setManualEntry(true);
     clearProductSearch();
     focusSoon(nameInputRef);
@@ -419,6 +449,7 @@ const RepairItemsEditorSheet: React.FC = () => {
   // Back out of manual entry to the stock search.
   const handleBackToSearch = useCallback(() => {
     haptics.light();
+    animateNextLayout();
     setManualEntry(false);
     focusSoon(searchInputRef);
   }, [haptics, focusSoon]);
@@ -457,6 +488,8 @@ const RepairItemsEditorSheet: React.FC = () => {
   // ---------------- add-new-item form ----------------
   const handleOpenAdd = useCallback(() => {
     haptics.selection();
+    // Expand the add card in place of the trigger button.
+    animateNextLayout();
     setDraft(EMPTY_DRAFT);
     setManualEntry(false);
     clearProductSearch();
@@ -468,6 +501,8 @@ const RepairItemsEditorSheet: React.FC = () => {
 
   const handleCancelAdd = useCallback(() => {
     haptics.light();
+    // Collapse the add card back to the trigger button.
+    animateNextLayout();
     setShowAdd(false);
     setDraft(EMPTY_DRAFT);
     setManualEntry(false);
@@ -537,7 +572,9 @@ const RepairItemsEditorSheet: React.FC = () => {
       // technician can add several parts in a row without reopening. Each add
       // has already persisted (save-on-mutate) and the list above refreshed,
       // so there's no half-committed state. "Done" (or the sheet's close)
-      // leaves. Re-focus the search field for the next part.
+      // leaves. Re-focus the search field for the next part. Animate so the
+      // new list row and the collapsing fields ease rather than jump.
+      animateNextLayout();
       setDraft(EMPTY_DRAFT);
       setManualEntry(false);
       clearProductSearch();

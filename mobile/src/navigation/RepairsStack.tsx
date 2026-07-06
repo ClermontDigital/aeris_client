@@ -21,6 +21,13 @@ const RepairsStack: React.FC = () => (
       // native across the whole app shell.
       fullScreenGestureEnabled: true,
       gestureEnabled: true,
+      // Consistent, graceful push transition across the stack (iOS-standard
+      // horizontal slide; on Android this replaces the default fade with the
+      // same slide so pushes don't visually "jump"). A slightly longer-than-
+      // default duration softens the motion. Modal/sheet screens override
+      // this with their own presentation below.
+      animation: 'slide_from_right',
+      animationDuration: 260,
     }}>
     <Stack.Screen name="RepairsList" component={RepairsListScreen} />
     <Stack.Screen name="RepairDetail" component={RepairDetailScreen} />
@@ -36,7 +43,7 @@ const RepairsStack: React.FC = () => (
     <Stack.Screen
       name="RepairStatusChange"
       component={RepairStatusChangeSheet}
-      options={{presentation: 'formSheet'}}
+      options={{presentation: 'formSheet', animation: 'slide_from_bottom'}}
     />
     {/* WSA-1 scan-to-open: repair-label camera. Shares the vision-camera
         surface with the Items/QuickSale scanners; mode='repair' is set
@@ -49,7 +56,11 @@ const RepairsStack: React.FC = () => (
       name="RepairScanner"
       component={BarcodeScannerScreen}
       initialParams={{mode: 'repair'}}
-      options={{presentation: 'fullScreenModal'}}
+      options={{
+        presentation: 'fullScreenModal',
+        // Rise up gracefully rather than the horizontal push used by cards.
+        animation: 'slide_from_bottom',
+      }}
     />
     {/* WSA-2 label print: formSheet over RepairDetail. Same mental model as
         RepairStatusChange — focused sub-task, not a push. Sheet fetches its
@@ -57,14 +68,14 @@ const RepairsStack: React.FC = () => (
     <Stack.Screen
       name="RepairLabelPrint"
       component={RepairLabelPrintSheet}
-      options={{presentation: 'formSheet'}}
+      options={{presentation: 'formSheet', animation: 'slide_from_bottom'}}
     />
     {/* WSA-3 items editor: same formSheet presentation as the label sheet.
-        Parts + labour rows editable side-by-side, scan-to-add for parts. */}
+        Parts-only add flow (search stock / scan / off-catalogue). */}
     <Stack.Screen
       name="RepairItemsEditor"
       component={RepairItemsEditorSheet}
-      options={{presentation: 'formSheet'}}
+      options={{presentation: 'formSheet', animation: 'slide_from_bottom'}}
     />
     {/* Scan-to-add: product-barcode scanner presented over the items editor.
         mode='repair-item' resolves the product and hands it back via
@@ -73,7 +84,10 @@ const RepairsStack: React.FC = () => (
       name="RepairItemScanner"
       component={BarcodeScannerScreen}
       initialParams={{mode: 'repair-item'}}
-      options={{presentation: 'fullScreenModal'}}
+      options={{
+        presentation: 'fullScreenModal',
+        animation: 'slide_from_bottom',
+      }}
     />
   </Stack.Navigator>
 );
