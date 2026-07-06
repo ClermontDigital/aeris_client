@@ -115,4 +115,76 @@ for attempt in 1 2 3; do
 done
 [ "$pod_ok" = 1 ] || { echo "ERROR: pod install failed after retries." >&2; exit 1; }
 
+# --- Guard: verify the prebuilt Hermes/RN *-release.tar.gz artifacts actually
+# downloaded before we hand off to `xcodebuild archive`.
+#
+# Each prebuilt pod (hermes-engine, ReactNativeCore, ReactNativeDependencies)
+# fetches a `*-release.tar.gz` in its podspec `prepare_command` via a single,
+# NON-retrying curl. On Xcode Cloud a transient `curl (35) Connection reset by
+# peer` (observed on build 44 for Hermes) leaves that tarball missing/truncated
+# — yet `pod install` STILL EXITS 0, so the pod_ok retry loop above never
+# notices. The failure then surfaces ~20 min later at archive time, when the
+# Hermes "Replace for the right configuration" step can't find
+# `Pods/hermes-engine-artifacts/hermes-ios-<v>-release.tar.gz`, extracts
+# nothing, and the follow-on "Copy XCFrameworks" rsync dies on an empty
+# `hermesvm.xcframework/ios-arm64` slice (** ARCHIVE FAILED **).
+#
+# So: verify each expected release tarball exists AND is a valid gzip (a no-op
+# of a few seconds on healthy builds). On a miss, do a clean pod reinstall
+# (`rm -rf Pods` keeps Podfile.lock, so versions don't move but every
+# prepare_command re-downloads), up to 3x; hard-fail if still missing so CI
+# stops HERE (fast, honest) instead of at the archive.
+cd "$MOBILE_DIR/ios"
+check_release_artifacts() {
+  # Echo the artifact dirs whose *-release.tar.gz is missing or unreadable.
+  #
+  # A dir is checked ONLY when it exists. RN's prebuilt pods `mkdir -p` their
+  # `<pod>-artifacts` dir immediately before the download curl, so a reset
+  # mid-download leaves the dir present but the tarball absent -> flagged. A
+  # legitimate build-from-source or Maven-miss fallback (which the cmake/ninja
+  # safety net above provisions) never creates the dir -> correctly skipped, so
+  # this guard can't turn a healthy from-source build into a hard failure.
+  _bad=""
+  for _dir in Pods/hermes-engine-artifacts \
+              Pods/ReactNativeDependencies-artifacts \
+              Pods/ReactNativeCore-artifacts; do
+    [ -d "$_dir" ] || continue
+    # Resolve the release tarball via a glob (no `ls` parsing); skip dSYM
+    # variants so a stray dSYM tarball can't satisfy the check. If nothing
+    # matches, the pattern stays literal and the -f test fails -> flagged.
+    _rel=""
+    for _f in "$_dir"/*-release.tar.gz; do
+      case "$_f" in *dSYM*) continue ;; esac
+      if [ -f "$_f" ]; then _rel="$_f"; break; fi
+    done
+    # `tar -tzf` validates the gzip envelope AND enumerates the tar entries,
+    # catching truncation and a valid-gzip/bad-tar at the same cost as gzip -t.
+    if [ -z "$_rel" ] || ! tar -tzf "$_rel" >/dev/null 2>&1; then
+      _bad="$_bad $_dir"
+    fi
+  done
+  printf '%s' "$_bad"
+}
+artifacts_ok=0
+bad="$(check_release_artifacts)"
+if [ -z "$bad" ]; then
+  artifacts_ok=1
+else
+  # Up to 3 clean reinstalls, each VALIDATED by the re-check at the bottom of
+  # the loop (a plain 3-iteration check-then-reinstall would leave the final
+  # reinstall unverified). `rm -rf Pods` forces each prepare_command curl to
+  # re-run (RN skips the download when the file already exists, so a corrupt
+  # file would otherwise be reused). Podfile.lock lives in ios/, not Pods/, so
+  # versions stay pinned across the reinstall.
+  for attempt in 1 2 3; do
+    echo "[ci_post_clone] prebuilt release artifact(s) missing/corrupt:$bad — clean pod reinstall (attempt $attempt)" >&2
+    rm -rf "$MOBILE_DIR/ios/Pods"
+    pod install || echo "[ci_post_clone] WARN: pod install during artifact refetch failed" >&2
+    bad="$(check_release_artifacts)"
+    if [ -z "$bad" ]; then artifacts_ok=1; break; fi
+  done
+fi
+[ "$artifacts_ok" = 1 ] || { echo "ERROR: prebuilt release artifact(s) still missing after refetch:$bad" >&2; exit 1; }
+echo "[ci_post_clone] prebuilt release artifacts verified"
+
 echo "[ci_post_clone] done"
