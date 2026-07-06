@@ -104,6 +104,19 @@ export interface Product {
   // ProductResource variants that don't eager-load the relation omit it;
   // ProductEditScreen's supplier picker falls back to "None" when null.
   supplier_id?: number | null;
+  // Unit of measure (Aeris2 Product.unit_type: 'each' | 'kg' | 'g' | 'l' | 'm'
+  // | 'hour' | 'box' | 'pack' | 'roll'). Dictates whether the item is metered:
+  // anything other than 'each' may be sold/entered fractionally. Optional so
+  // pre-M4 deployments (which don't surface it) coerce to the safe 'each'
+  // default at the normalizer.
+  unit_type?: string | null;
+  // Server-computed capability flag mirroring Aeris2's
+  // Product::allowsDecimalQuantity() (true for every unit_type except 'each').
+  // Prefer this over deriving from unit_type — it's the same flag the server's
+  // ProcessSaleRequest enforces (a fractional qty on an `each` item is
+  // rejected), so gating the client input on it keeps the two in lockstep.
+  // Optional: absent on older deployments; callers fall back to unit_type.
+  allows_decimal_quantity?: boolean | null;
   is_active: boolean;
 }
 
@@ -117,6 +130,31 @@ export interface ProductDetail extends Product {
   // payload; ProductEdit falls back to a stock-derived heuristic when
   // undefined. When present, this is the source of truth.
   track_stock?: boolean;
+}
+
+/**
+ * Whether a product may be sold/entered in fractional (metered) quantities —
+ * e.g. 1.3 m of hose. Prefers the server-computed `allows_decimal_quantity`
+ * flag (which the Aeris2 checkout validator enforces), falling back to the
+ * unit_type ('each' = whole numbers only; any other unit = fractional). A
+ * product with neither field (older deployment, or a hand-typed off-catalogue
+ * part) is treated as whole-number-only, the safe default.
+ */
+export function productAllowsDecimalQuantity(
+  product:
+    | {allows_decimal_quantity?: boolean | null; unit_type?: string | null}
+    | null
+    | undefined,
+): boolean {
+  if (!product) return false;
+  if (typeof product.allows_decimal_quantity === 'boolean') {
+    return product.allows_decimal_quantity;
+  }
+  return (
+    typeof product.unit_type === 'string' &&
+    product.unit_type !== '' &&
+    product.unit_type !== 'each'
+  );
 }
 
 export interface StockLevel {
