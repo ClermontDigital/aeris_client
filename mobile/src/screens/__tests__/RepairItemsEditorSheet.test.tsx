@@ -346,4 +346,197 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
       expect(utils.getByText(/No matching stock parts/i)).toBeTruthy(),
     );
   });
+
+  it('a metered stock part (unit_type m) accepts a fractional quantity and sends it', async () => {
+    const hose = makeProduct({
+      id: 950,
+      name: 'Hydraulic Hose',
+      sku: 'HOSE-10',
+      price_cents: 1500,
+      stock_on_hand: 25,
+      unit_type: 'm',
+      allows_decimal_quantity: true,
+    });
+    mockSearchProducts.mockReset().mockResolvedValue(okPage([hose]));
+
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Search stock parts'), 'hose');
+    });
+    // Result row shows the unit next to on-hand.
+    const result = await utils.findByLabelText(
+      'Add Hydraulic Hose, HOSE-10, $15.00, 25 m in stock',
+    );
+    await act(async () => {
+      fireEvent.press(result);
+    });
+
+    // The quantity field is now unit-labelled + decimal — enter 1.3 m.
+    const qtyInput = utils.getByLabelText('Quantity in m');
+    expect(qtyInput.props.keyboardType).toBe('decimal-pad');
+    await act(async () => {
+      fireEvent.changeText(qtyInput, '1.3');
+    });
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+
+    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
+    const [, payload] = mockAddRepairItem.mock.calls[0];
+    expect(payload).toMatchObject({
+      item_type: 'part',
+      product_id: 950,
+      quantity: 1.3, // fractional, NOT truncated
+    });
+  });
+
+  it('clamps a metered quantity to the server DECIMAL(12,3) precision (3 dp)', async () => {
+    const hose = makeProduct({
+      id: 951,
+      name: 'Air Hose',
+      sku: 'HOSE-A',
+      price_cents: 900,
+      stock_on_hand: 40,
+      unit_type: 'm',
+      allows_decimal_quantity: true,
+    });
+    mockSearchProducts.mockReset().mockResolvedValue(okPage([hose]));
+
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Search stock parts'), 'hose');
+    });
+    const result = await utils.findByLabelText(
+      'Add Air Hose, HOSE-A, $9.00, 40 m in stock',
+    );
+    await act(async () => {
+      fireEvent.press(result);
+    });
+    // Type 4 decimal places — should be clamped to 3 before the wire.
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Quantity in m'), '1.2367');
+    });
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+
+    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
+    const [, payload] = mockAddRepairItem.mock.calls[0];
+    expect(payload.quantity).toBeCloseTo(1.237, 3);
+    // No more than 3 decimal places reach the wire.
+    expect(Number.isInteger((payload.quantity as number) * 1000)).toBe(true);
+  });
+
+  it('unlinking a metered part snaps a fractional quantity back to a whole number', async () => {
+    const hose = makeProduct({
+      id: 952,
+      name: 'Fuel Hose',
+      sku: 'HOSE-F',
+      price_cents: 1200,
+      stock_on_hand: 30,
+      unit_type: 'm',
+      allows_decimal_quantity: true,
+    });
+    mockSearchProducts.mockReset().mockResolvedValue(okPage([hose]));
+
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Search stock parts'), 'hose');
+    });
+    const result = await utils.findByLabelText(
+      'Add Fuel Hose, HOSE-F, $12.00, 30 m in stock',
+    );
+    await act(async () => {
+      fireEvent.press(result);
+    });
+    // Type a fractional metered quantity, THEN unlink.
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Quantity in m'), '1.3');
+    });
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Change stock item'));
+    });
+
+    // Now an off-catalogue 'each' line: quantity snapped to a whole number,
+    // keyboard back to integer.
+    const qtyInput = utils.getByLabelText('Quantity');
+    expect(qtyInput.props.value).toBe('1');
+    expect(qtyInput.props.keyboardType).toBe('number-pad');
+
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
+    const [, payload] = mockAddRepairItem.mock.calls[0];
+    expect(payload).toMatchObject({product_id: null, quantity: 1});
+  });
+
+  it('rejects a metered quantity below the 0.001 minimum with a banner', async () => {
+    const hose = makeProduct({
+      id: 953,
+      name: 'Brake Hose',
+      sku: 'HOSE-B',
+      price_cents: 800,
+      stock_on_hand: 12,
+      unit_type: 'm',
+      allows_decimal_quantity: true,
+    });
+    mockSearchProducts.mockReset().mockResolvedValue(okPage([hose]));
+
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Search stock parts'), 'hose');
+    });
+    const result = await utils.findByLabelText(
+      'Add Brake Hose, HOSE-B, $8.00, 12 m in stock',
+    );
+    await act(async () => {
+      fireEvent.press(result);
+    });
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Quantity in m'), '0');
+    });
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+
+    // Zero is below the 0.001 floor → validation banner, no RPC.
+    await waitFor(() =>
+      expect(utils.getByText(/Quantity must be greater than 0/i)).toBeTruthy(),
+    );
+    expect(mockAddRepairItem).not.toHaveBeenCalled();
+  });
+
+  it('a non-metered (each) part truncates a typed decimal to a whole number', async () => {
+    // Default fixture has no unit_type -> treated as 'each' -> whole-number.
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Search stock parts'), 'screen');
+    });
+    const result = await utils.findByLabelText(
+      'Add iPhone 13 Screen Assembly, SCREEN-IP13, $130.00, 5 in stock',
+    );
+    await act(async () => {
+      fireEvent.press(result);
+    });
+
+    // Plain integer keyboard; a typed "1.3" is parsed with parseInt -> 1.
+    const qtyInput = utils.getByLabelText('Quantity');
+    expect(qtyInput.props.keyboardType).toBe('number-pad');
+    await act(async () => {
+      fireEvent.changeText(qtyInput, '1.3');
+    });
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+
+    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
+    const [, payload] = mockAddRepairItem.mock.calls[0];
+    expect(payload).toMatchObject({product_id: 900, quantity: 1});
+  });
 });
