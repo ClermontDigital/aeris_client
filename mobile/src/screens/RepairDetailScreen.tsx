@@ -842,12 +842,12 @@ const RepairDetailScreen: React.FC = () => {
           )}
         </View>
 
-        {/* -------- Parts & Labour -------- */}
+        {/* -------- Parts -------- */}
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Parts &amp; Labour</Text>
+          <Text style={styles.sectionTitle}>Parts</Text>
           {items.length === 0 ? (
             <Text style={styles.emptyText}>
-              No items yet — tap “Add part or labour” below.
+              No parts yet — tap “Add part” below.
             </Text>
           ) : (
             <>
@@ -858,17 +858,18 @@ const RepairDetailScreen: React.FC = () => {
                       <Text style={styles.itemName} numberOfLines={2}>
                         {item.item_name}
                       </Text>
-                      <View
-                        style={[
-                          styles.itemTypeChip,
-                          item.item_type === 'labor'
-                            ? styles.itemTypeChipLabor
-                            : styles.itemTypeChipPart,
-                        ]}>
-                        <Text style={styles.itemTypeText}>
-                          {item.item_type === 'labor' ? 'Labor' : 'Part'}
-                        </Text>
-                      </View>
+                      {/* Parts-only now: a "Part" chip on every row is noise.
+                          Show a chip ONLY for a legacy labour line (a repair
+                          created before the pivot, or on web). */}
+                      {item.item_type === 'labor' ? (
+                        <View
+                          style={[
+                            styles.itemTypeChip,
+                            styles.itemTypeChipLabor,
+                          ]}>
+                          <Text style={styles.itemTypeText}>Labor</Text>
+                        </View>
+                      ) : null}
                     </View>
                     <Text style={styles.itemMeta}>
                       {item.quantity} × {formatDollars(item.unit_price)}
@@ -888,17 +889,16 @@ const RepairDetailScreen: React.FC = () => {
             </>
           )}
           {/* Primary add affordance lives ON the section (not buried in the
-              action row). Opens the items editor — search stock parts, add
-              labour, metered quantities. UNCONDITIONAL: the repair-write
-              ability lives in the Sanctum `abilities` list (repairs:write),
-              NOT the user.permissions array the client can read, so gating on
-              a client permission hid this for every account. The server
-              enforces the real check on repair.add-item (403 → surfaced in
-              the editor); the whole screen is already behind repairs_enabled. */}
+              action row). Opens the items editor — search stock parts,
+              off-catalogue parts, metered quantities. UNCONDITIONAL: the
+              repair-write ability lives in the Sanctum `abilities` list
+              (repairs:write), NOT the user.permissions array the client can
+              read, so gating on a client permission hid this for every
+              account. The server enforces the real check on repair.add-item
+              (403 → surfaced in the editor); the whole screen is already
+              behind repairs_enabled. */}
           <PillButton
-            label={
-              items.length === 0 ? 'Add part or labour' : 'Add / edit items'
-            }
+            label={items.length === 0 ? 'Add part' : 'Add / edit parts'}
             variant={items.length === 0 ? 'solid' : 'secondary'}
             icon="add"
             onPress={() => {
@@ -907,8 +907,8 @@ const RepairDetailScreen: React.FC = () => {
             }}
             accessibilityLabel={
               items.length === 0
-                ? 'Add parts or labour to this repair'
-                : 'Add or edit repair parts and labour'
+                ? 'Add a part to this repair'
+                : 'Add or edit repair parts'
             }
             style={styles.addItemsBtn}
           />
@@ -1261,9 +1261,8 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: BORDER_RADIUS.full,
   },
-  // Part items consume stock - dusty blue reads as informational.
-  itemTypeChipPart: {backgroundColor: COLORS.blue},
-  // Labor is time-based, no stock - navy reads as "operator-attention".
+  // Only shown for a legacy labour line (parts are chip-less now). Navy reads
+  // as "operator-attention".
   itemTypeChipLabor: {backgroundColor: COLORS.navy},
   itemTypeText: {
     color: COLORS.white,
