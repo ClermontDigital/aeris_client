@@ -360,10 +360,10 @@ describe('RepairDetailScreen', () => {
     await findByText('Repair REP-0001');
     expect(await findByText('No device details recorded')).toBeTruthy();
     expect(await findByText('No quote yet')).toBeTruthy();
-    expect(await findByText(/No items yet/)).toBeTruthy();
+    expect(await findByText(/No parts yet/)).toBeTruthy();
     // The empty state must offer the add affordance (the bug this fixes).
     expect(
-      await findByLabelText('Add parts or labour to this repair'),
+      await findByLabelText('Add a part to this repair'),
     ).toBeTruthy();
     // No history rows render - the Unknown user placeholder shouldn't appear.
     expect(queryByText(/Unknown user/)).toBeNull();
@@ -468,7 +468,7 @@ describe('RepairDetailScreen', () => {
     expect(mockNavigate).toHaveBeenCalledWith('RepairStatusChange', {id: 1});
   });
 
-  it('the Parts & Labour "Add / edit items" button renders (NOT permission-gated) and opens the items editor', async () => {
+  it('the Parts "Add / edit parts" button renders (NOT permission-gated) and opens the items editor', async () => {
     // Regression guard: this entry point was hidden behind a client
     // permission the server never sends, making the whole items feature
     // unreachable. It must render unconditionally (beforeEach sets
@@ -477,9 +477,7 @@ describe('RepairDetailScreen', () => {
 
     const {findByLabelText} = render(<RepairDetailScreen />);
 
-    const addItemsBtn = await findByLabelText(
-      'Add or edit repair parts and labour',
-    );
+    const addItemsBtn = await findByLabelText('Add or edit repair parts');
     fireEvent.press(addItemsBtn);
 
     expect(mockNavigate).toHaveBeenCalledWith('RepairItemsEditor', {id: 1});
