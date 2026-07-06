@@ -25,7 +25,7 @@ import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import {RelayError} from '@aeris/shared';
-import type {RepairDetail, RepairItem} from '../types/api.types';
+import type {Product, RepairDetail, RepairItem} from '../types/api.types';
 import type {RepairsStackParamList} from '../types/navigation.types';
 import {
   BORDER_RADIUS,
@@ -46,6 +46,9 @@ type RouteProps = RouteProp<RepairsStackParamList, 'RepairItemsEditor'>;
 const ITEMS_INPUT_BAR = 'repair-items-input-bar';
 const iosBar = Platform.OS === 'ios' ? ITEMS_INPUT_BAR : undefined;
 
+// Debounce for the stock-part typeahead — matches the customer typeahead cadence.
+const PRODUCT_SEARCH_DEBOUNCE_MS = 300;
+
 type NewItemType = 'part' | 'labor';
 
 // Repair item add form — local state; committed to the server via
@@ -56,6 +59,13 @@ interface NewItemDraft {
   quantity: string;
   unit_price: string;
   sku: string;
+  // Set when the part was picked from inventory (searchProducts). Sending the
+  // REAL product_id is what lets the server reserve stock now and release the
+  // reservation + decrement stock at checkout (T8 stock contract). null == an
+  // ad-hoc / off-catalogue part typed by hand, or a labour line.
+  product_id: number | null;
+  // Snapshot of the picked product's on-hand for the "N in stock" indicator.
+  stock_on_hand: number | null;
 }
 
 const EMPTY_DRAFT: NewItemDraft = {
@@ -64,6 +74,8 @@ const EMPTY_DRAFT: NewItemDraft = {
   quantity: '1',
   unit_price: '',
   sku: '',
+  product_id: null,
+  stock_on_hand: null,
 };
 
 /**
@@ -108,6 +120,12 @@ const RepairItemsEditorSheet: React.FC = () => {
   const [mutating, setMutating] = useState(false);
   const [draft, setDraft] = useState<NewItemDraft>(EMPTY_DRAFT);
   const [showAdd, setShowAdd] = useState(false);
+
+  // Inventory search state for the "add a part from stock" picker. Debounced
+  // searchProducts, mirroring the customer typeahead on RepairEditScreen.
+  const [productQuery, setProductQuery] = useState('');
+  const [productResults, setProductResults] = useState<Product[]>([]);
+  const [productSearching, setProductSearching] = useState(false);
 
   // Sync guard so a 60Hz double-tap on a mutation button can't fire two
   // add/update/remove RPCs before the disabled state paints.
@@ -243,25 +261,110 @@ const RepairItemsEditorSheet: React.FC = () => {
     [runMutation, haptics],
   );
 
+  // ---------------- inventory search (add part from stock) ----------------
+  const clearProductSearch = useCallback(() => {
+    setProductQuery('');
+    setProductResults([]);
+    setProductSearching(false);
+  }, []);
+
+  // Debounced product search. Only runs while the add form is open, the draft
+  // is a Part, nothing is linked yet, and there's a query. Switching to
+  // Labour or linking a product short-circuits it.
+  useEffect(() => {
+    if (!showAdd || draft.type !== 'part' || draft.product_id != null) {
+      return;
+    }
+    const q = productQuery.trim();
+    if (q.length === 0) {
+      setProductResults([]);
+      setProductSearching(false);
+      return;
+    }
+    // Per-effect cancellation token (mirrors RepairEditScreen's customer
+    // typeahead). `mountedRef` alone can't drop a stale response: without
+    // this, typing "screen A" then "screen B" could let A resolve after B
+    // and paint A's rows — the operator then taps what looks like a B result
+    // and links the WRONG product_id, moving the wrong SKU's stock at
+    // checkout. `cancelled` flips on every query change so only the latest
+    // request writes state.
+    let cancelled = false;
+    setProductSearching(true);
+    const timer = setTimeout(() => {
+      ApiClient.searchProducts(q, 1)
+        .then(page => {
+          if (cancelled || !mountedRef.current) return;
+          setProductResults(page.data.slice(0, 20));
+        })
+        .catch(() => {
+          if (cancelled || !mountedRef.current) return;
+          setProductResults([]);
+        })
+        .finally(() => {
+          if (!cancelled && mountedRef.current) setProductSearching(false);
+        });
+    }, PRODUCT_SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [productQuery, showAdd, draft.type, draft.product_id]);
+
+  const handleSelectProduct = useCallback(
+    (product: Product) => {
+      haptics.selection();
+      setDraft(d => ({
+        ...d,
+        product_id: product.id,
+        name: product.name,
+        sku: product.sku ?? '',
+        // Pre-fill the sell price (dollars) but leave it editable — a
+        // technician may quote a repair part differently than the shelf price.
+        unit_price: (product.price_cents / 100).toFixed(2),
+        stock_on_hand: product.stock_on_hand,
+      }));
+      clearProductSearch();
+    },
+    [haptics, clearProductSearch],
+  );
+
+  const handleUnlinkProduct = useCallback(() => {
+    haptics.light();
+    // Drop the catalogue link but keep the typed name/sku/price so the row can
+    // be re-purposed as an off-catalogue part rather than forcing a re-type.
+    setDraft(d => ({...d, product_id: null, stock_on_hand: null}));
+    clearProductSearch();
+  }, [haptics, clearProductSearch]);
+
   // ---------------- add-new-item form ----------------
   const handleOpenAdd = useCallback(() => {
     haptics.selection();
     setDraft(EMPTY_DRAFT);
+    clearProductSearch();
     setShowAdd(true);
-  }, [haptics]);
+  }, [haptics, clearProductSearch]);
 
   const handleCancelAdd = useCallback(() => {
     haptics.light();
     setShowAdd(false);
     setDraft(EMPTY_DRAFT);
-  }, [haptics]);
+    clearProductSearch();
+  }, [haptics, clearProductSearch]);
 
   const handleDraftTypeChange = useCallback(
     (type: NewItemType) => {
       haptics.selection();
-      setDraft(d => ({...d, type}));
+      // Leaving Part clears any stock link + search — labour never has one.
+      setDraft(d => ({
+        ...d,
+        type,
+        ...(type === 'labor'
+          ? {product_id: null, stock_on_hand: null}
+          : null),
+      }));
+      clearProductSearch();
     },
-    [haptics],
+    [haptics, clearProductSearch],
   );
 
   const handleSubmitAdd = useCallback(async () => {
@@ -291,12 +394,15 @@ const RepairItemsEditorSheet: React.FC = () => {
           item_name: name,
           quantity: qty,
           unit_price: price,
-          // Labour never carries a product_id or sku; parts can have either
-          // or both. product_id: null explicitly so a snapshot-only part
-          // (no catalog link, e.g. a random spare a technician had) still
-          // records the row.
-          product_id: null,
-          item_sku: sku.length > 0 ? sku : null,
+          // A stock-linked part carries the REAL product_id so the server
+          // reserves stock now + releases the reservation and decrements
+          // stock at checkout (T8 stock contract). null for an off-catalogue
+          // part typed by hand, or a labour line.
+          product_id: draft.type === 'part' ? draft.product_id : null,
+          // SKU only belongs on a part — a Part→Labour switch keeps the typed
+          // sku in the draft (so switching back doesn't lose it), so null it
+          // here rather than persist a stray sku on a labour line.
+          item_sku: draft.type === 'part' && sku.length > 0 ? sku : null,
         }),
       'Could not add item',
     );
@@ -520,6 +626,98 @@ const RepairItemsEditorSheet: React.FC = () => {
                   </Text>
                 </TouchableOpacity>
               </View>
+              {/* -------- Add a part from stock -------- */}
+              {draft.type === 'part' ? (
+                draft.product_id != null ? (
+                  // A stock item is linked — show it as a chip with the live
+                  // on-hand count and an unlink affordance.
+                  <View style={styles.stockChip}>
+                    <View style={styles.stockChipBody}>
+                      <Text style={styles.stockChipName} numberOfLines={1}>
+                        {draft.name}
+                      </Text>
+                      <Text style={styles.stockChipMeta}>
+                        {draft.sku ? `SKU ${draft.sku} · ` : ''}
+                        {draft.stock_on_hand != null
+                          ? `${draft.stock_on_hand} in stock`
+                          : 'linked to stock'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={handleUnlinkProduct}
+                      accessibilityRole="button"
+                      accessibilityLabel="Change stock item"
+                      hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                      <Text style={styles.stockChipChange}>Change</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.fieldLabel}>Add from stock</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={productQuery}
+                      onChangeText={setProductQuery}
+                      placeholder="Search parts by name or SKU"
+                      placeholderTextColor={COLORS.inputPlaceholder}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      inputAccessoryViewID={iosBar}
+                      accessibilityLabel="Search stock parts"
+                    />
+                    {productSearching ? (
+                      <View style={styles.searchStatusRow}>
+                        <ActivityIndicator
+                          color={COLORS.accent}
+                          size="small"
+                        />
+                        <Text style={styles.searchStatusText}>Searching…</Text>
+                      </View>
+                    ) : null}
+                    {productResults.length > 0 ? (
+                      <View style={styles.resultsList}>
+                        {productResults.map(p => (
+                          <TouchableOpacity
+                            key={p.id}
+                            style={styles.resultRow}
+                            onPress={() => handleSelectProduct(p)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Add ${p.name}${
+                              p.sku ? `, ${p.sku}` : ''
+                            }, $${(p.price_cents / 100).toFixed(2)}, ${
+                              p.stock_on_hand
+                            } in stock`}>
+                            <View style={styles.resultBody}>
+                              <Text
+                                style={styles.resultName}
+                                numberOfLines={1}>
+                                {p.name}
+                              </Text>
+                              <Text style={styles.resultMeta}>
+                                {p.sku ? `${p.sku} · ` : ''}
+                                ${(p.price_cents / 100).toFixed(2)} ·{' '}
+                                {p.stock_on_hand} in stock
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ) : null}
+                    {productQuery.trim().length > 0 &&
+                    !productSearching &&
+                    productResults.length === 0 ? (
+                      <Text style={styles.searchEmptyText}>
+                        No matching stock parts. You can still enter the part
+                        by hand below.
+                      </Text>
+                    ) : null}
+                    <Text style={styles.orDivider}>
+                      or enter an off-catalogue part
+                    </Text>
+                  </>
+                )
+              ) : null}
+
               <Text style={styles.fieldLabel}>
                 {draft.type === 'labor' ? 'Labour description' : 'Part name'}
               </Text>
@@ -893,6 +1091,84 @@ const styles = StyleSheet.create({
   },
   qtyField: {flex: 1},
   priceField: {flex: 1},
+
+  // Stock search results + linked-part chip.
+  searchStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  searchStatusText: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  searchEmptyText: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.regular,
+    marginTop: SPACING.xs,
+  },
+  resultsList: {
+    marginTop: SPACING.xs,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    backgroundColor: COLORS.surface,
+    overflow: 'hidden',
+  },
+  resultRow: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceBorder,
+  },
+  resultBody: {gap: 2},
+  resultName: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.semibold,
+  },
+  resultMeta: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  orDivider: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.medium,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: SPACING.md,
+  },
+  stockChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.crimson,
+    backgroundColor: 'rgba(193, 18, 31, 0.06)',
+  },
+  stockChipBody: {flex: 1, gap: 2},
+  stockChipName: {
+    color: COLORS.text,
+    fontSize: FONT_SIZE.md,
+    fontFamily: FONT_FAMILY.semibold,
+  },
+  stockChipMeta: {
+    color: COLORS.textMuted,
+    fontSize: FONT_SIZE.xs,
+    fontFamily: FONT_FAMILY.medium,
+  },
+  stockChipChange: {
+    color: COLORS.crimson,
+    fontSize: FONT_SIZE.sm,
+    fontFamily: FONT_FAMILY.semibold,
+  },
   addBtnRow: {
     flexDirection: 'row',
     gap: SPACING.sm,
