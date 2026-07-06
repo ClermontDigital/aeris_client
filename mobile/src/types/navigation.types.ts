@@ -138,6 +138,11 @@ export type RepairsStackParamList = {
   // sheet. Requires the target repair id; the editor pulls its initial
   // items from a fresh getRepairDetail so it always shows server state.
   RepairItemsEditor: {id: number};
+  // Scan a PRODUCT barcode to add it to a repair. Reuses BarcodeScannerScreen
+  // with mode='repair-item' (via initialParams). On a hit the scanner writes
+  // the product to repairItemScanStore and pops back to the items editor,
+  // which links it. Presented fullScreenModal like RepairScanner.
+  RepairItemScanner: {mode: 'repair-item'} | undefined;
 };
 
 // Screen prop types
