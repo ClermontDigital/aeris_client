@@ -172,6 +172,53 @@ describe('normalizeProduct', () => {
     const p = normalizeProduct({id: 11, name: 'E', sku: 'E-1', price: 1});
     expect(p.barcode).toBeNull();
   });
+
+  // Unit-of-measure mapping (M4 metered items). The mobile repair/POS flows
+  // gate decimal-quantity entry on these, so the wire mapping is load-bearing.
+  it('defaults unit_type to "each" when the wire omits it', () => {
+    const p = normalizeProduct({id: 20, name: 'U', sku: 'U-1', price: 1});
+    expect(p.unit_type).toBe('each');
+    expect(p.allows_decimal_quantity).toBeUndefined();
+  });
+
+  it('passes through unit_type + allows_decimal_quantity for a metered item', () => {
+    const p = normalizeProduct({
+      id: 21,
+      name: 'Hose',
+      sku: 'H-1',
+      price: 15,
+      unit_type: 'm',
+      allows_decimal_quantity: true,
+    });
+    expect(p.unit_type).toBe('m');
+    expect(p.allows_decimal_quantity).toBe(true);
+  });
+
+  it('coerces an empty-string unit_type to "each"', () => {
+    const p = normalizeProduct({
+      id: 22,
+      name: 'V',
+      sku: 'V-1',
+      price: 1,
+      unit_type: '',
+    });
+    expect(p.unit_type).toBe('each');
+  });
+
+  it('omits allows_decimal_quantity when the wire value is not a boolean', () => {
+    // A non-boolean (e.g. 1/0/"true") is dropped; productAllowsDecimalQuantity
+    // then falls back to unit_type. Only a real boolean is carried.
+    const p = normalizeProduct({
+      id: 23,
+      name: 'W',
+      sku: 'W-1',
+      price: 1,
+      unit_type: 'kg',
+      allows_decimal_quantity: 1,
+    });
+    expect(p.allows_decimal_quantity).toBeUndefined();
+    expect(p.unit_type).toBe('kg');
+  });
 });
 
 describe('normalizeProductDetail', () => {
