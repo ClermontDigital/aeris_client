@@ -2,7 +2,7 @@
   "expo": {
     "name": "AERIS",
     "slug": "aeris",
-    "version": "1.5.0",
+    "version": "1.5.1",
     "orientation": "default",
     "icon": "./assets/images/app-icon.png",
     "scheme": "aeris",
