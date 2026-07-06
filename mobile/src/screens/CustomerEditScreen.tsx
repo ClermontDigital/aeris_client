@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {
@@ -31,6 +31,7 @@ import Icon from '../components/Icon';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useCartStore} from '../stores/cartStore';
+import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import type {Customer, CustomerCreateInput} from '../types/api.types';
 import type {
@@ -247,6 +248,16 @@ const CustomerEditScreen: React.FC = () => {
     };
   }, [isEdit, customerId]);
 
+  // This screen renders its own in-content Back (headerRow), so clear the
+  // shared brand-header chrome back that CustomerDetail set on its way in —
+  // otherwise both render and the user sees two "Back" buttons.
+  useFocusEffect(
+    useCallback(() => {
+      useHeaderBackStore.getState().clearOnBack();
+      return undefined;
+    }, []),
+  );
+
   const setField = useCallback(
     <K extends keyof CustomerFormValues>(
       key: K,
@@ -387,6 +398,27 @@ const CustomerEditScreen: React.FC = () => {
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['left', 'right']}>
+        {/* Keep a Back during the edit-mode fetch — this screen clears the
+            shared chrome back on focus, so the loading window would otherwise
+            have no way out. */}
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            onPress={() => {
+              haptics.light();
+              navigation.goBack();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel and go back"
+            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+            style={styles.backTap}>
+            <Icon
+              name="chevron-back"
+              size={ICON_SIZE.hero}
+              color={COLORS.navy}
+            />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.center}>
           <ActivityIndicator color={COLORS.accent} size="large" />
         </View>

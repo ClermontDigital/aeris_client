@@ -225,13 +225,11 @@ const RepairDetailScreen: React.FC = () => {
     user as unknown as {permissions?: unknown} | null,
     'send-manual-notification',
   );
-  // WSA-3 gates the "Edit items" button on the same write-permission the
-  // server enforces on the underlying repair.updateItems / repair.update
-  // endpoints. A viewer (no edit_repair) sees the row without the button.
-  const canEditRepair = userHasPermission(
-    user as unknown as {permissions?: unknown} | null,
-    'edit_repair',
-  );
+  // NOTE: the add-parts/labour + notes affordances are intentionally NOT gated
+  // on a client permission — the repair-write ability lives in the Sanctum
+  // `abilities` list (repairs:write), not the user.permissions array we can
+  // read, so any client gate hid the feature for every account. The server
+  // enforces the real check on the repair.* RPCs. See those sections below.
 
   // ---------------- state (all hooks live ABOVE the early-return guards
   // per feedback_hooks_above_early_returns; a post-guard hook crashes
@@ -848,7 +846,9 @@ const RepairDetailScreen: React.FC = () => {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Parts &amp; Labour</Text>
           {items.length === 0 ? (
-            <Text style={styles.emptyText}>No items added yet</Text>
+            <Text style={styles.emptyText}>
+              No items yet — tap “Add part or labour” below.
+            </Text>
           ) : (
             <>
               {items.map((item: RepairItem) => (
@@ -887,6 +887,31 @@ const RepairDetailScreen: React.FC = () => {
               </View>
             </>
           )}
+          {/* Primary add affordance lives ON the section (not buried in the
+              action row). Opens the items editor — search stock parts, add
+              labour, metered quantities. UNCONDITIONAL: the repair-write
+              ability lives in the Sanctum `abilities` list (repairs:write),
+              NOT the user.permissions array the client can read, so gating on
+              a client permission hid this for every account. The server
+              enforces the real check on repair.add-item (403 → surfaced in
+              the editor); the whole screen is already behind repairs_enabled. */}
+          <PillButton
+            label={
+              items.length === 0 ? 'Add part or labour' : 'Add / edit items'
+            }
+            variant={items.length === 0 ? 'solid' : 'secondary'}
+            icon="add"
+            onPress={() => {
+              haptics.light();
+              navigation.navigate('RepairItemsEditor', {id: repair.id});
+            }}
+            accessibilityLabel={
+              items.length === 0
+                ? 'Add parts or labour to this repair'
+                : 'Add or edit repair parts and labour'
+            }
+            style={styles.addItemsBtn}
+          />
         </View>
 
         {/* -------- Status history timeline -------- */}
@@ -935,9 +960,11 @@ const RepairDetailScreen: React.FC = () => {
             without a status change and see it land on the timeline above.
             Server appends a status_history row with from_status ===
             to_status so notes and status transitions read as one merged
-            log. Gated on edit_repair for the same reason as the items
-            editor — a viewer can read but not append. */}
-        {canEditRepair ? (
+            log. UNCONDITIONAL for the same reason as the items editor above:
+            the write ability isn't in the client-readable permissions array,
+            so the server enforces (403 → surfaced) rather than the client
+            hiding the card for everyone. */}
+        {(
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Add note</Text>
             <Text style={styles.subLabel}>
@@ -976,7 +1003,7 @@ const RepairDetailScreen: React.FC = () => {
               </View>
             </KeyboardAvoidingView>
           </View>
-        ) : null}
+        )}
 
         {/* -------- Action row (T7 part C) --------
             Sits after History so the timeline reads as context for the
@@ -1022,20 +1049,8 @@ const RepairDetailScreen: React.FC = () => {
             accessibilityLabel="Edit repair"
             style={styles.actionBtn}
           />
-          {/* WSA-3 items editor. Opens as a formSheet over the detail with
-              parts + labour rows editable side-by-side. Scoped to writers
-              only (edit_repair) so a viewer sees the row without the button. */}
-          {canEditRepair ? (
-            <PillButton
-              label="Edit items"
-              variant="tertiary"
-              onPress={() => {
-                navigation.navigate('RepairItemsEditor', {id: repair.id});
-              }}
-              accessibilityLabel="Edit repair items"
-              style={styles.actionBtn}
-            />
-          ) : null}
+          {/* Items editing lives on the Parts & Labour card now (primary,
+              discoverable) — no duplicate button in the action row. */}
           {/* WSA-2 label print. Renders the Dymo 89×38 mm repair label with a
               CODE128 of the repair number so any piece left behind can be
               matched back with the Repairs tab scanner. AirPrint on iOS,
@@ -1217,6 +1232,7 @@ const styles = StyleSheet.create({
   },
 
   emptyText: {color: COLORS.textMuted, fontSize: FONT_SIZE.sm},
+  addItemsBtn: {marginTop: SPACING.md, alignSelf: 'flex-start'},
 
   // Items table
   itemRow: {
