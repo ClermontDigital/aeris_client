@@ -142,6 +142,9 @@ jest.mock('@react-navigation/native', () => ({
 }));
 
 import BarcodeScannerScreen from '../BarcodeScannerScreen';
+// Real store (not mocked) — the scanner writes the resolved product here and
+// the items editor reads it back. Assert against the live state.
+import {useRepairItemScanStore} from '../../stores/repairItemScanStore';
 
 function fireScan(value: string): void {
   const cb = (globalThis as any).__lastCodeScannedHandler as
@@ -407,5 +410,50 @@ describe('BarcodeScannerScreen WSA-1 repair mode', () => {
       expect(mockGetProductByBarcode).toHaveBeenCalledWith('9310072000012');
     });
     expect(mockGetRepairByBarcode).not.toHaveBeenCalled();
+  });
+
+  it('repair-item mode: a product scan resolves the product, stashes it in the scan store, and pops back', async () => {
+    mockRouteParams.current = {mode: 'repair-item'};
+    useRepairItemScanStore.getState().clear();
+    const product = {
+      id: 970,
+      name: 'Brake hose',
+      sku: 'HOSE-970',
+      price: 42,
+    };
+    mockGetProductByBarcode.mockResolvedValueOnce(product);
+
+    render(<BarcodeScannerScreen />);
+    fireScan('9310072000012');
+
+    await waitFor(() => {
+      expect(mockGetProductByBarcode).toHaveBeenCalledWith('9310072000012');
+    });
+    await waitFor(() => {
+      expect(useRepairItemScanStore.getState().pendingProduct).toMatchObject({
+        id: 970,
+      });
+    });
+    expect(mockGoBack).toHaveBeenCalled();
+    // A product scan in repair-item mode must NOT be treated as a repair tag.
+    expect(mockGetRepairByBarcode).not.toHaveBeenCalled();
+  });
+
+  it('repair-item mode: a REP-* repair tag is NOT short-circuited — it falls through to product lookup', async () => {
+    mockRouteParams.current = {mode: 'repair-item'};
+    useRepairItemScanStore.getState().clear();
+    mockGetProductByBarcode.mockResolvedValueOnce(null);
+
+    render(<BarcodeScannerScreen />);
+    fireScan('REP-20260702-000001');
+
+    // The repair short-circuit is guarded by `mode !== 'repair-item'`, so a
+    // REP-* string is handed to the product lookup (which misses), never to
+    // getRepairByBarcode.
+    await waitFor(() => {
+      expect(mockGetProductByBarcode).toHaveBeenCalledWith('REP-20260702-000001');
+    });
+    expect(mockGetRepairByBarcode).not.toHaveBeenCalled();
+    expect(useRepairItemScanStore.getState().pendingProduct).toBeNull();
   });
 });
