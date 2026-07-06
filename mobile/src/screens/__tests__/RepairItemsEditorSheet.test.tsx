@@ -153,7 +153,7 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
       expect(mockGetRepairDetail).toHaveBeenCalledTimes(1),
     );
     await act(async () => {
-      fireEvent.press(utils.getByLabelText('Add part or labour'));
+      fireEvent.press(utils.getByLabelText('Add part'));
     });
   }
 
@@ -197,6 +197,102 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
       unit_price: 130, // prefilled from price_cents/100
       quantity: 1,
     });
+  });
+
+  it('keeps the add form open and re-armed on the search after Add (add-another)', async () => {
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Search stock parts'), 'screen');
+    });
+    const result = await utils.findByLabelText(
+      'Add iPhone 13 Screen Assembly, SCREEN-IP13, $130.00, 5 in stock',
+    );
+    await act(async () => {
+      fireEvent.press(result);
+    });
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
+
+    // The form did NOT close — it reset to a clean search state so the next
+    // part can be added straight away (the linked chip is gone, search is back).
+    expect(utils.getByLabelText('Search stock parts')).toBeTruthy();
+    expect(utils.queryByLabelText('Change stock item')).toBeNull();
+    // "Done" closes the add form back to the list.
+    expect(utils.getByLabelText('Done adding parts')).toBeTruthy();
+  });
+
+  it('refreshes the items list from a fresh detail fetch after adding (write response omits items[])', async () => {
+    // Reproduces the reported bug: the add RPC returns the parent repair
+    // WITHOUT items[] hydrated, so the list would show "no items yet" until a
+    // back-nav refetch. The editor now re-reads authoritative detail after the
+    // write. First getRepairDetail (load) is empty; the post-add re-read has
+    // the new part.
+    const withItem = makeDetail({
+      items: [
+        {
+          id: 55,
+          repair_id: 1,
+          product_id: 900,
+          item_name: 'iPhone 13 Screen Assembly',
+          item_sku: 'SCREEN-IP13',
+          item_type: 'part',
+          quantity: 1,
+          unit_price: 130,
+          line_total: 130,
+          notes: null,
+          status: 'reserved',
+          created_at: '',
+          updated_at: '',
+        },
+      ],
+    });
+    mockGetRepairDetail
+      .mockReset()
+      .mockResolvedValueOnce(makeDetail()) // initial load — no items
+      .mockResolvedValue(withItem); // post-add re-read — has the part
+    // The add RPC's own return deliberately lacks items[] (server write shape).
+    mockAddRepairItem.mockReset().mockResolvedValue(makeDetail());
+
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Search stock parts'), 'screen');
+    });
+    const result = await utils.findByLabelText(
+      'Add iPhone 13 Screen Assembly, SCREEN-IP13, $130.00, 5 in stock',
+    );
+    await act(async () => {
+      fireEvent.press(result);
+    });
+    await act(async () => {
+      fireEvent.press(utils.getByLabelText('Add item to repair'));
+    });
+
+    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
+    // A second detail fetch happened (the authoritative re-read) …
+    await waitFor(() =>
+      expect(mockGetRepairDetail).toHaveBeenCalledTimes(2),
+    );
+    // … and the freshly-added part now shows in the list.
+    await utils.findByLabelText('iPhone 13 Screen Assembly');
+  });
+
+  it('is parts-only: no Labour type toggle, opens on the stock search', async () => {
+    const utils = render(<RepairItemsEditorSheet />);
+    await openAddForm(utils);
+    expect(utils.queryByLabelText('Labour')).toBeNull();
+    expect(utils.queryByLabelText('Part')).toBeNull();
+    // Search is the primary path — the form opens straight onto it. The
+    // off-catalogue name field is hidden until "Enter part manually" is tapped.
+    expect(utils.getByLabelText('Search stock parts')).toBeTruthy();
+    expect(utils.queryByLabelText('Part name')).toBeNull();
+    expect(
+      utils.getByLabelText('Enter an off-catalogue part manually'),
+    ).toBeTruthy();
   });
 
   it('a stock product with no sell price prefills a BLANK price and blocks Add until one is typed', async () => {
@@ -252,10 +348,15 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
     const utils = render(<RepairItemsEditorSheet />);
     await openAddForm(utils);
 
-    // Skip the stock search entirely — type a name + price by hand.
+    // Reveal the off-catalogue path, then type a name + price by hand.
+    await act(async () => {
+      fireEvent.press(
+        utils.getByLabelText('Enter an off-catalogue part manually'),
+      );
+    });
     await act(async () => {
       fireEvent.changeText(
-        utils.getByLabelText('Item name'),
+        utils.getByLabelText('Part name'),
         'Salvaged flex cable',
       );
       fireEvent.changeText(
@@ -277,37 +378,7 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
     });
   });
 
-  it('does not search stock for a Labour line', async () => {
-    const utils = render(<RepairItemsEditorSheet />);
-    await openAddForm(utils);
-
-    await act(async () => {
-      fireEvent.press(utils.getByLabelText('Labour'));
-    });
-    // The stock search field is gone for labour.
-    expect(utils.queryByLabelText('Search stock parts')).toBeNull();
-
-    await act(async () => {
-      fireEvent.changeText(
-        utils.getByLabelText('Item name'),
-        'Diagnostic labour',
-      );
-      fireEvent.changeText(
-        utils.getByLabelText('Unit price in dollars'),
-        '80',
-      );
-    });
-    await act(async () => {
-      fireEvent.press(utils.getByLabelText('Add item to repair'));
-    });
-
-    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
-    const [, payload] = mockAddRepairItem.mock.calls[0];
-    expect(payload).toMatchObject({item_type: 'labor', product_id: null});
-    expect(mockSearchProducts).not.toHaveBeenCalled();
-  });
-
-  it('"Change" unlinks the product, re-arms the search, and keeps the typed fields', async () => {
+  it('"Change" unlinks the product and re-arms the stock search', async () => {
     const utils = render(<RepairItemsEditorSheet />);
     await openAddForm(utils);
 
@@ -323,62 +394,18 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
     await act(async () => {
       fireEvent.press(result);
     });
-    // Linked chip visible, search field gone.
+    // Linked chip visible (Add surfaces), search field gone.
     expect(utils.queryByLabelText('Search stock parts')).toBeNull();
+    expect(utils.getByLabelText('Add item to repair')).toBeTruthy();
 
-    // Change → unlinks; search field returns, name/price retained.
+    // Change → unlinks and returns to a clean search state: search field back,
+    // the linked chip + Add gone (nothing to add until a fresh pick / manual).
     await act(async () => {
       fireEvent.press(utils.getByLabelText('Change stock item'));
     });
     expect(utils.getByLabelText('Search stock parts')).toBeTruthy();
-    expect(utils.getByLabelText('Item name').props.value).toBe(
-      'iPhone 13 Screen Assembly',
-    );
-
-    // Submitting now sends product_id null (unlinked) but keeps the name.
-    await act(async () => {
-      fireEvent.press(utils.getByLabelText('Add item to repair'));
-    });
-    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
-    const [, payload] = mockAddRepairItem.mock.calls[0];
-    expect(payload).toMatchObject({
-      item_name: 'iPhone 13 Screen Assembly',
-      product_id: null,
-    });
-  });
-
-  it('switching a linked Part to Labour drops the product_id and sku', async () => {
-    const utils = render(<RepairItemsEditorSheet />);
-    await openAddForm(utils);
-
-    await act(async () => {
-      fireEvent.changeText(
-        utils.getByLabelText('Search stock parts'),
-        'screen',
-      );
-    });
-    const result = await utils.findByLabelText(
-      'Add iPhone 13 Screen Assembly, SCREEN-IP13, $130.00, 5 in stock',
-    );
-    await act(async () => {
-      fireEvent.press(result);
-    });
-
-    // Switch to Labour, then submit.
-    await act(async () => {
-      fireEvent.press(utils.getByLabelText('Labour'));
-    });
-    await act(async () => {
-      fireEvent.press(utils.getByLabelText('Add item to repair'));
-    });
-
-    await waitFor(() => expect(mockAddRepairItem).toHaveBeenCalledTimes(1));
-    const [, payload] = mockAddRepairItem.mock.calls[0];
-    expect(payload).toMatchObject({
-      item_type: 'labor',
-      product_id: null,
-      item_sku: null, // no stray sku carried onto the labour line
-    });
+    expect(utils.queryByLabelText('Change stock item')).toBeNull();
+    expect(utils.queryByLabelText('Add item to repair')).toBeNull();
   });
 
   it('renders the empty state when the stock search returns nothing', async () => {
@@ -482,7 +509,7 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
     expect(Number.isInteger((payload.quantity as number) * 1000)).toBe(true);
   });
 
-  it('unlinking a metered part snaps a fractional quantity back to a whole number', async () => {
+  it('unlinking a metered part clears the metered state — off-catalogue entry is a whole-number each line', async () => {
     const hose = makeProduct({
       id: 952,
       name: 'Fuel Hose',
@@ -505,16 +532,25 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
     await act(async () => {
       fireEvent.press(result);
     });
-    // Type a fractional metered quantity, THEN unlink.
-    await act(async () => {
-      fireEvent.changeText(utils.getByLabelText('Quantity in m'), '1.3');
-    });
+    // Linked → the metered "Quantity in m" field is present.
+    expect(utils.getByLabelText('Quantity in m')).toBeTruthy();
+
+    // Change → back to a clean search; the metered field is gone.
     await act(async () => {
       fireEvent.press(utils.getByLabelText('Change stock item'));
     });
+    expect(utils.queryByLabelText('Quantity in m')).toBeNull();
 
-    // Now an off-catalogue 'each' line: quantity snapped to a whole number,
-    // keyboard back to integer.
+    // Reveal off-catalogue entry → a whole-number 'each' line (integer keypad).
+    await act(async () => {
+      fireEvent.press(
+        utils.getByLabelText('Enter an off-catalogue part manually'),
+      );
+    });
+    await act(async () => {
+      fireEvent.changeText(utils.getByLabelText('Part name'), 'Zip tie');
+      fireEvent.changeText(utils.getByLabelText('Unit price in dollars'), '2');
+    });
     const qtyInput = utils.getByLabelText('Quantity');
     expect(qtyInput.props.value).toBe('1');
     expect(qtyInput.props.keyboardType).toBe('number-pad');
@@ -549,10 +585,10 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
         );
     });
 
-    // The editor links it (name prefilled) — submit sends the real id.
-    expect(utils.getByLabelText('Item name').props.value).toBe(
-      'Scanned Widget',
-    );
+    // The editor links it — the linked-stock chip shows the product name and
+    // the Add affordance surfaces. Submit sends the real id.
+    expect(utils.getByText('Scanned Widget')).toBeTruthy();
+    expect(utils.getByLabelText('Change stock item')).toBeTruthy();
     await act(async () => {
       fireEvent.press(utils.getByLabelText('Add item to repair'));
     });
@@ -577,8 +613,10 @@ describe('RepairItemsEditorSheet — add part from stock', () => {
     const utils = render(<RepairItemsEditorSheet />);
     await openAddForm(utils);
 
-    // Name field is empty (nothing auto-linked); store was cleared.
-    expect(utils.getByLabelText('Item name').props.value).toBe('');
+    // Nothing auto-linked: no linked chip, still on the stock search, and the
+    // stale store entry was cleared.
+    expect(utils.queryByLabelText('Change stock item')).toBeNull();
+    expect(utils.getByLabelText('Search stock parts')).toBeTruthy();
     expect(useRepairItemScanStore.getState().pendingProduct).toBeNull();
     expect(mockAddRepairItem).not.toHaveBeenCalled();
   });
