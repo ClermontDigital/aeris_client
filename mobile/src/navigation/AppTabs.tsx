@@ -179,23 +179,38 @@ const AppTabsInner: React.FC = () => {
   // buttons. It lives OUTSIDE the Tab.Navigator (a sibling overlay) so the
   // protruding button can't be touch-clipped by the shorter notch bar, so it
   // navigates via the parent AppStack rather than the tab navigator directly.
-  const activeTab = useNavigationState(s => {
+  const focusedTab = useNavigationState(s => {
     // `s` here is the AppStack state (AppTabsInner renders under it). Dig into
-    // the nested Tabs navigator to find the focused tab route name.
+    // the nested Tabs navigator to find the focused tab — its name (for the
+    // active highlight) and its inner-stack key (for pop-to-root on re-tap).
     const tabsRoute = s?.routes?.find(r => r.name === 'Tabs');
     const ts = tabsRoute?.state;
     if (!ts || ts.index == null) return undefined;
-    return ts.routes[ts.index]?.name;
+    const r = ts.routes[ts.index];
+    if (!r) return undefined;
+    const innerKey = (r as {state?: {key?: string}}).state?.key;
+    return {name: r.name, key: innerKey};
   });
+  const activeTab = focusedTab?.name;
   const onNavigate = React.useCallback(
     (route: string) => {
+      // A nav-menu tap is the "fresh start" signal — clear cross-tab
+      // breadcrumb history so the destination doesn't inherit stale crumbs
+      // (this replaces the reset the old per-tab TabButton did on every press).
+      useNavHistoryStore.getState().reset();
       if (route === 'Settings') {
         stackNav.navigate('Settings');
         return;
       }
+      // Re-selecting the already-focused tab pops its inner stack back to root
+      // (matches the old tab-re-tap behaviour). Needs the inner stack's key so
+      // the dispatch targets that navigator, not the AppStack.
+      if (route === focusedTab?.name && focusedTab?.key) {
+        stackNav.dispatch({...StackActions.popToTop(), target: focusedTab.key});
+      }
       stackNav.navigate('Tabs', {screen: route as keyof AppTabParamList});
     },
-    [stackNav],
+    [stackNav, focusedTab],
   );
 
   return (
@@ -363,7 +378,11 @@ const AppTabsInner: React.FC = () => {
           the navigation menu. Sibling of the Tab.Navigator (renders on top,
           unclipped). Suppressed on the Scanner surface like the header. */}
       {isOnScanner ? null : (
-        <AerisNavButton activeTab={activeTab} onNavigate={onNavigate} />
+        <AerisNavButton
+          activeTab={activeTab}
+          onNavigate={onNavigate}
+          showErp={showErpTab}
+        />
       )}
     </View>
   );

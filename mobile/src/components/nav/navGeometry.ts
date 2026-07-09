@@ -19,6 +19,16 @@ export function barTotalHeight(insetBottom: number): number {
   return BAR_H + insetBottom;
 }
 
+// Total chrome height the notch bar RESERVES as tab-bar layout height. It
+// includes the dome protrusion so screen content insets ABOVE the dome + the
+// nested A button — otherwise a bottom-flush CTA (e.g. Checkout's "Complete
+// sale") would sit under the floating A and the A would steal its taps. It
+// also means the dome is drawn INSIDE the bar's bounds (no reliance on
+// overflow-visible, which Android clips).
+export function chromeHeight(insetBottom: number): number {
+  return barTotalHeight(insetBottom) + PROTRUSION;
+}
+
 // Offset (radians) from straight-up for option i of n across the arc.
 export function angleFor(i: number, n: number): number {
   if (n <= 1) return 0;
