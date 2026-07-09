@@ -4,6 +4,7 @@ import {
   SafeAreaProvider,
   initialWindowMetrics,
 } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AerisNavButton from '../AerisNavButton';
 
 // Stable haptics.
@@ -57,6 +58,9 @@ describe('AerisNavButton', () => {
   beforeEach(() => {
     workspace.repairs_enabled = true;
     cart.items = [];
+    // Mark the first-run coach mark as already seen so its settle timer never
+    // schedules — keeps these tests free of a leaked async timer.
+    AsyncStorage.setItem('@aeris/nav-coach-seen-v1', '1');
   });
 
   it('is closed initially — the A button shows, the fan options do not', () => {

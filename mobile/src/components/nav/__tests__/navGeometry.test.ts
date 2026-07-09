@@ -4,6 +4,8 @@ import {
   ARC,
   barTotalHeight,
   BAR_H,
+  BTN,
+  buttonCenterFromBottom,
   domeCapPath,
   DOME_OVERLAP,
   PROTRUSION,
@@ -44,9 +46,22 @@ describe('navGeometry', () => {
   });
 
   describe('barTotalHeight', () => {
-    it('is the flat bar height plus the safe-area inset', () => {
+    it('is the thin bar height plus the safe-area inset', () => {
       expect(barTotalHeight(0)).toBe(BAR_H);
       expect(barTotalHeight(34)).toBe(BAR_H + 34);
+    });
+  });
+
+  describe('buttonCenterFromBottom', () => {
+    it('follows the bar top when the inset is generous', () => {
+      // 10 + 34 = 44, above the floor.
+      expect(buttonCenterFromBottom(34)).toBe(BAR_H + 34);
+    });
+
+    it('is floored so the A is never clipped on a thin bar with no inset', () => {
+      // 10 + 0 = 10 would clip the A; floor to BTN/2 + 8.
+      expect(buttonCenterFromBottom(0)).toBe(BTN / 2 + 8);
+      expect(buttonCenterFromBottom(0)).toBeGreaterThan(barTotalHeight(0));
     });
   });
 
