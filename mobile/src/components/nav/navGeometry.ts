@@ -1,33 +1,37 @@
-// Shared geometry for the Aeris bottom-nav chrome — the notch bar (which
-// paints the navy cradle + reserves layout height) and the overlay button +
-// fan (which floats above, unclipped, so the protruding A stays tappable).
-// Both must agree on where the button centre sits, so the button visually
-// nests into the dome the notch bar draws.
+// Shared geometry for the Aeris bottom-nav chrome. The bottom chrome is split:
+//   - AerisNotchBar: a plain full-width OPAQUE navy bar (height = barTotalHeight)
+//     that reserves the tab-bar layout height. Scrollable screen content insets
+//     by exactly this, so lists scroll UP to the flat-bar top and slide behind
+//     the dome + A (no cream wedges beside the dome any more).
+//   - AerisNavButton: a full-screen sibling overlay (never touch/paint-clipped)
+//     that draws the navy dome CAP + the A + the fan. The cap rises PROTRUSION
+//     above the flat-bar top and blends into the bar (same navy).
+// The dome lives in the overlay (not the bar) so it can protrude over scrolling
+// content without relying on overflow-visible (which Android clips) and without
+// forcing content to inset above it.
 
 export const BTN = 64; // A button diameter
 export const BAR_H = 58; // flat navy bar height ABOVE the safe-area inset
 export const PROTRUSION = 44; // how far the dome rises above the flat bar top
 export const DOME_HALF = BTN / 2 + 28; // half-width of the navy cradle
-export const PEAK_Y = 4; // dome peak, in the bar's SVG coordinate space
+export const PEAK_Y = 4; // dome peak, in the cap's SVG coordinate space
+export const DOME_OVERLAP = 8; // cap extends this far BELOW the flat-bar top to blend
 export const ARC = (172 * Math.PI) / 180; // total fan sweep, centred straight up
 export const BUBBLE = 78; // fan option column width
 export const CIRCLE = 50; // fan option icon-circle diameter
 
-// The button centre sits on the flat-bar-top line (== `height - barH`), so its
-// lower half overlaps the bar and its upper half nests into the dome.
+// Height the notch bar reserves as tab-bar layout height (flat bar + safe-area
+// inset). The dome protrusion is deliberately NOT reserved — the A floats over
+// content so lists scroll behind it edge-to-edge. Fixed bottom CTAs pad
+// themselves by A_CLEARANCE instead (see useNavAClearance).
 export function barTotalHeight(insetBottom: number): number {
   return BAR_H + insetBottom;
 }
 
-// Total chrome height the notch bar RESERVES as tab-bar layout height. It
-// includes the dome protrusion so screen content insets ABOVE the dome + the
-// nested A button — otherwise a bottom-flush CTA (e.g. Checkout's "Complete
-// sale") would sit under the floating A and the A would steal its taps. It
-// also means the dome is drawn INSIDE the bar's bounds (no reliance on
-// overflow-visible, which Android clips).
-export function chromeHeight(insetBottom: number): number {
-  return barTotalHeight(insetBottom) + PROTRUSION;
-}
+// Extra bottom padding a screen with a fixed/bottom-flush CTA should add on top
+// of the tab-bar inset so its button clears the floating A rather than being
+// overlapped (and tap-stolen) by it.
+export const A_CLEARANCE = PROTRUSION + 8;
 
 // Offset (radians) from straight-up for option i of n across the arc.
 export function angleFor(i: number, n: number): number {
@@ -41,19 +45,21 @@ export function radiusFor(n: number): number {
   return Math.max(132, Math.min(184, r));
 }
 
-// SVG path for the navy bar + centre dome, drawn in a canvas of
-// height (PROTRUSION + barH). The flat bar top sits at y = PROTRUSION; the
-// centre rises smoothly to PEAK_Y to cradle the button.
-export function domePath(width: number, barH: number): {d: string; svgH: number} {
-  const svgH = PROTRUSION + barH;
+// SVG path for the navy dome CAP drawn in the overlay: just the centre bump
+// (flanks transparent so scrolling content shows beside it), with a short
+// `DOME_OVERLAP` skirt below the flat-bar top so it merges seamlessly into the
+// opaque navy bar. Canvas height = PROTRUSION + DOME_OVERLAP; the flat-bar-top
+// line sits at y = PROTRUSION.
+export function domeCapPath(width: number): {d: string; svgH: number} {
+  const svgH = PROTRUSION + DOME_OVERLAP;
   const cx = width / 2;
   const top = PROTRUSION;
   const sx = cx - DOME_HALF;
   const ex = cx + DOME_HALF;
   const d =
-    `M0,${top} L${sx},${top} ` +
+    `M${sx},${svgH} L${sx},${top} ` +
     `C${sx + 20},${top} ${cx - DOME_HALF * 0.5},${PEAK_Y} ${cx},${PEAK_Y} ` +
     `C${cx + DOME_HALF * 0.5},${PEAK_Y} ${ex - 20},${top} ${ex},${top} ` +
-    `L${width},${top} L${width},${svgH} L0,${svgH} Z`;
+    `L${ex},${svgH} Z`;
   return {d, svgH};
 }
