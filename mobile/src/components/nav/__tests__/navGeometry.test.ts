@@ -3,6 +3,7 @@ import {
   ARC,
   barTotalHeight,
   BAR_H,
+  chromeHeight,
   domePath,
   PROTRUSION,
   radiusFor,
@@ -45,6 +46,19 @@ describe('navGeometry', () => {
     it('is the flat bar height plus the safe-area inset', () => {
       expect(barTotalHeight(0)).toBe(BAR_H);
       expect(barTotalHeight(34)).toBe(BAR_H + 34);
+    });
+  });
+
+  describe('chromeHeight', () => {
+    it('reserves the flat bar + the dome protrusion (so CTAs inset above it)', () => {
+      expect(chromeHeight(0)).toBe(BAR_H + PROTRUSION);
+      expect(chromeHeight(34)).toBe(BAR_H + 34 + PROTRUSION);
+    });
+
+    it('equals the domePath SVG canvas height', () => {
+      const barH = barTotalHeight(34);
+      const {svgH} = domePath(390, barH);
+      expect(chromeHeight(34)).toBe(svgH);
     });
   });
 

@@ -17,9 +17,10 @@ jest.mock('../../../hooks/useHaptics', () => ({
   }),
 }));
 
-// Cart store selector → empty cart (no badge).
+// Cart store selector — items flipped per test via this mutable holder.
+const cart: {items: {quantity: number}[]} = {items: []};
 jest.mock('../../../stores/cartStore', () => ({
-  useCartStore: (sel: (s: {items: unknown[]}) => unknown) => sel({items: []}),
+  useCartStore: (sel: (s: {items: {quantity: number}[]}) => unknown) => sel(cart),
 }));
 
 // Workspace features — flag flipped per test via this mutable holder.
@@ -34,12 +35,19 @@ const metrics = initialWindowMetrics ?? {
   insets: {top: 47, left: 0, right: 0, bottom: 34},
 };
 
-function renderButton(onNavigate = jest.fn(), activeTab = 'QuickSale') {
+function renderButton(
+  opts: {onNavigate?: jest.Mock; activeTab?: string; showErp?: boolean} = {},
+) {
+  const onNavigate = opts.onNavigate ?? jest.fn();
   return {
     onNavigate,
     ...render(
       <SafeAreaProvider initialMetrics={metrics}>
-        <AerisNavButton activeTab={activeTab} onNavigate={onNavigate} />
+        <AerisNavButton
+          activeTab={opts.activeTab ?? 'QuickSale'}
+          onNavigate={onNavigate}
+          showErp={opts.showErp}
+        />
       </SafeAreaProvider>,
     ),
   };
@@ -48,6 +56,7 @@ function renderButton(onNavigate = jest.fn(), activeTab = 'QuickSale') {
 describe('AerisNavButton', () => {
   beforeEach(() => {
     workspace.repairs_enabled = true;
+    cart.items = [];
   });
 
   it('is closed initially — the A button shows, the fan options do not', () => {
@@ -90,5 +99,23 @@ describe('AerisNavButton', () => {
     const {getByLabelText} = renderButton();
     fireEvent.press(getByLabelText('Open navigation menu'));
     expect(getByLabelText('Repairs')).toBeTruthy();
+  });
+
+  it('hides the ERP (Aeris) destination by default and shows it when enabled', () => {
+    const off = renderButton();
+    fireEvent.press(off.getByLabelText('Open navigation menu'));
+    expect(off.queryByLabelText('Aeris')).toBeNull();
+    off.unmount();
+
+    const on = renderButton({showErp: true});
+    fireEvent.press(on.getByLabelText('Open navigation menu'));
+    expect(on.getByLabelText('Aeris')).toBeTruthy();
+  });
+
+  it('shows the cart count on the docked A when the cart is non-empty', () => {
+    cart.items = [{quantity: 2}, {quantity: 1}]; // getItemCount → 3
+    const {getByLabelText} = renderButton();
+    // The docked button's a11y label folds in the count (no fan open needed).
+    expect(getByLabelText('Open navigation menu, 3 in cart')).toBeTruthy();
   });
 });
