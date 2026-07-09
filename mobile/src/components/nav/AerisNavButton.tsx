@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   Image,
   Modal,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Animated, {
+  cancelAnimation,
   Extrapolation,
   interpolate,
   runOnJS,
@@ -40,25 +41,30 @@ type IconName = React.ComponentProps<typeof Icon>['name'];
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Fan destinations, left→right along the arc (Sale lands near the top-centre).
-// `route` is the target passed to onNavigate; Repairs is gated on the flag.
-const DESTS: {route: string; label: string; icon: IconName}[] = [
-  {route: 'Dashboard', label: 'Dashboard', icon: 'stats-chart'},
-  {route: 'Items', label: 'Items', icon: 'cube'},
-  {route: 'Customers', label: 'Customers', icon: 'people'},
-  {route: 'QuickSale', label: 'Sale', icon: 'cart'},
-  {route: 'Repairs', label: 'Repairs', icon: 'construct-outline'},
-  {route: 'Transactions', label: 'Sales', icon: 'receipt'},
-  {route: 'Settings', label: 'Settings', icon: 'settings-outline'},
-];
+// `route` is the target passed to onNavigate. `gate` names a conditional flag
+// ('repairs' / 'erp') the caller controls; ungated entries always show.
+const DESTS: {route: string; label: string; icon: IconName; gate?: 'repairs' | 'erp'}[] =
+  [
+    {route: 'Dashboard', label: 'Dashboard', icon: 'stats-chart'},
+    {route: 'Items', label: 'Items', icon: 'cube'},
+    {route: 'Customers', label: 'Customers', icon: 'people'},
+    {route: 'QuickSale', label: 'Sale', icon: 'cart'},
+    {route: 'Repairs', label: 'Repairs', icon: 'construct-outline', gate: 'repairs'},
+    {route: 'Transactions', label: 'Sales', icon: 'receipt'},
+    {route: 'ERP', label: 'Aeris', icon: 'globe', gate: 'erp'},
+    {route: 'Settings', label: 'Settings', icon: 'settings-outline'},
+  ];
 
 interface Props {
   // The focused tab route name, for highlighting the active option.
   activeTab?: string;
   // Navigate to a destination route ('Settings' or a tab name).
   onNavigate: (route: string) => void;
+  // Whether the ERP tab is currently surfaced (mirrors AppTabs' showErpTab).
+  showErp?: boolean;
 }
 
-const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate}) => {
+const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
   const insets = useSafeAreaInsets();
   const {width, height} = useWindowDimensions();
   const haptics = useHaptics();
@@ -91,8 +97,17 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate}) => {
     [close, openFan],
   );
 
+  // Stop any in-flight animation if we unmount mid-transition (e.g. the
+  // Scanner surface takes over) so no callback fires after teardown.
+  useEffect(() => () => cancelAnimation(progress), [progress]);
+
   const dests = useMemo(() => {
-    return DESTS.filter(d => d.route !== 'Repairs' || showRepairs).map(d => ({
+    const visible = DESTS.filter(d => {
+      if (d.gate === 'repairs') return showRepairs;
+      if (d.gate === 'erp') return !!showErp;
+      return true;
+    });
+    return visible.map(d => ({
       ...d,
       active: d.route === activeTab,
       badge:
@@ -105,7 +120,7 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate}) => {
         onNavigate(d.route);
       },
     }));
-  }, [showRepairs, activeTab, cartCount, haptics, close, onNavigate]);
+  }, [showRepairs, showErp, activeTab, cartCount, haptics, close, onNavigate]);
 
   // Button centre in screen coords — the flat-bar-top line. Shared with the
   // notch bar so the A nests into the dome.
@@ -153,9 +168,22 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate}) => {
             onPress={toggle}
             style={[styles.button, {left: cx - BTN / 2, top: cy - BTN / 2}]}
             accessibilityRole="button"
-            accessibilityLabel="Open navigation menu"
+            accessibilityLabel={
+              cartCount > 0
+                ? `Open navigation menu, ${cartCount} in cart`
+                : 'Open navigation menu'
+            }
             hitSlop={12}>
             <Image source={A_LOGO} style={styles.aLogo} resizeMode="contain" />
+            {/* At-a-glance cart count on the docked A (the old Sale-tab badge
+                only lived on the tab bar). */}
+            {cartCount > 0 && (
+              <View style={styles.dockBadge}>
+                <Text style={styles.badgeText}>
+                  {cartCount > 99 ? '99+' : String(cartCount)}
+                </Text>
+              </View>
+            )}
           </Pressable>
         )}
       </View>
@@ -173,7 +201,8 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate}) => {
           accessibilityLabel="Close navigation menu"
         />
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          {dests.map((d, i) => (
+          {mounted &&
+            dests.map((d, i) => (
             <FanBubble
               key={d.route}
               label={d.label}
@@ -345,6 +374,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 9,
     backgroundColor: COLORS.crimson,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Cart badge on the docked A — top-right, ringed in navy so it reads as a
+  // pip on the button rather than blending into the crimson-on-navy chrome.
+  dockBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    backgroundColor: COLORS.crimson,
+    borderWidth: 2,
+    borderColor: COLORS.navy,
     alignItems: 'center',
     justifyContent: 'center',
   },
