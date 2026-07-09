@@ -25,6 +25,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from '../Icon';
 import NavCoachMark from './NavCoachMark';
 import {useHaptics} from '../../hooks/useHaptics';
+import {useAppLockStore} from '../../stores/appLockStore';
 import {useCartStore} from '../../stores/cartStore';
 import {useWorkspaceFeaturesStore} from '../../stores/workspaceFeaturesStore';
 import {getItemCount} from '@aeris/shared';
@@ -81,6 +82,10 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
   const haptics = useHaptics();
   const showRepairs = useWorkspaceFeaturesStore(s => s.repairs_enabled);
   const cartCount = useCartStore(s => getItemCount(s.items));
+  // The tab shell stays mounted BEHIND the PIN/Face-ID lock overlay, so gate
+  // the first-run coach mark on being unlocked — otherwise its timer fires and
+  // the tip pops over the lock screen.
+  const isLocked = useAppLockStore(s => s.isLocked);
 
   const progress = useSharedValue(0);
   const [mounted, setMounted] = useState(false);
@@ -116,7 +121,8 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
   // way around. Shown after a short settle delay, then remembered forever.
   const [coachVisible, setCoachVisible] = useState(false);
   useEffect(() => {
-    if (coachShownThisSession) return;
+    // Only ever once, and never while locked (re-runs when the lock lifts).
+    if (isLocked || coachShownThisSession) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     AsyncStorage.getItem(COACH_SEEN_KEY)
@@ -131,11 +137,13 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
       .catch(() => {
         // Storage unavailable — skip the coach rather than block nav.
       });
+    // Cleanup also fires if the app re-locks within the settle delay, cancelling
+    // the pending timer so the tip can't surface over the lock screen.
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [isLocked]);
   const dismissCoach = useCallback(() => {
     setCoachVisible(false);
     AsyncStorage.setItem(COACH_SEEN_KEY, '1').catch(() => undefined);
@@ -297,7 +305,7 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
       </Modal>
 
       <NavCoachMark
-        visible={coachVisible}
+        visible={coachVisible && !isLocked}
         onDismiss={dismissCoach}
         cx={cx}
         cy={cy}
