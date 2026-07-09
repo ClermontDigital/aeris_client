@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import Svg, {Path} from 'react-native-svg';
 import Animated, {
   cancelAnimation,
   Extrapolation,
@@ -32,6 +33,8 @@ import {
   BTN,
   BUBBLE,
   CIRCLE,
+  domeCapPath,
+  PROTRUSION,
   radiusFor,
 } from './navGeometry';
 
@@ -127,6 +130,7 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
   const barH = barTotalHeight(insets.bottom);
   const cx = width / 2;
   const cy = height - barH;
+  const cap = useMemo(() => domeCapPath(width), [width]);
 
   const scrimStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 1], [0, 1], Extrapolation.CLAMP),
@@ -163,6 +167,18 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
           by the (shorter) notch bar. box-none lets taps through everywhere
           except the button itself. */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        {/* Navy dome cap behind the A — floats over scrolling content and
+            blends into the flat navy bar below it (same navy). */}
+        <View
+          style={[
+            styles.cap,
+            {left: 0, width, height: cap.svgH, top: cy - PROTRUSION},
+          ]}
+          pointerEvents="none">
+          <Svg width={width} height={cap.svgH}>
+            <Path d={cap.d} fill={COLORS.navy} />
+          </Svg>
+        </View>
         {!mounted && (
           <Pressable
             onPress={toggle}
@@ -308,6 +324,7 @@ const FanBubble: React.FC<{
 };
 
 const styles = StyleSheet.create({
+  cap: {position: 'absolute'},
   button: {
     position: 'absolute',
     width: BTN,

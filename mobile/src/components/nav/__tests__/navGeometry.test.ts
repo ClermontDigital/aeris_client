@@ -1,10 +1,11 @@
 import {
+  A_CLEARANCE,
   angleFor,
   ARC,
   barTotalHeight,
   BAR_H,
-  chromeHeight,
-  domePath,
+  domeCapPath,
+  DOME_OVERLAP,
   PROTRUSION,
   radiusFor,
 } from '../navGeometry';
@@ -49,29 +50,23 @@ describe('navGeometry', () => {
     });
   });
 
-  describe('chromeHeight', () => {
-    it('reserves the flat bar + the dome protrusion (so CTAs inset above it)', () => {
-      expect(chromeHeight(0)).toBe(BAR_H + PROTRUSION);
-      expect(chromeHeight(34)).toBe(BAR_H + 34 + PROTRUSION);
-    });
-
-    it('equals the domePath SVG canvas height', () => {
-      const barH = barTotalHeight(34);
-      const {svgH} = domePath(390, barH);
-      expect(chromeHeight(34)).toBe(svgH);
+  describe('A_CLEARANCE', () => {
+    it('exceeds the dome protrusion so a bottom CTA fully clears the A', () => {
+      expect(A_CLEARANCE).toBeGreaterThan(PROTRUSION);
     });
   });
 
-  describe('domePath', () => {
-    it('opens a canvas PROTRUSION taller than the bar and closes the shape', () => {
-      const {d, svgH} = domePath(390, 92);
-      expect(svgH).toBe(PROTRUSION + 92);
-      // Flat bar top sits at y = PROTRUSION; the path starts there on the left.
-      expect(d.startsWith(`M0,${PROTRUSION} `)).toBe(true);
+  describe('domeCapPath', () => {
+    it('canvas = protrusion + overlap, and is a closed centre bump', () => {
+      const {d, svgH} = domeCapPath(390);
+      expect(svgH).toBe(PROTRUSION + DOME_OVERLAP);
       // Closed polygon.
       expect(d.trim().endsWith('Z')).toBe(true);
-      // Spans the full width.
-      expect(d).toContain('L390,');
+      // Bump is centred and narrower than full width (flanks transparent) —
+      // it starts at the left dome edge (sx > 0), not at x = 0.
+      const startX = Number(d.slice(1, d.indexOf(',')));
+      expect(startX).toBeGreaterThan(0);
+      expect(startX).toBeLessThan(390 / 2);
     });
   });
 });
