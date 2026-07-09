@@ -31,6 +31,12 @@ jest.mock('../../../stores/workspaceFeaturesStore', () => ({
     sel(workspace),
 }));
 
+// App lock — unlocked in these tests (the coach mark is gated on it).
+jest.mock('../../../stores/appLockStore', () => ({
+  useAppLockStore: (sel: (s: {isLocked: boolean}) => unknown) =>
+    sel({isLocked: false}),
+}));
+
 const metrics = initialWindowMetrics ?? {
   frame: {x: 0, y: 0, width: 390, height: 844},
   insets: {top: 47, left: 0, right: 0, bottom: 34},
