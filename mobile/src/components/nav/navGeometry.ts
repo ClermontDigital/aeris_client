@@ -11,7 +11,7 @@
 // forcing content to inset above it.
 
 export const BTN = 64; // A button diameter
-export const BAR_H = 58; // flat navy bar height ABOVE the safe-area inset
+export const BAR_H = 10; // thin navy line height ABOVE the safe-area inset
 export const PROTRUSION = 44; // how far the dome rises above the flat bar top
 export const DOME_HALF = BTN / 2 + 28; // half-width of the navy cradle
 export const PEAK_Y = 4; // dome peak, in the cap's SVG coordinate space
@@ -26,6 +26,13 @@ export const CIRCLE = 50; // fan option icon-circle diameter
 // themselves by A_CLEARANCE instead (see useNavAClearance).
 export function barTotalHeight(insetBottom: number): number {
   return BAR_H + insetBottom;
+}
+
+// Screen-bottom → A button centre. Normally the flat-bar-top line
+// (== barTotalHeight), but floored so the A can't be clipped off the bottom on
+// a device with little/no safe-area inset now that the bar itself is thin.
+export function buttonCenterFromBottom(insetBottom: number): number {
+  return Math.max(barTotalHeight(insetBottom), BTN / 2 + 8);
 }
 
 // Extra bottom padding a screen with a fixed/bottom-flush CTA should add on top
