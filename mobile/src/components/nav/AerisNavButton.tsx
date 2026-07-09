@@ -21,7 +21,9 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from '../Icon';
+import NavCoachMark from './NavCoachMark';
 import {useHaptics} from '../../hooks/useHaptics';
 import {useCartStore} from '../../stores/cartStore';
 import {useWorkspaceFeaturesStore} from '../../stores/workspaceFeaturesStore';
@@ -29,7 +31,7 @@ import {getItemCount} from '@aeris/shared';
 import {COLORS, FONT_FAMILY, FONT_SIZE} from '../../constants/theme';
 import {
   angleFor,
-  barTotalHeight,
+  buttonCenterFromBottom,
   BTN,
   BUBBLE,
   CIRCLE,
@@ -40,6 +42,12 @@ import {
 
 const A_LOGO = require('../../../assets/images/aeris-a.png');
 type IconName = React.ComponentProps<typeof Icon>['name'];
+
+// First-run coach mark: shown once ever, then remembered.
+const COACH_SEEN_KEY = '@aeris/nav-coach-seen-v1';
+// Session guard so a remount (e.g. leaving the Scanner) doesn't re-fire it
+// before the async write lands.
+let coachShownThisSession = false;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -104,6 +112,35 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
   // Scanner surface takes over) so no callback fires after teardown.
   useEffect(() => () => cancelAnimation(progress), [progress]);
 
+  // First-run coach mark — spotlight the A once so a new user learns it's the
+  // way around. Shown after a short settle delay, then remembered forever.
+  const [coachVisible, setCoachVisible] = useState(false);
+  useEffect(() => {
+    if (coachShownThisSession) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    AsyncStorage.getItem(COACH_SEEN_KEY)
+      .then(seen => {
+        if (cancelled || seen) return;
+        timer = setTimeout(() => {
+          if (cancelled) return;
+          coachShownThisSession = true;
+          setCoachVisible(true);
+        }, 900);
+      })
+      .catch(() => {
+        // Storage unavailable — skip the coach rather than block nav.
+      });
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
+  const dismissCoach = useCallback(() => {
+    setCoachVisible(false);
+    AsyncStorage.setItem(COACH_SEEN_KEY, '1').catch(() => undefined);
+  }, []);
+
   const dests = useMemo(() => {
     const visible = DESTS.filter(d => {
       if (d.gate === 'repairs') return showRepairs;
@@ -125,11 +162,10 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
     }));
   }, [showRepairs, showErp, activeTab, cartCount, haptics, close, onNavigate]);
 
-  // Button centre in screen coords — the flat-bar-top line. Shared with the
-  // notch bar so the A nests into the dome.
-  const barH = barTotalHeight(insets.bottom);
+  // Button centre in screen coords — the flat-bar-top line (floored so the A
+  // isn't clipped on a thin bar with no safe-area inset).
   const cx = width / 2;
-  const cy = height - barH;
+  const cy = height - buttonCenterFromBottom(insets.bottom);
   const cap = useMemo(() => domeCapPath(width), [width]);
 
   const scrimStyle = useAnimatedStyle(() => ({
@@ -259,6 +295,13 @@ const AerisNavButton: React.FC<Props> = ({activeTab, onNavigate, showErp}) => {
           </Animated.View>
         </View>
       </Modal>
+
+      <NavCoachMark
+        visible={coachVisible}
+        onDismiss={dismissCoach}
+        cx={cx}
+        cy={cy}
+      />
     </>
   );
 };
