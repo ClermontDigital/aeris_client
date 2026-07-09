@@ -10,13 +10,19 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {useNavigation, StackActions} from '@react-navigation/native';
+import {
+  useNavigation,
+  useNavigationState,
+  StackActions,
+} from '@react-navigation/native';
 import type {BottomTabBarButtonProps} from '@react-navigation/bottom-tabs';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
 import {ModeIndicator} from '../components/ModeIndicator';
 import {FailoverBanners} from '../components/FailoverBanners';
 import {BrandHeaderChrome} from '../components/BrandHeaderChrome';
+import AerisNotchBar from '../components/nav/AerisNotchBar';
+import AerisNavButton from '../components/nav/AerisNavButton';
 import DashboardScreen from '../screens/DashboardScreen';
 import QuickSaleStack from './QuickSaleStack';
 import ItemsStack from './ItemsStack';
@@ -169,6 +175,29 @@ const AppTabsInner: React.FC = () => {
   // button only when one is set so it never appears on tab roots.
   const headerOnBack = useHeaderBackStore(s => s.onBack);
 
+  // The Aeris nav button (bottom-centre A → fan menu) replaces the per-tab
+  // buttons. It lives OUTSIDE the Tab.Navigator (a sibling overlay) so the
+  // protruding button can't be touch-clipped by the shorter notch bar, so it
+  // navigates via the parent AppStack rather than the tab navigator directly.
+  const activeTab = useNavigationState(s => {
+    // `s` here is the AppStack state (AppTabsInner renders under it). Dig into
+    // the nested Tabs navigator to find the focused tab route name.
+    const tabsRoute = s?.routes?.find(r => r.name === 'Tabs');
+    const ts = tabsRoute?.state;
+    if (!ts || ts.index == null) return undefined;
+    return ts.routes[ts.index]?.name;
+  });
+  const onNavigate = React.useCallback(
+    (route: string) => {
+      if (route === 'Settings') {
+        stackNav.navigate('Settings');
+        return;
+      }
+      stackNav.navigate('Tabs', {screen: route as keyof AppTabParamList});
+    },
+    [stackNav],
+  );
+
   return (
     <View style={styles.root}>
       {isOnScanner ? null : (
@@ -233,7 +262,10 @@ const AppTabsInner: React.FC = () => {
           tabBarIconStyle: isTablet ? styles.tabBarIconTablet : undefined,
           tabBarBadgeStyle: styles.tabBarBadge,
           tabBarButton: (props) => <TabButton {...props} />,
-        }}>
+        }}
+        // The visible bottom bar is now the Aeris notch bar; per-tab buttons
+        // are replaced by the fan menu on the centre A (AerisNavButton below).
+        tabBar={(props) => <AerisNotchBar {...props} />}>
         <Tab.Screen
           name="Dashboard"
           component={DashboardScreen}
@@ -327,6 +359,12 @@ const AppTabsInner: React.FC = () => {
           />
         )}
       </Tab.Navigator>
+      {/* Aeris nav button — the centre A over the notch bar; tap to fan out
+          the navigation menu. Sibling of the Tab.Navigator (renders on top,
+          unclipped). Suppressed on the Scanner surface like the header. */}
+      {isOnScanner ? null : (
+        <AerisNavButton activeTab={activeTab} onNavigate={onNavigate} />
+      )}
     </View>
   );
 };
