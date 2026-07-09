@@ -26,6 +26,7 @@ import {
   BORDER_RADIUS,
   ICON_SIZE,
 } from '../constants/theme';
+import {A_CLEARANCE} from '../components/nav/navGeometry';
 import {useCartStore} from '../stores/cartStore';
 import {useTransactionActivityStore} from '../stores/transactionActivityStore';
 import {useFailoverAbortStore} from '../stores/failoverAbortStore';
@@ -751,6 +752,9 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: SPACING.md,
+    // Clear the floating Aeris nav "A" so "Complete sale" isn't overlapped
+    // (and its centre tap stolen) by it once scrolled to the bottom.
+    paddingBottom: SPACING.md + A_CLEARANCE,
   },
   summaryHeader: {
     backgroundColor: COLORS.surface,
