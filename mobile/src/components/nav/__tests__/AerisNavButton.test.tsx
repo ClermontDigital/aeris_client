@@ -83,17 +83,15 @@ describe('AerisNavButton', () => {
     // Fan destinations are now rendered.
     expect(getByLabelText('Dashboard')).toBeTruthy();
     expect(getByLabelText('Sale')).toBeTruthy();
-    expect(getByLabelText('Settings')).toBeTruthy();
 
     fireEvent.press(getByLabelText('Items'));
     expect(onNavigate).toHaveBeenCalledWith('Items');
   });
 
-  it('routes Settings to the parent Settings screen', () => {
-    const {getByLabelText, onNavigate} = renderButton();
+  it('does not offer Settings in the fan (it lives on the header gear)', () => {
+    const {getByLabelText, queryByLabelText} = renderButton();
     fireEvent.press(getByLabelText('Open navigation menu'));
-    fireEvent.press(getByLabelText('Settings'));
-    expect(onNavigate).toHaveBeenCalledWith('Settings');
+    expect(queryByLabelText('Settings')).toBeNull();
   });
 
   it('hides Repairs when the workspace flag is off', () => {
