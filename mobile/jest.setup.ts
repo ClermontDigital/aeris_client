@@ -190,6 +190,12 @@ jest.mock('@react-native-cookies/cookies', () => ({
 jest.mock('react-native-reanimated', () => {
   const RN = require('react-native');
   const passthroughTiming = (val: any) => val;
+  // withTiming may take a completion callback (3rd arg) — invoke it with
+  // `true` so animation-complete side effects (e.g. runOnJS unlock) fire.
+  const timingWithCallback = (val: any, _cfg?: any, cb?: any) => {
+    if (typeof cb === 'function') cb(true);
+    return val;
+  };
   const passthroughDelay = (_d: any, val: any) => val;
   const easingFn = (t: number) => t;
   const easingFactory = () => easingFn;
@@ -219,7 +225,7 @@ jest.mock('react-native-reanimated', () => {
     useAnimatedStyle: jest.fn(() => ({})),
     useSharedValue: jest.fn((init: any) => ({ value: init })),
     useDerivedValue: jest.fn((fn: any) => ({ value: fn() })),
-    withTiming: jest.fn(passthroughTiming),
+    withTiming: jest.fn(timingWithCallback),
     withSpring: jest.fn(passthroughTiming),
     withDelay: jest.fn(passthroughDelay),
     cancelAnimation: jest.fn(),
