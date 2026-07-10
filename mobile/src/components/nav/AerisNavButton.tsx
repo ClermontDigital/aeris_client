@@ -64,7 +64,8 @@ const DESTS: {route: string; label: string; icon: IconName; gate?: 'repairs' | '
     {route: 'Repairs', label: 'Repairs', icon: 'construct-outline', gate: 'repairs'},
     {route: 'Transactions', label: 'Sales', icon: 'receipt'},
     {route: 'ERP', label: 'Aeris', icon: 'globe', gate: 'erp'},
-    {route: 'Settings', label: 'Settings', icon: 'settings-outline'},
+    // Settings is intentionally NOT here — it lives on the header gear, which is
+    // enough for an infrequent destination (keeps the fan focused on POS flow).
   ];
 
 interface Props {
