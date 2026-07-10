@@ -28,16 +28,11 @@ import {useAuthStore} from '../stores/authStore';
 import AppLockService from '../services/AppLockService';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
-import {
-  barTotalHeight,
-  buttonCenterFromBottom,
-  BTN,
-} from '../components/nav/navGeometry';
+import {barTotalHeight} from '../components/nav/navGeometry';
 import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 
 const MAX_ATTEMPTS = 5;
 const WORDMARK = require('../../assets/images/aeris-wordmark.png');
-const A_LOGO = require('../../assets/images/aeris-a.png');
 
 // Vault-door unlock. While locked, two navy panels are sealed shut over the
 // app (top + bottom halves meeting just below centre), with the AERIS wordmark
@@ -72,9 +67,6 @@ const AppLockScreen: React.FC = () => {
   // Wordmark: sealed just under the header → open at the header wordmark spot.
   const wmSealedTop = insets.top + 132;
   const wmOpenTop = insets.top + 18;
-  // A chevron: sealed in the lower door → open at the nav A centre.
-  const aOpenCenter = viewportHeight - buttonCenterFromBottom(insets.bottom);
-  const aSealedCenter = viewportHeight - insets.bottom - 188;
 
   // door: 0 = sealed, 1 = open. Guard so a double tap / biometric race can't
   // fire the exit twice.
@@ -121,12 +113,6 @@ const AppLockScreen: React.FC = () => {
     opacity: interpolate(door.value, [0, 0.82, 1], [1, 1, 0], Extrapolation.CLAMP),
     transform: [
       {translateY: interpolate(door.value, [0, 1], [0, wmOpenTop - wmSealedTop], Extrapolation.CLAMP)},
-    ],
-  }));
-  const aStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(door.value, [0, 0.82, 1], [1, 1, 0], Extrapolation.CLAMP),
-    transform: [
-      {translateY: interpolate(door.value, [0, 1], [0, aOpenCenter - aSealedCenter], Extrapolation.CLAMP)},
     ],
   }));
   const contentStyle = useAnimatedStyle(() => ({
@@ -251,15 +237,6 @@ const AppLockScreen: React.FC = () => {
           wordmarkStyle,
         ]}
       />
-      <Animated.Image
-        source={A_LOGO}
-        resizeMode="contain"
-        style={[
-          styles.aMark,
-          {top: aSealedCenter - BTN / 2, left: width / 2 - BTN / 2},
-          aStyle,
-        ]}
-      />
 
       {/* ---- PIN entry + controls (fade out as the seam opens) ---- */}
       <Animated.View style={[styles.content, contentStyle]} pointerEvents="box-none">
@@ -322,7 +299,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.navy,
   },
   wordmark: {position: 'absolute', width: 130, height: 38, pointerEvents: 'none'},
-  aMark: {position: 'absolute', width: BTN, height: BTN, pointerEvents: 'none'},
   content: {...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center'},
   signOutBtn: {
     position: 'absolute',
