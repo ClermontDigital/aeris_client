@@ -1,23 +1,34 @@
 import {useEffect, useRef} from 'react';
 import {AppState, type AppStateStatus} from 'react-native';
 import ApiClient from '../services/ApiClient';
-import {reportPresence} from '../services/PresenceService';
+import {getDeviceId} from '../services/PresenceService';
 import {useAuthStore} from '../stores/authStore';
 import {useSettingsStore} from '../stores/settingsStore';
 import {useDrStore} from '../stores/drStore';
 import {useRoutingDecision} from './useRoutingDecision';
 
-// usePresenceBeacon — schedules the §19.4 presence beacon.
-// Source of truth: docs/PROJECT_DR_NAS_WARM_FAILOVER.md §19.4, §22.5 Q3 (60s).
+// usePresenceBeacon — the §19.4 DR presence beacon.
+// Source of truth: docs/PROJECT_DR_NAS_WARM_FAILOVER.md §19.4, §22.5 Q3 (60s)
+// + SITREP_DR_MOBILE_TEAM.md (the beacon is load-bearing: the marketplace's
+// cutover-safety gate refuses `local` unless it sees a fresh client beacon).
 //
-// Fires {device_id, mode, app_version}:
-//   - every 60s while foregrounded + authenticated,
-//   - and once on every background→foreground transition,
-// to the marketplace (relay) when reachable AND to the NAS local registry when
-// in Direct mode. Best-effort; never blocks the UI.
+// Emits {device_id, mode} through the route-proxied `dr.presence` action — the
+// client posts to its OWN Aeris2 deployment, which forwards a per-device beat
+// to the gateway under its tenant key (RelayClient.reportDrPresence; the mode
+// vocab is mapped local→'direct' at that boundary). Aeris2 rolls the beats up
+// to a single presence count the marketplace gate reads. Fire-and-forget: a
+// non-DR deployment 404s and is swallowed, so this never surfaces an error.
 //
-// Mounted once near the app root. Does nothing until the user is authenticated
-// (a beacon from a logged-out device carries no useful fleet signal).
+// Cadence: every 60s while foregrounded + authenticated, plus once on each
+// background→foreground transition (TTL is 180s server-side, so 60s keeps the
+// device continuously "fresh").
+//
+// GATE: only DR-provisioned deployments beacon (drStore.drEnabled — the last
+// dr.routing poll saw a DR surface), OR an operator opts in via
+// presenceBeaconEnabled. This fires in CLOUD mode too — that's deliberate: the
+// gate must see a listening client BEFORE an operator flips to local, or every
+// real cutover needs a `?force`. A normal cloud-only (non-DR) client makes zero
+// beacon traffic.
 
 const BEACON_INTERVAL_MS = 60_000;
 
@@ -33,47 +44,22 @@ export function usePresenceBeacon(): void {
     if (!isAuthenticated) return;
 
     const fire = () => {
-      const settings = useSettingsStore.getState().settings;
       const dr = useDrStore.getState();
-      // Direct sink = the cached NAS target, only while operating in Direct
-      // mode (§19.4) — this only happens during an actual failover.
-      const directUrl =
-        settings.connectionMode === 'direct' ? dr.cachedLocalUrl : null;
+      const {presenceBeaconEnabled} = useSettingsStore.getState().settings;
+      // Only beacon when DR is actually provisioned for this deployment (or an
+      // operator opts in) — otherwise a cloud-only fleet would emit a relay RPC
+      // every 60s for nothing.
+      if (!dr.drEnabled && !presenceBeaconEnabled) return;
 
-      // Relay (cloud) sink is GATED until the gateway /presence/beacon endpoint
-      // ships. That endpoint does not exist yet, so emitting it for every
-      // authenticated cloud user would be fleet-wide background 404 traffic
-      // every 60s. Only fire the relay sink when DR is actually in use for this
-      // client — i.e. the rails have provisioned a NAS failover target
-      // (cachedLocalUrl present), the routing directive says local, or we are
-      // already in Direct mode — OR when an operator explicitly opts in via the
-      // presenceBeaconEnabled flag. A normal cloud-only client therefore makes
-      // ZERO new background requests from this. Remove the gate once the
-      // gateway presence contract lands (§22.5 Q10).
-      const drInUse =
-        dr.cachedLocalUrl != null ||
-        dr.routingDirective === 'local' ||
-        settings.connectionMode === 'direct';
-      const relayUrl =
-        (settings.presenceBeaconEnabled || drInUse)
-          ? settings.relayUrl ?? null
-          : null;
-      // Nothing to send to.
-      if (!relayUrl && !directUrl) return;
-      // deploymentId: the gateway presence endpoint is deployment-scoped
-      // (POST .../deployments/{id}/dr/presence). The mobile client pairs by
-      // workspace code over relay RPC and does NOT hold a deployment id today,
-      // so this is null — which suppresses every beacon in reportPresence and
-      // keeps cloud-only clients at ZERO requests (Defect-2). M2 entry-criteria:
-      // thread the real deployment id here once pairing/relay surfaces it AND a
-      // user-scoped (or relay-forwarded) presence auth path exists — see the
-      // M2 note in PresenceService.reportPresence.
-      void reportPresence(modeRef.current, {
-        relayUrl,
-        directUrl,
-        deploymentId: null,
-        authToken: ApiClient.getAuthToken(),
-      });
+      // Routing vocab → beacon vocab: RelayClient maps 'local'→'direct' at the
+      // wire; everything else beats as 'cloud'.
+      const mode: 'cloud' | 'local' =
+        modeRef.current === 'local' ? 'local' : 'cloud';
+
+      // Best-effort; getDeviceId mints+persists a stable per-device UUID.
+      void getDeviceId()
+        .then(device_id => ApiClient.reportDrPresence({device_id, mode}))
+        .catch(() => undefined);
     };
 
     // Initial beacon on mount/auth, then on the interval.
