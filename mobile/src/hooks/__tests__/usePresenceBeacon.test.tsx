@@ -4,7 +4,7 @@ import {renderHook, waitFor} from '@testing-library/react-native';
 // `dr.presence` path (ApiClient.reportDrPresence), gated on DR being
 // provisioned for the deployment. mock-prefixed names for jest hoisting.
 
-const mockReportDrPresence = jest.fn(() => Promise.resolve(true));
+const mockReportDrPresence = jest.fn((_beat: unknown) => Promise.resolve(true));
 const mockGetDeviceId = jest.fn(() => Promise.resolve('dev-1'));
 const drState = {drEnabled: true};
 const settings = {presenceBeaconEnabled: false};
@@ -13,7 +13,7 @@ const decision = {currentMode: 'cloud' as 'cloud' | 'local' | 'switching' | 'off
 
 jest.mock('../../services/ApiClient', () => ({
   __esModule: true,
-  default: {reportDrPresence: (...a: unknown[]) => mockReportDrPresence(...a)},
+  default: {reportDrPresence: (beat: unknown) => mockReportDrPresence(beat)},
 }));
 jest.mock('../../services/PresenceService', () => ({
   getDeviceId: () => mockGetDeviceId(),
@@ -26,10 +26,12 @@ jest.mock('../../stores/authStore', () => ({
     sel({isAuthenticated: auth.isAuthenticated}),
 }));
 jest.mock('../../stores/drStore', () => ({
-  useDrStore: {getState: () => drState},
+  useDrStore: (sel: (s: {drEnabled: boolean}) => unknown) => sel(drState),
 }));
 jest.mock('../../stores/settingsStore', () => ({
-  useSettingsStore: {getState: () => ({settings})},
+  useSettingsStore: (
+    sel: (s: {settings: {presenceBeaconEnabled: boolean}}) => unknown,
+  ) => sel({settings}),
 }));
 
 import {usePresenceBeacon} from '../usePresenceBeacon';
