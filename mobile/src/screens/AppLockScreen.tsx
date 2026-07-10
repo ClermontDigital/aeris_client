@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,14 @@ import {
   Alert,
   BackHandler,
   Platform,
-  ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Animated, {
-  FadeIn,
+  Easing,
+  Extrapolation,
+  interpolate,
+  runOnJS,
   useSharedValue,
   useAnimatedStyle,
   withSequence,
@@ -26,10 +28,24 @@ import {useAuthStore} from '../stores/authStore';
 import AppLockService from '../services/AppLockService';
 import {useHaptics} from '../hooks/useHaptics';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
+import {
+  barTotalHeight,
+  buttonCenterFromBottom,
+  BTN,
+} from '../components/nav/navGeometry';
 import {COLORS, SPACING, FONT_SIZE, FONT_FAMILY, BORDER_RADIUS} from '../constants/theme';
 
 const MAX_ATTEMPTS = 5;
+const WORDMARK = require('../../assets/images/aeris-wordmark.png');
+const A_LOGO = require('../../assets/images/aeris-a.png');
 
+// Vault-door unlock. While locked, two navy panels are sealed shut over the
+// app (top + bottom halves meeting just below centre), with the AERIS wordmark
+// on the top door and the Aeris "A" chevron on the bottom door. On a correct
+// PIN / biometric the doors part — the top slides up to the header, the bottom
+// slides down to the nav bar, carrying the wordmark + A to where they live in
+// the app — then the whole overlay cross-fades out onto the real chrome behind
+// (which already sits in those positions), so the hand-off is seamless.
 const AppLockScreen: React.FC = () => {
   const haptics = useHaptics();
   const verifyPin = useAppLockStore(s => s.verifyPin);
@@ -38,28 +54,84 @@ const AppLockScreen: React.FC = () => {
   const biometricEnabled = useAppLockStore(s => s.biometricEnabled);
   const failedAttempts = useAppLockStore(s => s.failedAttempts);
   const reset = useAppLockStore(s => s.reset);
-  // Compact = iPhone SE 3rd gen / 13 mini class viewport. The keypad
-  // shrinks via PinPad's own breakpoint; here we tighten the brand
-  // margin so the lock layout still reads as space-between on tall
-  // phones without forcing the keypad / sign-out off the safe area.
-  // Tablet: center the stack vertically (brand → keypad → bio →
-  // attempts) rather than space-between, otherwise on a tall portrait
-  // the keypad anchors near the bottom edge.
-  const {height: viewportHeight} = useWindowDimensions();
+
+  const insets = useSafeAreaInsets();
+  const {width, height: viewportHeight} = useWindowDimensions();
   const {isTablet} = useResponsiveLayout();
-  const compact = !isTablet && viewportHeight < 700;
 
   const [error, setError] = useState<string | undefined>(undefined);
   const [biometricLabel, setBiometricLabel] = useState('Use Biometrics');
   const [attempting, setAttempting] = useState(false);
 
-  // Brand-mark shake when the PIN is wrong — reinforces the haptic.error()
-  // with a visual cue tied to the lock itself, not the input. Driven on the
-  // UI thread so it lands even when the verifyPin promise + alert work is
-  // queued on JS.
+  // ---- Vault-door geometry (JS constants captured by the worklets) ----
+  const HEADER_H = insets.top + 82; // navy header zone (band + tongue tip)
+  const NAV_H = barTotalHeight(insets.bottom); // thin navy nav strip
+  const seamY = Math.round(viewportHeight * 0.54); // doors meet just below centre
+  const topTravel = seamY - HEADER_H; // top door slides up this far
+  const botTravel = viewportHeight - seamY - NAV_H; // bottom door slides down
+  // Wordmark: sealed just under the header → open at the header wordmark spot.
+  const wmSealedTop = insets.top + 132;
+  const wmOpenTop = insets.top + 18;
+  // A chevron: sealed in the lower door → open at the nav A centre.
+  const aOpenCenter = viewportHeight - buttonCenterFromBottom(insets.bottom);
+  const aSealedCenter = viewportHeight - insets.bottom - 188;
+
+  // door: 0 = sealed, 1 = open. Guard so a double tap / biometric race can't
+  // fire the exit twice.
+  const door = useSharedValue(0);
+  const unlockingRef = useRef(false);
+
+  const finishUnlock = useCallback(() => unlock(), [unlock]);
+  const beginUnlock = useCallback(() => {
+    if (unlockingRef.current) return;
+    unlockingRef.current = true;
+    haptics.success();
+    door.value = withTiming(
+      1,
+      {duration: 780, easing: Easing.out(Easing.cubic)},
+      finished => {
+        'worklet';
+        if (finished) runOnJS(finishUnlock)();
+      },
+    );
+  }, [door, haptics, finishUnlock]);
+
+  // Brand-mark shake on a wrong PIN.
   const shakeX = useSharedValue(0);
-  const brandStyle = useAnimatedStyle(() => ({
+  const shakeStyle = useAnimatedStyle(() => ({
     transform: [{translateX: shakeX.value}],
+  }));
+
+  // ---- Animated styles ----
+  const rootStyle = useAnimatedStyle(() => ({
+    // Final cross-fade onto the real chrome once the doors are ~open.
+    opacity: interpolate(door.value, [0, 0.9, 1], [1, 1, 0], Extrapolation.CLAMP),
+  }));
+  const topDoorStyle = useAnimatedStyle(() => ({
+    transform: [
+      {translateY: interpolate(door.value, [0, 1], [0, -topTravel], Extrapolation.CLAMP)},
+    ],
+  }));
+  const botDoorStyle = useAnimatedStyle(() => ({
+    transform: [
+      {translateY: interpolate(door.value, [0, 1], [0, botTravel], Extrapolation.CLAMP)},
+    ],
+  }));
+  const wordmarkStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(door.value, [0, 0.82, 1], [1, 1, 0], Extrapolation.CLAMP),
+    transform: [
+      {translateY: interpolate(door.value, [0, 1], [0, wmOpenTop - wmSealedTop], Extrapolation.CLAMP)},
+    ],
+  }));
+  const aStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(door.value, [0, 0.82, 1], [1, 1, 0], Extrapolation.CLAMP),
+    transform: [
+      {translateY: interpolate(door.value, [0, 1], [0, aOpenCenter - aSealedCenter], Extrapolation.CLAMP)},
+    ],
+  }));
+  const contentStyle = useAnimatedStyle(() => ({
+    // The PIN pad + controls fade out early as the seam starts to open.
+    opacity: interpolate(door.value, [0, 0.34], [1, 0], Extrapolation.CLAMP),
   }));
 
   useEffect(() => {
@@ -69,18 +141,16 @@ const AppLockScreen: React.FC = () => {
   }, [biometricEnabled]);
 
   const tryBiometric = useCallback(async () => {
-    if (attempting) return;
+    if (attempting || unlockingRef.current) return;
     setAttempting(true);
     const ok = await AppLockService.authenticateWithBiometrics();
     setAttempting(false);
     if (ok) {
-      haptics.success();
-      unlock();
+      beginUnlock();
     }
-  }, [attempting, haptics, unlock]);
+  }, [attempting, beginUnlock]);
 
-  // Auto-prompt biometric on mount when enabled — saves a tap on the
-  // common "I just put my phone down for a sec" path.
+  // Auto-prompt biometric on mount when enabled.
   useEffect(() => {
     if (biometricEnabled) {
       tryBiometric();
@@ -88,9 +158,7 @@ const AppLockScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Block Android hardware back while the lock overlay is mounted — without
-  // this the back button propagates to the navigator below and pops/exits
-  // the app while still locked.
+  // Block Android hardware back while the lock overlay is mounted.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
@@ -99,11 +167,11 @@ const AppLockScreen: React.FC = () => {
 
   const handleSubmit = useCallback(
     async (pin: string) => {
+      if (unlockingRef.current) return;
       setError(undefined);
       const ok = await verifyPin(pin);
       if (ok) {
-        haptics.success();
-        unlock();
+        beginUnlock();
         return;
       }
       haptics.error();
@@ -137,7 +205,7 @@ const AppLockScreen: React.FC = () => {
           : `Wrong PIN. ${remaining} attempts remaining.`,
       );
     },
-    [verifyPin, haptics, unlock, recordFailedAttempt, reset, shakeX],
+    [verifyPin, haptics, beginUnlock, recordFailedAttempt, reset, shakeX],
   );
 
   const handleSignOut = useCallback(() => {
@@ -158,99 +226,114 @@ const AppLockScreen: React.FC = () => {
     failedAttempts > 0 ? MAX_ATTEMPTS - failedAttempts : 0;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
-        <Text style={styles.signOutText}>Sign out</Text>
-      </TouchableOpacity>
-
-      {/* ScrollView is the safety net for short viewports — on a tall
-          phone it doesn't scroll because contentContainerStyle's flexGrow:1
-          + space-between keeps everything centered. On SE-class it lets
-          the keypad and sign-out cleanly absorb without clipping. */}
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          isTablet && styles.scrollContentTablet,
+    <Animated.View style={[styles.root, rootStyle]}>
+      {/* ---- The two navy doors ---- */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.topDoor, {height: seamY}, topDoorStyle]}
+      />
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.botDoor,
+          {height: viewportHeight - seamY},
+          botDoorStyle,
         ]}
-        bounces={false}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
+      />
+
+      {/* ---- Brand marks that ride the doors to their app positions ---- */}
+      <Animated.Image
+        source={WORDMARK}
+        resizeMode="contain"
+        style={[
+          styles.wordmark,
+          {top: wmSealedTop, left: width / 2 - 65},
+          wordmarkStyle,
+        ]}
+      />
+      <Animated.Image
+        source={A_LOGO}
+        resizeMode="contain"
+        style={[
+          styles.aMark,
+          {top: aSealedCenter - BTN / 2, left: width / 2 - BTN / 2},
+          aStyle,
+        ]}
+      />
+
+      {/* ---- PIN entry + controls (fade out as the seam opens) ---- */}
+      <Animated.View style={[styles.content, contentStyle]} pointerEvents="box-none">
+        <TouchableOpacity
+          style={[styles.signOutBtn, {top: insets.top + SPACING.sm}]}
+          onPress={handleSignOut}>
+          <Text style={styles.signOutText}>Sign out</Text>
+        </TouchableOpacity>
+
         <Animated.View
-          entering={FadeIn.duration(220)}
           style={[
-            styles.brand,
-            compact && styles.brandCompact,
-            brandStyle,
+            styles.pinWrap,
+            isTablet ? styles.pinWrapTablet : null,
+            shakeStyle,
           ]}>
-          <Image
-            source={require('../../assets/images/app-icon.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.appName}>Aeris</Text>
-          <Text style={styles.tagline}>Locked</Text>
-        </Animated.View>
-
-        <View style={styles.pinWrap}>
           <PinPad title="Enter PIN" onSubmit={handleSubmit} error={error} />
-        </View>
 
-        {biometricEnabled && (
-          <TouchableOpacity
-            style={styles.bioBtn}
-            onPress={tryBiometric}
-            disabled={attempting}>
-            <Icon
-              name="finger-print"
-              size={20}
-              color={COLORS.cream}
-              style={styles.bioIcon}
-            />
-            <Text style={styles.bioText}>{biometricLabel}</Text>
-          </TouchableOpacity>
-        )}
+          {biometricEnabled && (
+            <TouchableOpacity
+              style={styles.bioBtn}
+              onPress={tryBiometric}
+              disabled={attempting}>
+              <Icon
+                name="finger-print"
+                size={20}
+                color={COLORS.cream}
+                style={styles.bioIcon}
+              />
+              <Text style={styles.bioText}>{biometricLabel}</Text>
+            </TouchableOpacity>
+          )}
 
-        {remainingAttempts > 0 && (
-          <Text style={styles.attemptsHint}>
-            {`${remainingAttempts} attempts remaining`}
-          </Text>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+          {remainingAttempts > 0 && (
+            <Text style={styles.attemptsHint}>
+              {`${remainingAttempts} attempts remaining`}
+            </Text>
+          )}
+        </Animated.View>
+      </Animated.View>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  // Transparent root — the navy comes from the two door panels, so the app
+  // shows through the opening seam.
+  root: {...StyleSheet.absoluteFillObject},
+  topDoor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     backgroundColor: COLORS.navy,
   },
-  scrollContent: {
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: SPACING.lg,
+  botDoor: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.navy,
   },
-  scrollContentTablet: {
-    justifyContent: 'center',
-    paddingTop: SPACING.xl,
-    gap: SPACING.xl,
-  },
+  wordmark: {position: 'absolute', width: 130, height: 38, pointerEvents: 'none'},
+  aMark: {position: 'absolute', width: BTN, height: BTN, pointerEvents: 'none'},
+  content: {...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center'},
   signOutBtn: {
     position: 'absolute',
-    top: SPACING.lg,
     right: SPACING.lg,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     zIndex: 10,
   },
   signOutText: {color: COLORS.cream, fontSize: FONT_SIZE.md, opacity: 0.85},
-  brand: {alignItems: 'center', marginTop: SPACING.xl + SPACING.lg},
-  brandCompact: {marginTop: SPACING.lg},
-  logo: {width: 72, height: 72, marginBottom: SPACING.sm},
-  appName: {color: COLORS.cream, fontSize: FONT_SIZE.title, fontFamily: FONT_FAMILY.bold},
-  tagline: {color: COLORS.cream, fontSize: FONT_SIZE.md, opacity: 0.7, marginTop: 2},
   pinWrap: {alignItems: 'center', justifyContent: 'center'},
+  pinWrapTablet: {gap: SPACING.lg},
   bioBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -260,7 +343,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
-    marginTop: SPACING.md,
+    marginTop: SPACING.lg,
   },
   bioIcon: {marginRight: SPACING.sm},
   bioText: {color: COLORS.cream, fontSize: FONT_SIZE.lg, fontFamily: FONT_FAMILY.medium},
@@ -268,7 +351,7 @@ const styles = StyleSheet.create({
     color: COLORS.cream,
     opacity: 0.6,
     fontSize: FONT_SIZE.sm,
-    marginTop: SPACING.sm,
+    marginTop: SPACING.md,
   },
 });
 

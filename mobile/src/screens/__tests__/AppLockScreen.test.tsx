@@ -1,6 +1,26 @@
 import React from 'react';
-import {render} from '@testing-library/react-native';
+import {render, waitFor} from '@testing-library/react-native';
 import {BackHandler, Platform} from 'react-native';
+import {useAppLockStore} from '../../stores/appLockStore';
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from 'react-native-safe-area-context';
+
+const metrics = initialWindowMetrics ?? {
+  frame: {x: 0, y: 0, width: 390, height: 844},
+  insets: {top: 47, left: 0, right: 0, bottom: 34},
+};
+
+// AppLockScreen reads useSafeAreaInsets for the vault-door geometry, so it must
+// render under a provider.
+function renderLock() {
+  return render(
+    <SafeAreaProvider initialMetrics={metrics}>
+      <AppLockScreen />
+    </SafeAreaProvider>,
+  );
+}
 
 beforeAll(() => {
   if (typeof (globalThis as any).window === 'undefined') {
@@ -86,7 +106,7 @@ describe('AppLockScreen BackHandler', () => {
       .spyOn(BackHandler, 'addEventListener')
       .mockReturnValue({remove} as any);
 
-    const {unmount} = render(<AppLockScreen />);
+    const {unmount} = renderLock();
 
     expect(addSpy).toHaveBeenCalledWith('hardwareBackPress', expect.any(Function));
     // Block-while-locked: the registered handler must return true so the
@@ -102,8 +122,25 @@ describe('AppLockScreen BackHandler', () => {
     Object.defineProperty(Platform, 'OS', {value: 'ios', configurable: true});
     const addSpy = jest.spyOn(BackHandler, 'addEventListener');
 
-    render(<AppLockScreen />);
+    renderLock();
 
     expect(addSpy).not.toHaveBeenCalled();
+  });
+
+  it('plays the vault-door unlock and calls unlock() when the doors finish opening', async () => {
+    // A successful biometric on mount → beginUnlock → the door timing runs and,
+    // on completion, unlock() fires (the exit hand-off, not an instant unlock).
+    const store = useAppLockStore.getState() as unknown as {
+      biometricEnabled: boolean;
+      unlock: jest.Mock;
+    };
+    store.biometricEnabled = true;
+    store.unlock.mockClear();
+    try {
+      renderLock();
+      await waitFor(() => expect(store.unlock).toHaveBeenCalledTimes(1));
+    } finally {
+      store.biometricEnabled = false; // don't leak into the other tests
+    }
   });
 });
