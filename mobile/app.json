@@ -96,6 +96,7 @@
     "plugins": [
       "./plugins/withFollyCoroutinesFix",
       "./plugins/withFmtConstevalFix",
+      "./plugins/withAndroidReleaseSigning",
       [
         "expo-build-properties",
         {
