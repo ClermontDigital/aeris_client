@@ -169,23 +169,11 @@ const ProductImagePicker: React.FC<Props> = ({
     return false;
   }, []);
 
-  const ensureLibraryPermission = useCallback(async (): Promise<boolean> => {
-    const current = await ImagePicker.getMediaLibraryPermissionsAsync();
-    if (current.granted) return true;
-    if (current.canAskAgain) {
-      const next = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      return next.granted;
-    }
-    Alert.alert(
-      'Photo access is off',
-      'AERIS needs access to your photos to add a product image. Turn on photo access for AERIS in device Settings.',
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {text: 'Open Settings', onPress: () => Linking.openSettings()},
-      ],
-    );
-    return false;
-  }, []);
+  // No library-permission gate: launchImageLibraryAsync uses the OS photo
+  // picker (Android photo picker / iOS PHPicker), which runs out-of-process
+  // and needs no runtime permission or READ_MEDIA_IMAGES. Requesting that
+  // permission for infrequent product-photo attach violates Google Play's
+  // Photo and Video Permissions policy (rejected review), so we don't.
 
   // The actual native-picker launchers. These run from onModalHide AFTER the
   // bottom sheet's dismiss animation completes — presenting the camera/library
@@ -206,15 +194,13 @@ const ProductImagePicker: React.FC<Props> = ({
   }, [ensureCameraPermission, doUpload]);
 
   const launchLibrary = useCallback(async () => {
-    const ok = await ensureLibraryPermission();
-    if (!ok) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.7,
     });
     if (result.canceled || !result.assets?.[0]?.uri) return;
     void doUpload(result.assets[0].uri);
-  }, [ensureLibraryPermission, doUpload]);
+  }, [doUpload]);
 
   // Sheet rows only record intent + close the sheet. The launch is deferred to
   // onModalHide. Backdrop/back/Cancel dismissals leave pendingActionRef null,
