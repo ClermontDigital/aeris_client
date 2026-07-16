@@ -231,6 +231,7 @@ const LoginScreen: React.FC = () => {
                 onBlur={() => setEmailFocused(false)}
                 autoCapitalize="none"
                 autoCorrect={false}
+                autoComplete="email"
                 keyboardType="email-address"
                 textContentType="emailAddress"
                 returnKeyType="next"
@@ -250,7 +251,17 @@ const LoginScreen: React.FC = () => {
                 onFocus={() => setPasswordFocused(true)}
                 onBlur={() => setPasswordFocused(false)}
                 secureTextEntry
+                // Android's secureTextEntry does NOT reliably suppress
+                // auto-capitalization / autocorrect across OEM keyboards, so
+                // the first character of the password gets mangled and the
+                // server 401s with "email or password incorrect" — even though
+                // iOS (where secureTextEntry does suppress it) signs in fine.
+                // Force them off explicitly, matching the email field.
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="current-password"
                 textContentType="password"
+                keyboardType="default"
                 returnKeyType="go"
                 onSubmitEditing={handleSignIn}
                 editable={!isSigningIn}
