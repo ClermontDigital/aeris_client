@@ -680,6 +680,12 @@ describe('RepairDetailScreen', () => {
   // Confirm should clear + populate the cart and cross-tab navigate.
   it('T8 - Cancel branch of confirm leaves cart untouched and does NOT navigate', async () => {
     mockGetRepairDetail.mockResolvedValueOnce(makeDetail({status: 'ready'}));
+    // Provide a parent with a navigate spy so we can assert the cross-tab
+    // navigation didn't fire. (getParent itself is now also called by the
+    // useHeaderBack hook for its focus listener, so asserting on getParent's
+    // call count no longer isolates "did we navigate" — assert on navigate.)
+    const parent = {navigate: jest.fn()};
+    mockGetParent.mockReturnValue(parent);
     const alertSpy = jest
       .spyOn(require('react-native').Alert, 'alert')
       .mockImplementation(() => undefined);
@@ -698,7 +704,7 @@ describe('RepairDetailScreen', () => {
     expect(mockCartState.clear).not.toHaveBeenCalled();
     expect(mockCartState.addItem).not.toHaveBeenCalled();
     expect(mockCartState.setRepairId).not.toHaveBeenCalled();
-    expect(mockGetParent).not.toHaveBeenCalled();
+    expect(parent.navigate).not.toHaveBeenCalled();
     alertSpy.mockRestore();
   });
 

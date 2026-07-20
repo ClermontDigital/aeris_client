@@ -72,6 +72,12 @@ export function normalizeProduct(input: unknown): Product {
     // server default; an explicit 0 (GST-free) is preserved by asNumber.
     tax_rate: asNumber(raw.tax_rate, 10),
     stock_on_hand: asNumber(raw.stock_on_hand ?? raw.stock_quantity, 0),
+    // Server-computed stock status (ProductResource::getStockStatus). Passed
+    // through verbatim so the badge renders the server's ruling instead of
+    // recomputing a threshold the wire doesn't even carry (reorder_level is
+    // never emitted; only reorder_point, a different concept). (#27)
+    stock_status:
+      typeof raw.stock_status === 'string' ? raw.stock_status : null,
     category_id: categoryId,
     category_name: categoryName,
     image_url:
