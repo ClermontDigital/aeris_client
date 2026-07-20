@@ -13,9 +13,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
-import {useHeaderBackStore} from '../stores/headerBackStore';
+import {useHeaderBack} from '../hooks/useHeaderBack';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import EyebrowLabel from '../components/EyebrowLabel';
 import PillButton from '../components/PillButton';
@@ -108,33 +108,13 @@ const ProductEditScreen: React.FC = () => {
   const haptics = useHaptics();
   const {isTablet} = useResponsiveLayout();
 
-  // Surface a Back button in the shared brand header while focused. NO
-  // cleanup on useFocusEffect — with react-native-screens v4 + native-
-  // stack, the popped screen's blur fires BEFORE the revealed screen's
-  // focus on goBack(), so identity-matched cleanup wipes the slot just
-  // as ProductDetail is about to re-install its own handler (the v1.3.69
-  // regression). Instead, beforeRemove (below) cleans up after the
-  // transition has settled and the next screen has installed its own
-  // handler. clearIf is identity-matched so we never accidentally wipe
-  // ProductDetail's freshly-installed handler.
-  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
-  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
+  // Surface a Back button in the shared brand header while focused. The
+  // shared hook owns the focus/blur/beforeRemove ownership dance.
   const handleHeaderBack = useCallback(() => {
     haptics.light();
     navigation.goBack();
   }, [haptics, navigation]);
-  useFocusEffect(
-    useCallback(() => {
-      setHeaderBack(handleHeaderBack);
-      return undefined;
-    }, [setHeaderBack, handleHeaderBack]),
-  );
-  useEffect(() => {
-    const sub = navigation.addListener('beforeRemove', () => {
-      clearHeaderBackIf(handleHeaderBack);
-    });
-    return sub;
-  }, [navigation, clearHeaderBackIf, handleHeaderBack]);
+  useHeaderBack(handleHeaderBack);
   const formCap = isTablet
     ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
     : null;
