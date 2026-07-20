@@ -636,11 +636,15 @@ export default function CartScreen() {
         data={items}
         renderItem={renderCartItem}
         keyExtractor={item => String(item.product.id)}
-        // tabletWidthCap on `style` (outer scroll container), not
-        // `contentContainerStyle` — the latter sits inside the scroll
-        // container and its width=100% beats maxWidth, leaving the list
-        // full-bleed while the chrome is centred at 720pt.
-        style={tabletWidthCap}
+        // flex:1 so the list is a BOUNDED, scrollable region inside the
+        // flex-column (header + list + inputs + summary). Without it, on
+        // phone (where tabletWidthCap is null) the FlatList had no flex, took
+        // its full content height, and pushed/clipped rows against the inputs
+        // section — the "line item cut off just under the qty" bug. The
+        // tabletWidthCap (maxWidth/centre) still rides on `style`, not
+        // `contentContainerStyle`, so the list stays full-bleed on phone and
+        // capped at 720pt on tablet.
+        style={[styles.cartList, tabletWidthCap]}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={renderEmpty}
         keyboardShouldPersistTaps="handled"
@@ -957,6 +961,10 @@ const styles = StyleSheet.create({
     color: COLORS.accent,
     fontSize: FONT_SIZE.sm,
     fontFamily: FONT_FAMILY.medium,
+  },
+  cartList: {
+    // Bounded scroll region — see the FlatList `style` comment (#70 cart clip).
+    flex: 1,
   },
   listContent: {
     padding: SPACING.md,
