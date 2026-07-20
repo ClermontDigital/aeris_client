@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,8 @@ import {
   Alert,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
-import {useHeaderBackStore} from '../stores/headerBackStore';
+import {useNavigation, useRoute} from '@react-navigation/native';
+import {useHeaderBack} from '../hooks/useHeaderBack';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
@@ -244,14 +244,10 @@ export default function SaleDetailScreen() {
   // Back button: consult the breadcrumb trail first, fall through to
   // native stack pop. This is what lets a deep TransactionList → SaleA →
   // ProductX → SaleB → ProductY journey unwind one hop at a time.
-  // One-shot guard: reachable from BOTH the brand-header Back and any
-  // in-page Back. popPrev() mutates history, so a fast double-tap could
-  // over-navigate. Reset on each focus.
-  const backFiredRef = useRef(false);
+  // The double-fire guard now lives inside useHeaderBack (popPrev() mutates
+  // history, so a fast double-tap could otherwise over-navigate).
   const popPrev = useNavHistoryStore(s => s.popPrev);
   const handleBack = useCallback(() => {
-    if (backFiredRef.current) return;
-    backFiredRef.current = true;
     haptics.light();
     const prev = popPrev();
     if (prev) {
@@ -274,24 +270,9 @@ export default function SaleDetailScreen() {
   }, [navigation, haptics, popPrev]);
 
   // Surface the Back button in the shared brand header while focused.
-  // beforeRemove handles the slot cleanup with an identity-matched clearIf
-  // so the revealed screen's own handler never gets wiped (the v1.3.70
-  // race fix — see ProductDetailScreen comment for the rationale).
-  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
-  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
-  useFocusEffect(
-    useCallback(() => {
-      backFiredRef.current = false;
-      setHeaderBack(handleBack);
-      return undefined;
-    }, [setHeaderBack, handleBack]),
-  );
-  useEffect(() => {
-    const sub = navigation.addListener('beforeRemove', () => {
-      clearHeaderBackIf(handleBack);
-    });
-    return sub;
-  }, [navigation, clearHeaderBackIf, handleBack]);
+  // Registration + slot ownership (focus set, parent-tab re-assert,
+  // identity-matched clearIf on beforeRemove) is encapsulated in useHeaderBack.
+  useHeaderBack(handleBack);
 
   // MUST live above the early-return guards — see the rules-of-hooks note
   // around `pushCrumb` above. handleRefunded was declared post-guards in
@@ -589,7 +570,7 @@ export default function SaleDetailScreen() {
             </TouchableOpacity>
           ) : null}
           {/* Back lives in the shared brand header (top-left of the
-              chrome) via useHeaderBackStore above. */}
+              chrome) via useHeaderBack above. */}
         </View>
       </ScrollView>
       {canRefund ? (

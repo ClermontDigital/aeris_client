@@ -16,8 +16,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useFocusEffect} from '@react-navigation/native';
-import {useHeaderBackStore} from '../stores/headerBackStore';
+import {useNavigation} from '@react-navigation/native';
+import {useHeaderBack} from '../hooks/useHeaderBack';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Icon from '../components/Icon';
 import {
@@ -381,10 +381,7 @@ export default function CartScreen() {
   // Back affordance and from the Clear-cart confirm. Resetting on focus
   // mirrors the ProductDetail/CustomerDetail pattern so a fast double-tap
   // can't over-navigate while a transition is in flight.
-  const backFiredRef = useRef(false);
   const handleBackToProducts = useCallback(() => {
-    if (backFiredRef.current) return;
-    backFiredRef.current = true;
     // Pop back if we have history (came from ProductGrid → Cart navigate),
     // otherwise jump to ProductGrid directly. Both land on the same screen
     // either way; popping preserves any existing scroll/search state on
@@ -396,25 +393,10 @@ export default function CartScreen() {
     }
   }, [navigation]);
 
-  // Surface the Back button in the shared brand header while focused.
-  // beforeRemove handles the slot cleanup with an identity-matched clearIf
-  // so the revealed screen's own handler never gets wiped (the v1.3.70
-  // race fix — see ProductDetailScreen comment for the rationale).
-  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
-  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
-  useFocusEffect(
-    useCallback(() => {
-      backFiredRef.current = false;
-      setHeaderBack(handleBackToProducts);
-      return undefined;
-    }, [setHeaderBack, handleBackToProducts]),
-  );
-  useEffect(() => {
-    const sub = navigation.addListener('beforeRemove', () => {
-      clearHeaderBackIf(handleBackToProducts);
-    });
-    return sub;
-  }, [navigation, clearHeaderBackIf, handleBackToProducts]);
+  // Shared brand-header Back button. The hook owns the whole ownership dance:
+  // register on focus, re-assert on Android tab-return (#70), and clear only
+  // when this screen is actually removed.
+  useHeaderBack(handleBackToProducts);
 
   const handleClearCart = useCallback(() => {
     Alert.alert(
@@ -462,11 +444,16 @@ export default function CartScreen() {
     return (
       <View style={styles.cartItem}>
         <View style={styles.cartItemInfo}>
-          <Text style={styles.cartItemName} numberOfLines={1}>
+          <Text
+            style={styles.cartItemName}
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.4}>
             {item.product.name}
           </Text>
-          <Text style={styles.cartItemSku}>{item.product.sku}</Text>
-          <Text style={styles.cartItemPrice}>
+          <Text style={styles.cartItemSku} maxFontSizeMultiplier={1.4}>
+            {item.product.sku}
+          </Text>
+          <Text style={styles.cartItemPrice} maxFontSizeMultiplier={1.4}>
             {formatCurrency(item.unit_price_cents)} × {item.quantity} ={' '}
             {formatCurrency(lineTotal)}
           </Text>
@@ -487,7 +474,9 @@ export default function CartScreen() {
               color={COLORS.text}
             />
           </TouchableOpacity>
-          <Text style={styles.quantityText}>{item.quantity}</Text>
+          <Text style={styles.quantityText} maxFontSizeMultiplier={1.4}>
+            {item.quantity}
+          </Text>
           <TouchableOpacity
             style={styles.stepperButton}
             hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
@@ -541,7 +530,7 @@ export default function CartScreen() {
         onPress={Keyboard.dismiss}
         accessible={false}>
       {/* Header — Back lives in the shared brand header (top-left of the
-          chrome) via useHeaderBackStore above; this row just titles the
+          chrome) via the useHeaderBack hook above; this row just titles the
           screen and shows the item count. */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Cart</Text>
@@ -985,6 +974,15 @@ const styles = StyleSheet.create({
   },
   cartItemInfo: {
     flex: 1,
+    // Defensive guard for #70 ("item box scaling" / unreachable remove
+    // controls on Android). minWidth:0 removes any content-based minimum so
+    // the text column always yields space to the fixed-width qty stepper +
+    // delete button. NOTE: in RN/Yoga `flex:1` already sets flexBasis:0 and
+    // there is no web-style `min-width:auto` floor, so this is belt-and-
+    // braces — the substantive fix for the report is capping font scaling on
+    // the row texts (maxFontSizeMultiplier below), which is what actually
+    // blows the row out under large Android accessibility fonts.
+    minWidth: 0,
     marginRight: SPACING.md,
   },
   cartItemName: {
@@ -1012,6 +1010,9 @@ const styles = StyleSheet.create({
     borderRadius: BORDER_RADIUS.md,
     overflow: 'hidden',
     gap: SPACING.xs,
+    // Never let the remove controls collapse — they hold their size while
+    // the text column (minWidth:0) yields the space instead.
+    flexShrink: 0,
   },
   stepperButton: {
     paddingHorizontal: SPACING.md,
@@ -1028,6 +1029,7 @@ const styles = StyleSheet.create({
   deleteButton: {
     marginLeft: SPACING.sm,
     padding: SPACING.sm,
+    flexShrink: 0,
   },
   inputsSection: {
     paddingHorizontal: SPACING.md,

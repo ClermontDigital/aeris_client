@@ -28,10 +28,10 @@ import KeyboardDoneAccessory from '../components/KeyboardDoneAccessory';
 import ApiClient from '../services/ApiClient';
 import {RelayError} from '@aeris/shared';
 import {useHaptics} from '../hooks/useHaptics';
+import {useHeaderBack} from '../hooks/useHeaderBack';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import {useAuthStore} from '../stores/authStore';
 import {useCartStore} from '../stores/cartStore';
-import {useHeaderBackStore} from '../stores/headerBackStore';
 import {useNavHistoryStore, type CrumbTab} from '../stores/navHistoryStore';
 import {useWorkspaceFeaturesStore} from '../stores/workspaceFeaturesStore';
 import type {
@@ -373,13 +373,10 @@ const RepairDetailScreen: React.FC = () => {
   );
 
   // Back button: consult the breadcrumb trail first, fall through to
-  // native stack pop. One-shot guard: reachable from BOTH the brand-header
-  // Back and any in-page Back. popPrev() mutates history, so a fast
-  // double-tap could over-navigate. Reset on each focus.
-  const backFiredRef = useRef(false);
+  // native stack pop. Reachable from BOTH the brand-header Back and any
+  // in-page Back; popPrev() mutates history. The double-fire guard now
+  // lives inside useHeaderBack (below).
   const handleBack = useCallback(() => {
-    if (backFiredRef.current) return;
-    backFiredRef.current = true;
     haptics.light();
     const prev = popPrev();
     if (prev) {
@@ -400,25 +397,11 @@ const RepairDetailScreen: React.FC = () => {
     navigation.goBack();
   }, [navigation, haptics, popPrev]);
 
-  // Surface the Back button in the shared brand header while focused.
-  // beforeRemove handles the slot cleanup with an identity-matched clearIf
-  // so the revealed screen's own handler never gets wiped (the v1.3.70
-  // race fix - see SaleDetailScreen / ProductDetailScreen comments).
-  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
-  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
-  useFocusEffect(
-    useCallback(() => {
-      backFiredRef.current = false;
-      setHeaderBack(handleBack);
-      return undefined;
-    }, [setHeaderBack, handleBack]),
-  );
-  useEffect(() => {
-    const sub = navigation.addListener('beforeRemove', () => {
-      clearHeaderBackIf(handleBack);
-    });
-    return sub;
-  }, [navigation, clearHeaderBackIf, handleBack]);
+  // Surface the Back button in the shared brand header while focused. The
+  // hook owns the setOnBack-on-focus, double-fire guard, Android
+  // parent-tab-focus re-assert (#70), and beforeRemove identity-matched
+  // cleanup.
+  useHeaderBack(handleBack);
 
   // ---------------- derived values (memoised above the early returns
   // so hook count stays constant across renders) ----------------
@@ -1093,7 +1076,7 @@ const RepairDetailScreen: React.FC = () => {
         </View>
 
         {/* Back lives in the shared brand header (top-left of the chrome)
-            via useHeaderBackStore above. */}
+            via useHeaderBack above. */}
       </ScrollView>
       <KeyboardDoneAccessory nativeID={REPAIR_NOTE_INPUT_BAR} />
     </SafeAreaView>

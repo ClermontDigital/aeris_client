@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback, useRef} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,7 @@ import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {ProductDetail, Sale, Supplier} from '../types/api.types';
 import {useCartStore} from '../stores/cartStore';
 import {useNavHistoryStore} from '../stores/navHistoryStore';
-import {useHeaderBackStore} from '../stores/headerBackStore';
+import {useHeaderBack} from '../hooks/useHeaderBack';
 import type {ItemsStackParamList} from '../types/navigation.types';
 import {formatCurrency} from '../utils/format';
 
@@ -168,14 +168,10 @@ export default function ProductDetailScreen() {
   // Single back handler shared by the brand-header Back button and the
   // in-page Back button. Cross-tab breadcrumb aware: if the user arrived via
   // a cross-tab jump (e.g. SaleDetail -> ProductDetail), return them to the
-  // originating tab rather than popping inside the Items stack.
-  // One-shot guard: handleBack is reachable from BOTH the header and the
-  // in-page button; popPrev() mutates history, so a fast double-tap could
-  // over-navigate. Reset on each focus.
-  const backFiredRef = useRef(false);
+  // originating tab rather than popping inside the Items stack. The
+  // useHeaderBack hook owns the double-fire guard so a fast double-tap can't
+  // over-navigate (popPrev() mutates history).
   const handleBack = useCallback(() => {
-    if (backFiredRef.current) return;
-    backFiredRef.current = true;
     haptics.light();
     const prev = useNavHistoryStore.getState().popPrev();
     if (prev) {
@@ -194,31 +190,9 @@ export default function ProductDetailScreen() {
     navigation.goBack();
   }, [haptics, navigation]);
 
-  // Surface the Back button in the shared brand header while focused.
-  // NO cleanup on useFocusEffect — with react-native-screens v4 + native-
-  // stack the popped screen's blur fires BEFORE the revealed screen's
-  // focus on goBack(), so identity-matched cleanup races ahead and wipes
-  // the slot just as the next screen is about to install its own
-  // handler. Instead, beforeRemove (below) handles the slot cleanup
-  // when this screen is actually being removed from the stack, which
-  // fires after the transition has settled and after the next screen's
-  // focus has installed its own handler. clearIf is identity-matched so
-  // we never accidentally wipe the next screen's handler.
-  const setHeaderBack = useHeaderBackStore(s => s.setOnBack);
-  const clearHeaderBackIf = useHeaderBackStore(s => s.clearIf);
-  useFocusEffect(
-    useCallback(() => {
-      backFiredRef.current = false;
-      setHeaderBack(handleBack);
-      return undefined;
-    }, [setHeaderBack, handleBack]),
-  );
-  useEffect(() => {
-    const sub = navigation.addListener('beforeRemove', () => {
-      clearHeaderBackIf(handleBack);
-    });
-    return sub;
-  }, [navigation, clearHeaderBackIf, handleBack]);
+  // Surface the Back button in the shared brand header while focused. The
+  // useHeaderBack hook owns the focus/re-assert/cleanup ownership dance.
+  useHeaderBack(handleBack);
 
   if (isLoading) {
     return (
@@ -290,14 +264,27 @@ export default function ProductDetailScreen() {
 
   const stockLevels = product.stock_levels ?? [];
   const totalOnHand = product.stock_on_hand ?? 0;
+  // Render the server's own stock_status (ProductResource::getStockStatus)
+  // rather than recomputing a threshold — the client can't see reorder_level
+  // (the wire never sends it), so recomputing drifted from the server and
+  // caused #27. Fall back to a plain on-hand check only when the deployment
+  // doesn't surface stock_status.
+  const stockStatus =
+    product.stock_status ?? (totalOnHand <= 0 ? 'out_of_stock' : 'in_stock');
   const stockTone =
-    totalOnHand <= 0
+    stockStatus === 'out_of_stock'
       ? styles.stockOut
-      : totalOnHand < 5
+      : stockStatus === 'low_stock'
       ? styles.stockLow
       : styles.stockOk;
   const stockLabel =
-    totalOnHand <= 0 ? 'Out of stock' : totalOnHand < 5 ? 'Low stock' : 'In stock';
+    stockStatus === 'out_of_stock'
+      ? 'Out of stock'
+      : stockStatus === 'low_stock'
+      ? 'Low stock'
+      : stockStatus === 'overstocked'
+      ? 'Overstocked'
+      : 'In stock';
 
   // Margin = (price - cost) / price. Only meaningful when both > 0; we hide
   // the row otherwise so we don't render "100%" or "Infinity%" for free items.

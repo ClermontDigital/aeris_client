@@ -57,6 +57,23 @@ describe('normalizeProduct', () => {
     expect(p.stock_on_hand).toBe(12);
   });
 
+  it('passes through the server stock_status verbatim (#27)', () => {
+    const p = normalizeProduct({
+      id: 40,
+      name: 'Low one',
+      sku: 'LOW-1',
+      price: 1,
+      stock_quantity: 2,
+      stock_status: 'low_stock',
+    });
+    expect(p.stock_status).toBe('low_stock');
+  });
+
+  it('defaults stock_status to null when the wire omits it', () => {
+    const p = normalizeProduct({id: 41, name: 'Y', sku: 'Y-1', price: 1});
+    expect(p.stock_status).toBeNull();
+  });
+
   it('flattens category_id and category_name from nested category object', () => {
     const p = normalizeProduct({
       id: 5,

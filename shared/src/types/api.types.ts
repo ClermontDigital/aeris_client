@@ -88,6 +88,13 @@ export interface Product {
   price_cents: number;
   tax_rate: number;
   stock_on_hand: number;
+  // Server-computed stock status (Aeris2 ProductResource::getStockStatus):
+  // 'out_of_stock' | 'low_stock' | 'in_stock' | 'overstocked'. The server owns
+  // the low-stock rule (stock <= reorder_level), so the client renders THIS
+  // rather than recomputing a threshold — recomputing is what drifted from the
+  // server and caused #27. Optional: absent on deployments that don't surface
+  // it; the badge falls back to a stock_on_hand>0 check.
+  stock_status?: string | null;
   category_id: number | null;
   category_name: string | null;
   // image_url is the deployment-resolved primary image: featured_image, else
