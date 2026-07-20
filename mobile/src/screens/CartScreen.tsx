@@ -4,6 +4,7 @@ import {
   Text,
   TextInput,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
   Alert,
@@ -631,29 +632,26 @@ export default function CartScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Cart Items */}
-      <FlatList
-        data={items}
-        renderItem={renderCartItem}
-        keyExtractor={item => String(item.product.id)}
-        // flex:1 so the list is a BOUNDED, scrollable region inside the
-        // flex-column (header + list + inputs + summary). Without it, on
-        // phone (where tabletWidthCap is null) the FlatList had no flex, took
-        // its full content height, and pushed/clipped rows against the inputs
-        // section — the "line item cut off just under the qty" bug. The
-        // tabletWidthCap (maxWidth/centre) still rides on `style`, not
-        // `contentContainerStyle`, so the list stays full-bleed on phone and
-        // capped at 720pt on tablet.
+      {/* Cart items + discount/notes share ONE scroll region so the item
+          list can't collapse to a clipped sliver behind the fixed
+          discount/notes/summary when it all can't fit on screen — the
+          "line item cut off just under the qty" bug (#70). Only the summary
+          + checkout stay pinned below. Items render as a plain map: a cart
+          holds few lines, so FlatList virtualization isn't needed, and this
+          lets the inputs live inside the same scroll without nesting a
+          VirtualizedList in a ScrollView. */}
+      <ScrollView
         style={[styles.cartList, tabletWidthCap]}
         contentContainerStyle={styles.listContent}
-        ListEmptyComponent={renderEmpty}
         keyboardShouldPersistTaps="handled"
-        // Standard iOS pattern: dragging the list down dismisses the
-        // keyboard. Belt-and-braces with the always-visible Hide keyboard
-        // pill below — InputAccessoryView on this RN/Fabric version has
-        // been unreliable on some devices, so we don't lean on it alone.
-        keyboardDismissMode="on-drag"
-      />
+        keyboardDismissMode="on-drag">
+        {items.length === 0
+          ? renderEmpty()
+          : items.map(item => (
+              <React.Fragment key={String(item.product.id)}>
+                {renderCartItem({item})}
+              </React.Fragment>
+            ))}
 
       {/* Discount & Notes */}
       {items.length > 0 && (
@@ -737,6 +735,7 @@ export default function CartScreen() {
           </View>
         </View>
       )}
+      </ScrollView>
 
       {/* iOS-only "Done" bar above the keyboard. The decimal-pad keyboard
           has no return key, so without this the operator can't dismiss
