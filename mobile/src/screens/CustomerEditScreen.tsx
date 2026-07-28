@@ -38,6 +38,15 @@ import type {
   CustomersStackParamList,
   QuickSaleStackParamList,
 } from '../types/navigation.types';
+import {
+  EMPTY_FORM,
+  validateCustomerForm,
+  customerToFormValues,
+  formToCreateInput,
+  formatPhoneOnBlur,
+  type CustomerFormValues,
+  type CustomerFormErrors,
+} from '../utils/customerForm';
 
 // CustomerEditScreen is registered in both CustomersStack and
 // QuickSaleStack — each tab owns its own stack history so a cashier
@@ -53,137 +62,18 @@ type EditNav = NativeStackNavigationProp<
   'CustomerEdit'
 >;
 
-// Basic RFC-5322 subset — same shape ApiClient.test uses for its email
-// inputs. Anything that looks like local@domain.tld passes; we don't
-// reject obscure-but-valid forms (the server is the source of truth).
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export interface CustomerFormValues {
-  first_name: string;
-  last_name: string;
-  company: string;
-  email: string;
-  phone: string;
-  notes: string;
-  // Address group — collapsed by default. All fields blank ⇒ omitted
-  // from the wire payload entirely so the server doesn't create an
-  // empty address row.
-  address: string;
-  address_line_2: string;
-  city: string;
-  state: string;
-  postcode: string;
-  country: string;
-}
-
-export interface CustomerFormErrors {
-  first_name?: string;
-  email?: string;
-}
-
-const EMPTY_FORM: CustomerFormValues = {
-  first_name: '',
-  last_name: '',
-  company: '',
-  email: '',
-  phone: '',
-  notes: '',
-  address: '',
-  address_line_2: '',
-  city: '',
-  state: '',
-  postcode: '',
-  country: '',
+// Form validation + form↔wire shaping now live in utils/customerForm — a
+// single source of truth shared with the kiosk self-signup, so the server's
+// "first_name OR company" rule and the empty-address omission can't drift
+// between the two screens. Re-exported here so existing importers (the
+// unit-level form-validation test) keep resolving them from this module.
+export {
+  validateCustomerForm,
+  customerToFormValues,
+  formToCreateInput,
+  formatPhoneOnBlur,
 };
-
-// Pure helpers — exported for the unit-level form-validation test in
-// __tests__/CustomerEditScreen.test.tsx. Kept out of the component so
-// they're trivially testable without mounting any RN tree.
-export function validateCustomerForm(
-  values: CustomerFormValues,
-): CustomerFormErrors {
-  const errors: CustomerFormErrors = {};
-  // Server-side rule per shared/src/types/api.types.ts: first_name OR
-  // company is required. We surface the error against first_name as the
-  // default since that's the dominant field in the form layout.
-  if (!values.first_name.trim() && !values.company.trim()) {
-    errors.first_name = 'Name or company is required';
-  }
-  const email = values.email.trim();
-  if (email && !EMAIL_REGEX.test(email)) {
-    errors.email = 'Enter a valid email address';
-  }
-  return errors;
-}
-
-export function customerToFormValues(c: Customer): CustomerFormValues {
-  // The detail endpoint returns first_name/last_name + a derived `name`
-  // (full name). We seed the editable fields from the explicit
-  // first/last; the derived `name` is read-only on the wire.
-  const defaultAddress = c.default_address;
-  return {
-    first_name: c.first_name ?? '',
-    last_name: c.last_name ?? '',
-    company: c.company ?? '',
-    email: c.email ?? '',
-    phone: c.phone ?? '',
-    notes: c.notes ?? '',
-    address: defaultAddress?.line_1 ?? '',
-    address_line_2: defaultAddress?.line_2 ?? '',
-    city: defaultAddress?.city ?? '',
-    state: defaultAddress?.state ?? '',
-    postcode: defaultAddress?.postcode ?? '',
-    country: defaultAddress?.country ?? '',
-  };
-}
-
-// Strip empty strings — the API treats `null` and "absent" as the same
-// thing, but a literal empty string can sometimes trigger a validation
-// failure (e.g. email format rules that run before the empty check).
-export function formToCreateInput(
-  values: CustomerFormValues,
-): CustomerCreateInput {
-  const v = values;
-  const trim = (s: string) => s.trim();
-  const opt = (s: string) => {
-    const t = trim(s);
-    return t === '' ? undefined : t;
-  };
-  const out: CustomerCreateInput = {
-    first_name: opt(v.first_name) ?? null,
-    last_name: opt(v.last_name) ?? null,
-    company: opt(v.company) ?? null,
-    email: opt(v.email) ?? null,
-    phone: opt(v.phone) ?? null,
-    notes: opt(v.notes) ?? null,
-  };
-  // Only include address fields if any are filled — avoids creating an
-  // empty address row on the customer_addresses table.
-  const hasAddress = [
-    v.address,
-    v.address_line_2,
-    v.city,
-    v.state,
-    v.postcode,
-    v.country,
-  ].some(s => trim(s) !== '');
-  if (hasAddress) {
-    out.address = opt(v.address) ?? null;
-    out.address_line_2 = opt(v.address_line_2) ?? null;
-    out.city = opt(v.city) ?? null;
-    out.state = opt(v.state) ?? null;
-    out.postcode = opt(v.postcode) ?? null;
-    out.country = opt(v.country) ?? null;
-  }
-  return out;
-}
-
-// Light phone formatter — collapses runs of whitespace, trims edges.
-// We don't try to coerce E.164; that's the server's problem. The hint
-// here is purely cosmetic so the on-screen value matches what's saved.
-export function formatPhoneOnBlur(value: string): string {
-  return value.trim().replace(/\s+/g, ' ');
-}
+export type {CustomerFormValues, CustomerFormErrors};
 
 const CustomerEditScreen: React.FC = () => {
   const navigation = useNavigation<EditNav>();
