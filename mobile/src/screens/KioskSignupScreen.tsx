@@ -273,6 +273,13 @@ const KioskSignupScreen: React.FC = () => {
           autoCapitalize="words"
         />
         <KioskField
+          label="Company (optional)"
+          value={values.company}
+          onChangeText={t => set('company', t)}
+          onFocus={bumpIdle}
+          autoCapitalize="words"
+        />
+        <KioskField
           label="Mobile"
           value={values.phone}
           onChangeText={t => set('phone', t)}
@@ -396,7 +403,11 @@ const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.background},
   pinRoot: {flex: 1, backgroundColor: COLORS.navy},
   scroll: {padding: SPACING.lg, paddingBottom: SPACING.xl * 2},
-  brandHeader: {alignItems: 'center', marginBottom: SPACING.xl},
+  brandHeader: {
+    alignItems: 'center',
+    marginTop: SPACING.xl,
+    marginBottom: SPACING.xl,
+  },
   storeName: {
     fontSize: FONT_SIZE.xl,
     fontFamily: FONT_FAMILY.bold,
@@ -485,15 +496,27 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.lg,
     fontFamily: FONT_FAMILY.semibold,
   },
+  // Visible-but-clearly-staff chip, top-right. It's PIN-gated, so a customer
+  // tapping it just hits the PIN wall — no need to hide it, and staff must be
+  // able to find it. (review fix: "no way to exit".)
   staffExit: {
     position: 'absolute',
-    bottom: SPACING.md,
+    top: SPACING.sm,
     right: SPACING.md,
-    paddingVertical: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    opacity: 0.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.xs + 2,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.surfaceBorder,
+    backgroundColor: COLORS.surface,
   },
-  staffExitText: {fontSize: FONT_SIZE.xs, color: COLORS.textDim},
+  staffExitText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textLight,
+    fontFamily: FONT_FAMILY.medium,
+  },
   thanksWrap: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.xl},
   thanksBadge: {
     width: 96,

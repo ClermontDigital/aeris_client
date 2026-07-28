@@ -15,6 +15,15 @@ describe('validateKioskForm', () => {
     expect(errs.contact).toBeTruthy();
   });
 
+  it('accepts a company + contact with no personal name (business signup)', () => {
+    const errs = validateKioskForm({
+      ...EMPTY_FORM,
+      company: 'Acme Pty Ltd',
+      email: 'accounts@acme.example',
+    });
+    expect(errs).toEqual({});
+  });
+
   it('accepts a first name + a phone (no email needed)', () => {
     const errs = validateKioskForm({
       ...EMPTY_FORM,
