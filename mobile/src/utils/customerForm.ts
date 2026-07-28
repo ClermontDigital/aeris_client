@@ -72,8 +72,10 @@ export function validateKioskForm(
   values: CustomerFormValues,
 ): CustomerFormErrors {
   const errors: CustomerFormErrors = {};
-  if (!values.first_name.trim()) {
-    errors.first_name = 'Please enter your first name';
+  // Name OR company (matches the server's first_name-or-company rule) so a
+  // business walk-up can sign up with just a company + contact.
+  if (!values.first_name.trim() && !values.company.trim()) {
+    errors.first_name = 'Please enter your name or company';
   }
   const email = values.email.trim();
   const phone = values.phone.trim();
