@@ -84,6 +84,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
   const [hapticsEnabled, setHapticsEnabled] = useState(
     settings.hapticsEnabled !== false,
   );
+  const [businessName, setBusinessName] = useState(settings.businessName ?? '');
   // "Remove account from this device" guard: track which clear is in
   // flight so the button can disable + spinner while we sequence the
   // logout → PIN/biometric wipe → product-cache wipe.
@@ -100,6 +101,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
     setSessionTimeout(settings.sessionTimeout);
     setEnableSessions(settings.enableSessionManagement);
     setHapticsEnabled(settings.hapticsEnabled !== false);
+    setBusinessName(settings.businessName ?? '');
   }, [
     settings.baseUrl,
     settings.relayUrl,
@@ -107,6 +109,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
     settings.sessionTimeout,
     settings.enableSessionManagement,
     settings.hapticsEnabled,
+    settings.businessName,
     resetKey,
   ]);
 
@@ -182,6 +185,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
       sessionTimeout,
       enableSessionManagement: enableSessions,
       hapticsEnabled,
+      businessName: businessName.trim(),
     });
     onCommit();
   }, [
@@ -196,6 +200,7 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
     sessionTimeout,
     enableSessions,
     hapticsEnabled,
+    businessName,
     onCommit,
   ]);
 
@@ -367,6 +372,17 @@ const SettingsBody: React.FC<SettingsBodyProps> = ({
         {/* Preferences — card 2 */}
         <View style={styles.section}>
           <EyebrowLabel>Preferences</EyebrowLabel>
+          <View style={styles.field}>
+            <Text style={styles.fieldLabel}>Business name</Text>
+            <TextInput
+              style={styles.input}
+              value={businessName}
+              onChangeText={setBusinessName}
+              placeholder="Shown on the customer sign-up kiosk"
+              placeholderTextColor={COLORS.inputPlaceholder}
+              autoCapitalize="words"
+            />
+          </View>
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>
               Session timeout · {sessionTimeout} min

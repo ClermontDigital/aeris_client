@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
@@ -24,6 +25,8 @@ import {
 import ApiClient from '../services/ApiClient';
 import {useHaptics} from '../hooks/useHaptics';
 import {useHeaderBackStore} from '../stores/headerBackStore';
+import {useKioskStore} from '../stores/kioskStore';
+import {useAppLockStore} from '../stores/appLockStore';
 import {useResponsiveLayout} from '../hooks/useResponsiveLayout';
 import type {Customer} from '../types/api.types';
 import type {CustomersStackParamList} from '../types/navigation.types';
@@ -58,6 +61,26 @@ function localFilter(items: Customer[], q: string): Customer[] {
 const CustomersScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const haptics = useHaptics();
+  const enterKiosk = useKioskStore(s => s.enter);
+  const hasPin = useAppLockStore(s => s.hasPin);
+  const handleEnterKiosk = useCallback(() => {
+    haptics.light();
+    if (!hasPin) {
+      Alert.alert(
+        'Set a PIN first',
+        'Kiosk mode needs a staff PIN to exit. Set one in Settings, then try again.',
+      );
+      return;
+    }
+    Alert.alert(
+      'Start kiosk mode?',
+      'Hand the device to the customer to enter their own details. Stay with them — exiting kiosk needs your PIN.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'Start kiosk', onPress: () => enterKiosk()},
+      ],
+    );
+  }, [haptics, hasPin, enterKiosk]);
   const {isTablet} = useResponsiveLayout();
   const tabletColumnCap = isTablet
     ? ({maxWidth: 720, alignSelf: 'center', width: '100%'} as const)
@@ -210,16 +233,25 @@ const CustomersScreen: React.FC = () => {
       edges={['left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Customers</Text>
-        <PillButton
-          label="New customer"
-          icon="plus"
-          variant="solid"
-          onPress={() => {
-            haptics.light();
-            navigation.navigate('CustomerEdit');
-          }}
-          accessibilityLabel="Create a new customer"
-        />
+        <View style={styles.headerActions}>
+          <PillButton
+            label="Kiosk"
+            icon="person-outline"
+            variant="outline"
+            onPress={handleEnterKiosk}
+            accessibilityLabel="Start customer self-signup kiosk mode"
+          />
+          <PillButton
+            label="New customer"
+            icon="plus"
+            variant="solid"
+            onPress={() => {
+              haptics.light();
+              navigation.navigate('CustomerEdit');
+            }}
+            accessibilityLabel="Create a new customer"
+          />
+        </View>
       </View>
 
       <View style={[styles.searchRow, tabletColumnCap]}>
@@ -303,6 +335,12 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.md,
     paddingBottom: SPACING.sm,
     gap: SPACING.sm,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    flexShrink: 1,
   },
   headerTitle: {
     color: COLORS.text,

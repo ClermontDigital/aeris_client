@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG = {
   // notes was hitting a broken first-launch on Direct mode.
   connectionMode: 'relay' as ConnectionMode,
   workspaceCode: '',
+  businessName: '',
   sessionTimeout: 30, // minutes
   maxSessions: 5,
   maxPinAttempts: 3,
