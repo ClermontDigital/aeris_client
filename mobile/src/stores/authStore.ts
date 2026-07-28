@@ -8,6 +8,7 @@ import {
   hydrationPromise as workspaceFeaturesHydrationPromise,
   useWorkspaceFeaturesStore,
 } from './workspaceFeaturesStore';
+import {useKioskStore} from './kioskStore';
 import {resetRepairsDisabledToastLatch} from '../services/ApiClient';
 import type {User} from '../types/api.types';
 
@@ -254,6 +255,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // toast on the second flip.
     useWorkspaceFeaturesStore.getState().reset();
     resetRepairsDisabledToastLatch();
+    // Drop kiosk mode on logout so `active` can't stay stuck true and wrongly
+    // suppress the next operator's auto-lock.
+    useKioskStore.getState().exit();
     // PIN persists across logout — only Settings → Reset PIN clears it.
     // Cross-platform parity with desktop; on next login the cold-start
     // lock effect in App.tsx prompts for the existing PIN.
@@ -285,6 +289,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await SecureStorage.removeItem(AUTH_USER_KEY);
     await SecureStorage.removeItem(AUTH_EXPIRES_KEY);
     await SecureStorage.removeItem(LEGACY_BACKGROUNDED_AT_KEY);
+    // A 401 mid-kiosk swaps the navigator to Auth and unmounts the overlay;
+    // clear `active` too so auto-lock isn't left suppressed after re-login.
+    useKioskStore.getState().exit();
     // M3-C (go-live doc): clearLocalSession INTENTIONALLY PRESERVES the cached
     // silent-reauth credential. This path fires on a 401 — including the one
     // the auto mode-switch itself triggers (the old-edge bearer is rejected by

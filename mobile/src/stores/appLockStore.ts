@@ -1,5 +1,6 @@
 import {create} from 'zustand';
 import AppLockService from '../services/AppLockService';
+import {useKioskStore} from './kioskStore';
 
 interface AppLockState {
   // `initialized` flips true once secure-store reads complete. App.tsx gates
@@ -50,6 +51,12 @@ export const useAppLockStore = create<AppLockState>((set, get) => ({
   },
 
   lockNow: () => {
+    // Never auto-lock while a customer holds the device in kiosk mode — a
+    // lock overlay mid-signup would strand them. Both lock triggers (boot
+    // effect + AppState resume in App.tsx) funnel through here, so this one
+    // guard covers them all. Kiosk exit re-enables locking by clearing the
+    // flag before returning to the app.
+    if (useKioskStore.getState().active) return;
     if (!get().hasPin) return;
     set({isLocked: true, failedAttempts: 0});
   },

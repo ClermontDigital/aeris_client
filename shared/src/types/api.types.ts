@@ -383,6 +383,21 @@ export interface CustomerCreateInput {
   payment_terms?: string | null;
   credit_limit_cents?: number | null;
   notes?: string | null;
+  // Marketing consent (Aeris2 StoreCustomerRequest, 2.13.x). Per-channel
+  // opt-in flags plus HOW consent was captured. The WHEN
+  // (marketing_consent_at) is stamped server-side when any flag turns on and
+  // is NOT client-writable. The kiosk self-signup sends
+  // marketing_consent_source: 'kiosk'.
+  marketing_emails?: boolean | null;
+  marketing_sms?: boolean | null;
+  marketing_post?: boolean | null;
+  marketing_consent_source?:
+    | 'kiosk'
+    | 'staff'
+    | 'web'
+    | 'phone'
+    | 'import'
+    | null;
   is_active?: boolean;
   // Address fields land on the customer_addresses table on save.
   address?: string | null;

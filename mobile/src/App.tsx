@@ -49,6 +49,8 @@ import ApiClient from './services/ApiClient';
 import RootNavigator, {linking} from './navigation/RootNavigator';
 import AppLockScreen from './screens/AppLockScreen';
 import PinSetupScreen from './screens/PinSetupScreen';
+import KioskSignupScreen from './screens/KioskSignupScreen';
+import {useKioskStore} from './stores/kioskStore';
 import {COLORS, FONT_FAMILY} from './constants/theme';
 
 // Keep the native splash visible while Poppins loads in parallel with the
@@ -175,6 +177,7 @@ const App: React.FC = () => {
   useAutoFailback();
   const isLocked = useAppLockStore(s => s.isLocked);
   const hasPin = useAppLockStore(s => s.hasPin);
+  const kioskActive = useKioskStore(s => s.active);
   const lockInitialized = useAppLockStore(s => s.initialized);
 
   // Hide the native splash only when BOTH the font load has settled AND the
@@ -471,6 +474,15 @@ const App: React.FC = () => {
         {isAuthenticated && lockInitialized && hasPin && isLocked && (
           <View style={styles.overlay} pointerEvents="auto">
             <AppLockScreen />
+          </View>
+        )}
+        {/* Customer self-signup kiosk — topmost overlay (above tabs + lock).
+            Auto-lock is suppressed while active (appLockStore.lockNow), so the
+            lock overlay above never renders during kiosk; this sits last to be
+            safe. Reset on logout/401 via kioskStore. */}
+        {isAuthenticated && kioskActive && (
+          <View style={styles.overlay} pointerEvents="auto">
+            <KioskSignupScreen />
           </View>
         )}
       </SafeAreaProvider>
