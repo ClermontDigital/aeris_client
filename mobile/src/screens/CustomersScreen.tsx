@@ -331,6 +331,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    // Wrap so the two action pills (Kiosk + New customer) drop below the
+    // title instead of clipping on a narrow phone (e.g. iPhone SE).
+    flexWrap: 'wrap',
+    rowGap: SPACING.sm,
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.md,
     paddingBottom: SPACING.sm,

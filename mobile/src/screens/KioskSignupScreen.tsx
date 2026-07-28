@@ -8,7 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   BackHandler,
-  Platform,
+  Alert,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Icon from '../components/Icon';
@@ -77,6 +77,10 @@ const KioskSignupScreen: React.FC = () => {
   const [exitError, setExitError] = useState<string | undefined>();
   const exitAttemptsRef = useRef(0);
   const [cooldownUntil, setCooldownUntil] = useState(0);
+  // Count saves that failed (network/server). The customer always sees the
+  // thank-you (fail-closed), but staff get a heads-up on exit so a silent
+  // failure isn't invisible to both sides.
+  const failedSavesRef = useRef(0);
 
   // Idle timeout: clear entered PII if the device is abandoned mid-form.
   const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -136,7 +140,8 @@ const KioskSignupScreen: React.FC = () => {
       // (leaks that someone with their number is on file), or a network
       // failure that reads as broken/scam. Show the reassuring end state; the
       // record either saved or staff will re-capture. (security + product
-      // reviews.)
+      // reviews.) Count it so staff get a heads-up on exit.
+      failedSavesRef.current += 1;
       haptics.success();
       resetForm();
       setStage('thanks');
@@ -159,6 +164,13 @@ const KioskSignupScreen: React.FC = () => {
       if (ok) {
         exitAttemptsRef.current = 0;
         setExitError(undefined);
+        if (failedSavesRef.current > 0) {
+          const n = failedSavesRef.current;
+          Alert.alert(
+            'Check recent sign-ups',
+            `${n} kiosk sign-up${n > 1 ? 's' : ''} may not have saved (connection issue). Please check the customer list and re-enter any that are missing.`,
+          );
+        }
         exitKiosk();
         return;
       }
