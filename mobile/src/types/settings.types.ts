@@ -9,6 +9,11 @@ export interface Settings {
   connectionMode?: ConnectionMode;
   workspaceCode?: string;
   hapticsEnabled?: boolean;
+  // Store/business display name shown on the customer self-signup kiosk
+  // (the server sends no business name at auth scope). Empty by default;
+  // staff set it in Settings. The kiosk falls back to the user's assigned
+  // site name, then a neutral title, if this is blank.
+  businessName?: string;
   // When true (default), the bearer token persists to SecureStorage on login
   // and the user stays signed in across cold starts until they tap Sign out
   // or the API returns 401. When false, the token lives in memory only — the

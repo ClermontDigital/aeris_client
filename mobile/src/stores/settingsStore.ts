@@ -55,6 +55,7 @@ function coerceSettings(stored: unknown): Settings {
         ? s.workspaceCode
         : DEFAULT_CONFIG.workspaceCode,
     hapticsEnabled: pickBoolean(s.hapticsEnabled, DEFAULT_CONFIG.hapticsEnabled),
+    businessName: pickString(s.businessName, DEFAULT_CONFIG.businessName),
     keepSignedIn: pickBoolean(s.keepSignedIn, DEFAULT_CONFIG.keepSignedIn),
     // M3-D — automated failover master switch. DEFAULT OFF: a stored payload
     // without the key (every build before M3) coerces to false, so flag-off ≡
