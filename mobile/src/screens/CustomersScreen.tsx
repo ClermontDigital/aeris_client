@@ -62,6 +62,7 @@ const CustomersScreen: React.FC = () => {
   const navigation = useNavigation<Nav>();
   const haptics = useHaptics();
   const enterKiosk = useKioskStore(s => s.enter);
+  const kioskActive = useKioskStore(s => s.active);
   const hasPin = useAppLockStore(s => s.hasPin);
   const handleEnterKiosk = useCallback(() => {
     haptics.light();
@@ -74,7 +75,7 @@ const CustomersScreen: React.FC = () => {
     }
     Alert.alert(
       'Start kiosk mode?',
-      'Hand the device to the customer to enter their own details. Stay with them — exiting kiosk needs your PIN.',
+      'Hand the device to the customer to enter their own details. Stay with them. Exiting kiosk needs your PIN.',
       [
         {text: 'Cancel', style: 'cancel'},
         {text: 'Start kiosk', onPress: () => enterKiosk()},
@@ -124,6 +125,17 @@ const CustomersScreen: React.FC = () => {
   useEffect(() => {
     fetchPage(1, false);
   }, [fetchPage]);
+
+  // Kiosk is an App-level overlay, so this screen keeps navigation focus while
+  // it's open and the focus-refetch never fires on exit. Refresh explicitly
+  // when kiosk closes so a customer's self-signup appears in the list.
+  const prevKioskActiveRef = useRef(kioskActive);
+  useEffect(() => {
+    if (prevKioskActiveRef.current && !kioskActive) {
+      fetchPage(1, false);
+    }
+    prevKioskActiveRef.current = kioskActive;
+  }, [kioskActive, fetchPage]);
 
   // Tab root: null the shared brand-header back slot on focus so a
   // stale handler left over by ProductDetail / ProductEdit doesn't
