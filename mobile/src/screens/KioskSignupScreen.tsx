@@ -192,7 +192,7 @@ const KioskSignupScreen: React.FC = () => {
     return (
       <SafeAreaView style={styles.pinRoot}>
         <PinPad
-          title={cooling ? 'Locked — wait a moment' : 'Staff PIN to exit kiosk'}
+          title={cooling ? 'Locked, wait a moment' : 'Staff PIN to exit kiosk'}
           onSubmit={handleExitSubmit}
           onCancel={() => {
             setExitError(undefined);
@@ -221,7 +221,8 @@ const KioskSignupScreen: React.FC = () => {
             You're all set!
           </Text>
           <Text style={styles.thanksBody} maxFontSizeMultiplier={2}>
-            Thanks for signing up. Please hand the device back to our team.
+            Thanks for signing up.{'\n'}
+            Please hand the device back to our team.
           </Text>
         </View>
         <TouchableOpacity
@@ -401,7 +402,14 @@ const KioskField: React.FC<{
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: COLORS.background},
-  pinRoot: {flex: 1, backgroundColor: COLORS.navy},
+  pinRoot: {
+    flex: 1,
+    backgroundColor: COLORS.navy,
+    // Center the pad vertically so it sits where the normal app-lock PIN pad
+    // does, rather than jammed to the top.
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   scroll: {padding: SPACING.lg, paddingBottom: SPACING.xl * 2},
   brandHeader: {
     alignItems: 'center',
