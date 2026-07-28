@@ -242,7 +242,7 @@ const CustomersScreen: React.FC = () => {
             accessibilityLabel="Start customer self-signup kiosk mode"
           />
           <PillButton
-            label="New customer"
+            label="New"
             icon="plus"
             variant="solid"
             onPress={() => {
