@@ -96,4 +96,4 @@ Android: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
 
 ## License
 
-MIT — see `LICENSE`.
+Apache License 2.0, see [LICENSE](LICENSE).
