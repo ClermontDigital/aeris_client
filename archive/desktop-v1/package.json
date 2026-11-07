@@ -101,5 +101,12 @@
       "createStartMenuShortcut": true,
       "createDesktopShortcut": true
     }
+  },
+  "overrides": {
+    "deepmerge": "4.1.1",
+    "glob@^10": "^14.0.4",
+    "glob@^13": "^14.0.4",
+    "minimatch@^10": "^11.0.5",
+    "minimatch@^9": "^11.0.5"
   }
 }
