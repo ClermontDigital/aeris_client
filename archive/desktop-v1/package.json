@@ -27,8 +27,8 @@
     "@electron/notarize": "^2.2.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@types/jest": "^30.0.0",
-    "electron": "^28.3.3",
-    "electron-builder": "^24.9.1",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "electron-mock-ipc": "^0.3.12",
     "jest": "^30.2.0"
   },
